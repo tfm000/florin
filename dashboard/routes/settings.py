@@ -108,7 +108,7 @@ _SECTIONS = [
 _CHOICES: dict[str, list[str]] = {
     "app_env": ["development", "production"],
     "log_level": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    "t212_environment": ["demo", "live"],
+    "t212_environment": ["demo", "live", "readonly"],
     "alpaca_feed": ["iex", "sip"],
     "llm_mode": ["single", "consensus"],
     "llm_default_provider": ["ollama", "groq", "gemini", "claude", "finbert"],

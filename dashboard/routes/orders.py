@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.models import OrderRequest, OrderType, Side
-from dashboard.deps import get_broker
+from dashboard.deps import get_broker, get_settings
 
 router = APIRouter(tags=["orders"])
 
@@ -30,9 +30,17 @@ class StopLossRequest(BaseModel):
     stop_price: float
 
 
+def _check_trading_allowed() -> None:
+    """Raise 403 if broker is in read-only mode."""
+    settings = get_settings()
+    if getattr(settings, "t212_readonly", False):
+        raise HTTPException(403, "Trading disabled — broker is in read-only mode")
+
+
 @router.post("/orders/buy")
 async def place_buy(req: BuyRequest):
     """Place a buy order (market or limit)."""
+    _check_trading_allowed()
     broker = get_broker()
     if not broker:
         raise HTTPException(503, "Broker not configured")
@@ -55,6 +63,7 @@ async def place_buy(req: BuyRequest):
 @router.post("/orders/sell")
 async def place_sell(req: SellRequest):
     """Place a sell order (market or limit)."""
+    _check_trading_allowed()
     broker = get_broker()
     if not broker:
         raise HTTPException(503, "Broker not configured")
@@ -76,6 +85,7 @@ async def place_sell(req: SellRequest):
 @router.post("/orders/stoploss")
 async def place_stop_loss(req: StopLossRequest):
     """Set a stop-loss order."""
+    _check_trading_allowed()
     broker = get_broker()
     if not broker:
         raise HTTPException(503, "Broker not configured")
@@ -96,6 +106,7 @@ async def place_stop_loss(req: StopLossRequest):
 @router.delete("/orders/{order_id}")
 async def cancel_order(order_id: str):
     """Cancel a pending order."""
+    _check_trading_allowed()
     broker = get_broker()
     if not broker:
         raise HTTPException(503, "Broker not configured")

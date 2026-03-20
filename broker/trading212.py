@@ -94,7 +94,12 @@ class Trading212Broker(Broker):
 
     @property
     def name(self) -> str:
-        env = "LIVE" if self._settings.t212_environment == T212Environment.LIVE else "DEMO"
+        env_map = {
+            T212Environment.LIVE: "LIVE",
+            T212Environment.READONLY: "READONLY",
+            T212Environment.DEMO: "DEMO",
+        }
+        env = env_map.get(self._settings.t212_environment, "DEMO")
         return f"Trading 212 ({env})"
 
     @property
@@ -200,6 +205,15 @@ class Trading212Broker(Broker):
         Safety: checks for duplicate orders before submitting.
         Rate limit: 1 order / 2 seconds
         """
+        # Read-only mode blocks all trades
+        if self._settings.t212_readonly:
+            return OrderResult(
+                success=False,
+                ticker=order.ticker,
+                side=order.side,
+                error_message="Trading disabled — broker is in read-only mode",
+            )
+
         # Circuit breaker check
         if self._is_circuit_open():
             return OrderResult(
@@ -230,6 +244,10 @@ class Trading212Broker(Broker):
         """
         DELETE /equity/orders/{id}
         """
+        if self._settings.t212_readonly:
+            logger.warning("Cancel blocked — read-only mode")
+            return False
+
         try:
             await self._request("DELETE", f"/equity/orders/{order_id}",
                                 rate_key="orders", rate_interval=T212_ORDER_RATE_LIMIT)

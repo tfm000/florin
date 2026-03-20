@@ -124,6 +124,8 @@ class Sentinel:
 
         # Dashboard
         from dashboard.app import create_app, serve as dashboard_serve
+        from dashboard.deps import set_state
+        set_state("shutdown_callback", self.shutdown)
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---

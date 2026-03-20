@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Universe from './pages/Universe'
@@ -18,6 +19,18 @@ const NAV_ITEMS = [
 ]
 
 export default function App() {
+  const [terminating, setTerminating] = useState(false)
+
+  const handleTerminate = async () => {
+    if (!confirm('Shut down Sentinel? This will stop all services.')) return
+    setTerminating(true)
+    try {
+      await fetch('/api/terminate', { method: 'POST' })
+    } catch {
+      // Server is shutting down, connection may drop
+    }
+  }
+
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-900 text-gray-100">
@@ -25,7 +38,7 @@ export default function App() {
         <nav className="bg-gray-800 border-b border-gray-700 px-4 py-3">
           <div className="max-w-7xl mx-auto flex items-center gap-6">
             <span className="text-white font-bold text-lg tracking-tight">Sentinel</span>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-1">
               {NAV_ITEMS.map(item => (
                 <NavLink
                   key={item.path}
@@ -42,6 +55,13 @@ export default function App() {
                 </NavLink>
               ))}
             </div>
+            <button
+              onClick={handleTerminate}
+              disabled={terminating}
+              className="px-3 py-1.5 rounded text-sm font-medium bg-red-700 hover:bg-red-600 disabled:bg-gray-600 text-white transition-colors"
+            >
+              {terminating ? 'Shutting down...' : 'Terminate'}
+            </button>
           </div>
         </nav>
 

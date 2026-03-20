@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from dashboard.deps import get_broker, get_db, get_settings
+from dashboard.deps import get_broker, get_db, get_settings, get_shutdown_callback
 
 router = APIRouter(tags=["health"])
 
@@ -42,3 +42,17 @@ async def health_check() -> dict:
         "alpaca_configured": settings.alpaca_configured,
         "telegram_configured": settings.telegram_configured,
     }
+
+
+@router.post("/terminate")
+async def terminate() -> dict:
+    """Gracefully shut down the Sentinel application."""
+    import asyncio
+
+    shutdown = get_shutdown_callback()
+    if not shutdown:
+        return {"status": "no shutdown handler registered"}
+
+    # Schedule shutdown after response is sent
+    asyncio.get_event_loop().call_later(0.5, shutdown)
+    return {"status": "shutting_down"}

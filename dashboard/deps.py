@@ -40,3 +40,7 @@ def get_broker():
 
 def get_ws_manager() -> "ConnectionManager":
     return _state["ws_manager"]
+
+
+def get_shutdown_callback():
+    return _state.get("shutdown_callback")
