@@ -26,7 +26,7 @@ STOCKTWITS_API_BASE = "https://api.stocktwits.com/api/2"
 # --- SEC EDGAR ---
 SEC_EDGAR_BASE = "https://efts.sec.gov/LATEST"
 SEC_EDGAR_SUBMISSIONS = "https://data.sec.gov/submissions"
-SEC_EDGAR_USER_AGENT = "PennyStockSentinel admin@example.com"
+SEC_EDGAR_USER_AGENT = "SentinelTerminal admin@example.com"
 
 # --- Filing types of interest ---
 SEC_FORM_TYPES = {
