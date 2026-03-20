@@ -25,6 +25,7 @@ class ClaudeAnalyser(LLMAnalyser):
     """Cloud LLM analysis via Anthropic Claude."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._model = settings.claude_model
         self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
@@ -56,7 +57,7 @@ class ClaudeAnalyser(LLMAnalyser):
         start = time.monotonic()
 
         try:
-            user_prompt = build_user_prompt(alert, sentiment, fraud_risk)
+            user_prompt = build_user_prompt(alert, sentiment, fraud_risk, self._settings.llm_user_context)
 
             response = await self._client.messages.create(
                 model=self._model,

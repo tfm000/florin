@@ -171,7 +171,6 @@ penny-stock-sentinel/
 ├── main.py                      # Entry point: starts all services
 ├── pyproject.toml               # Project config + dependencies
 ├── docker-compose.yml           # DB + app containers
-├── .env.example                 # Template for secrets
 └── README.md
 ```
 
@@ -188,7 +187,7 @@ penny-stock-sentinel/
    - Pre-commit hooks (ruff, mypy)
 
 2. **Configuration system** (`config/settings.py`)
-   - Pydantic `BaseSettings` loading from `.env`
+   - Pydantic `BaseSettings` with defaults, overridden by database settings table
    - All API keys, thresholds, feature flags
    - Settings for: price threshold ($5 default), momentum threshold (5% default), scan interval, LLM mode (single/consensus), active LLM providers
 
@@ -612,7 +611,7 @@ async def alert_pipeline(event_bus, sentiment_agg, report_gen,
 4. **Error handling**: Circuit breakers on all external APIs, graceful degradation
 5. **Logging**: structlog with JSON output, log all trades and decisions
 6. **Monitoring**: Health check endpoint, Telegram `/status` command
-7. **Security**: API keys in `.env` only, Telegram chat ID whitelist, T212 IP restriction
+7. **Security**: API keys stored in database only, Telegram chat ID whitelist, T212 IP restriction
 
 ---
 

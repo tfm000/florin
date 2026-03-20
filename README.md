@@ -10,14 +10,12 @@ AI-powered penny stock sentiment screening and trading tool. Monitors penny stoc
 setup.bat         # Windows
 ```
 
-Edit `.env` with your API keys, then:
-
 ```bash
 source .venv/bin/activate
 python main.py
 ```
 
-Dashboard at `http://localhost:8000`
+Dashboard at `http://localhost:8000` — configure all API keys via the Settings page.
 
 ## Prerequisites
 
@@ -27,9 +25,9 @@ Dashboard at `http://localhost:8000`
 | Node.js | 18+ | Optional — for dashboard UI |
 | Ollama | Latest | Optional — for local LLM analysis |
 
-## Configuration (.env)
+## Configuration
 
-Copy `.env.example` to `.env` and configure:
+All settings are configured via the **dashboard Settings page** at `http://localhost:8000/settings`. The dashboard will show a setup checklist indicating which API keys are needed.
 
 ### Market Data
 
@@ -49,7 +47,7 @@ Copy `.env.example` to `.env` and configure:
 | `T212_API_SECRET` | Trading 212 secret | Same as above |
 | `T212_ENVIRONMENT` | `demo` or `live` | Start with `demo` |
 
-Leave `T212_API_KEY` empty to auto-use the paper broker (simulated trades, no real money).
+Leave `T212_API_KEY` unconfigured to auto-use the paper broker (simulated trades, no real money).
 
 ### Sentiment Sources
 
@@ -91,9 +89,9 @@ See [Telegram Bot Setup](#telegram-bot-setup) below.
 1. Open Telegram and message [@BotFather](https://t.me/BotFather)
 2. Send `/newbot`
 3. Choose a name (e.g. "Penny Sentinel") and username (e.g. `penny_sentinel_bot`)
-4. Copy the **bot token** — set as `TELEGRAM_BOT_TOKEN` in `.env`
+4. Copy the **bot token** — enter as `TELEGRAM_BOT_TOKEN` in the dashboard Settings page
 5. To get your chat ID: message [@userinfobot](https://t.me/userinfobot) and copy the ID
-6. Set `TELEGRAM_CHAT_ID` in `.env`
+6. Enter `TELEGRAM_CHAT_ID` in the dashboard Settings page
 7. Start a conversation with your bot and send `/start`
 
 ### Bot Commands
@@ -130,12 +128,10 @@ The app starts all services concurrently:
 ## Running with Docker
 
 ```bash
-cp .env.example .env
-# Edit .env with your API keys
 docker compose up -d
 ```
 
-Dashboard at `http://your-server:8000`.
+Dashboard at `http://your-server:8000`. Configure API keys via the Settings page.
 
 ## Dashboard Dev Mode
 
@@ -171,4 +167,4 @@ tests/                   # pytest + pytest-asyncio test suite
 
 ## Paper Trading
 
-Leave `T212_API_KEY` empty in `.env` to use the paper broker. It simulates order execution with realistic fills at current market prices, tracks virtual positions and P&L in memory (resets on restart). Useful for testing the full pipeline without risking real money.
+Leave `T212_API_KEY` unconfigured to use the paper broker. It simulates order execution with realistic fills at current market prices, tracks virtual positions and P&L in memory (resets on restart). Useful for testing the full pipeline without risking real money.

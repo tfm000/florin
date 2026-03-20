@@ -47,7 +47,7 @@ class Sentinel:
             "Starting Penny Stock Sentinel",
             env=self.settings.app_env.value,
             llm_mode=self.settings.llm_mode.value,
-            price_threshold=self.settings.scan_price_threshold,
+            price_range=f"${self.settings.scan_price_min:.2f}-${self.settings.scan_price_max:.2f}",
             momentum_threshold=self.settings.scan_momentum_threshold,
         )
 
@@ -62,6 +62,8 @@ class Sentinel:
 
         # --- Validate required config ---
         warnings = []
+        if not self.settings.fmp_api_key:
+            warnings.append("FMP API key not configured — market cap/sector enrichment disabled (optional)")
         if not self.settings.alpaca_configured:
             warnings.append("Alpaca API not configured — market data unavailable")
         if not self.settings.t212_configured:
@@ -90,7 +92,7 @@ class Sentinel:
 
         # Universe manager
         from scanner.universe import UniverseManager
-        universe = UniverseManager(self.settings, self.db)
+        universe = UniverseManager(self.settings, self.db, data_provider)
 
         # Scanner
         scanner = None
@@ -126,6 +128,9 @@ class Sentinel:
         from dashboard.app import create_app, serve as dashboard_serve
         from dashboard.deps import set_state
         set_state("shutdown_callback", self.shutdown)
+        set_state("universe", universe)
+        set_state("scanner", scanner)
+        set_state("data_provider", data_provider)
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---

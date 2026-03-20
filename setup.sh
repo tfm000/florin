@@ -70,15 +70,7 @@ else
     echo ""
 fi
 
-# ── 5. Environment config ───────────────────────────────
-if [ ! -f ".env" ]; then
-    cp .env.example .env
-    info ".env created from .env.example — edit it with your API keys"
-else
-    info ".env already exists"
-fi
-
-# ── 6. Database ─────────────────────────────────────────
+# ── 5. Database ──────────────────────────────────────────
 echo "Initialising database..."
 "$PYTHON" -c "
 import asyncio
@@ -122,10 +114,10 @@ echo ""
 echo "=== Setup complete! ==="
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env with your API keys (see README.md for details)"
-echo "  2. Start the app:"
+echo "  1. Start the app:"
 echo "     • Double-click Sentinel.command, or"
 echo "     • Run: source .venv/bin/activate && python main.py"
+echo "  2. Configure your API keys via the dashboard at http://localhost:8000/settings"
 echo ""
 echo "  Dashboard will be available at http://localhost:8000"
 echo ""

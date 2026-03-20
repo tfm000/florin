@@ -49,11 +49,20 @@ def register_callback_handlers(
         await query.answer(f"Placing buy order for {ticker}...")
 
         try:
-            order = OrderRequest(
-                ticker=ticker,
-                side=Side.BUY,
-                target_value=settings.default_position_size,
-            )
+            unit = settings.position_size_unit
+            size = settings.default_position_size
+            if unit == "shares":
+                order = OrderRequest(
+                    ticker=ticker,
+                    side=Side.BUY,
+                    quantity=size,
+                )
+            else:
+                order = OrderRequest(
+                    ticker=ticker,
+                    side=Side.BUY,
+                    target_value=size,
+                )
             result = await broker.place_order(order)
 
             if result.success:

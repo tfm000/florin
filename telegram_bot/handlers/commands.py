@@ -23,6 +23,16 @@ from telegram_bot.formatters import (
 logger = logging.getLogger(__name__)
 
 
+def _format_position_size(settings: Settings) -> str:
+    unit = settings.position_size_unit
+    size = settings.default_position_size
+    if unit == "gbp":
+        return f"£{size:.2f}"
+    elif unit == "usd":
+        return f"${size:.2f}"
+    return f"{size:.0f} shares"
+
+
 def register_command_handlers(
     dp: Dispatcher,
     settings: Settings,
@@ -58,7 +68,7 @@ def register_command_handlers(
             "📡 *System Status*",
             escape_md("━" * 25),
             f"🔧 Mode: {escape_md(settings.llm_mode.value)}",
-            f"💹 Price threshold: {escape_md(f'${settings.scan_price_threshold:.2f}')}",
+            f"💹 Price range: {escape_md(f'${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}')}",
             f"📊 Momentum threshold: {escape_md(f'{settings.scan_momentum_threshold:.1f}%')}",
             f"⏱ Scan interval: {escape_md(f'{settings.scan_interval_seconds}s')}",
             f"🤖 Default LLM: {escape_md(settings.llm_default_provider.value)}",
@@ -115,7 +125,7 @@ def register_command_handlers(
         lines = [
             "⚙️ *Settings*",
             escape_md("━" * 25),
-            f"Price threshold: {escape_md(f'${settings.scan_price_threshold:.2f}')}",
+            f"Price range: {escape_md(f'${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}')}",
             f"Momentum threshold: {escape_md(f'{settings.scan_momentum_threshold:.1f}%')}",
             f"Min volume: {escape_md(f'{settings.scan_min_volume:,}')}",
             f"Scan interval: {escape_md(f'{settings.scan_interval_seconds}s')}",
@@ -123,7 +133,7 @@ def register_command_handlers(
             f"LLM mode: {escape_md(settings.llm_mode.value)}",
             f"Default LLM: {escape_md(settings.llm_default_provider.value)}",
             f"Enabled LLMs: {provider_str}",
-            f"Position size: {escape_md(f'${settings.default_position_size:.2f}')}",
+            f"Position size: {escape_md(_format_position_size(settings))}",
             f"Stop loss: {escape_md(f'{settings.default_stop_loss_pct:.1f}%')}",
             f"Max positions: {escape_md(str(settings.max_open_positions))}",
         ]

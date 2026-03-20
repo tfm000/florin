@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import PositionCard from '../components/PositionCard'
 import AlertFeed from '../components/AlertFeed'
@@ -6,10 +7,37 @@ export default function Dashboard() {
   const { data: positions, loading: posLoading } = useApi('/positions', { interval: 30000 })
   const { data: account, loading: accLoading } = useApi('/account', { interval: 30000 })
   const { data: stats } = useApi('/stats')
+  const { data: health } = useApi('/health', { interval: 30000 })
+
+  const unconfigured = health?.setup_checklist?.filter(item => !item.configured) || []
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+
+      {/* Setup Banner */}
+      {unconfigured.length > 0 && (
+        <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4">
+          <h3 className="text-yellow-400 font-semibold mb-2">Setup Required</h3>
+          <p className="text-yellow-300/80 text-sm mb-3">
+            The data pipeline needs the following to be configured before stocks can be scanned:
+          </p>
+          <ul className="space-y-1 mb-3">
+            {unconfigured.map(item => (
+              <li key={item.key} className="text-sm text-yellow-300/70 flex items-start gap-2">
+                <span className="text-yellow-500 mt-0.5">&#x2022;</span>
+                <span><span className="text-yellow-300">{item.label}</span> — {item.description}</span>
+              </li>
+            ))}
+          </ul>
+          <Link
+            to="/settings"
+            className="inline-block text-sm text-yellow-400 hover:text-yellow-300 underline"
+          >
+            Go to Settings &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Account Summary */}
       {account && (
@@ -48,13 +76,17 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Stats */}
-      {stats && stats.total_trades > 0 && (
+      {stats && stats.total_trades > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Total Trades" value={stats.total_trades} />
           <StatCard label="Win Rate" value={`${stats.win_rate}%`} color={stats.win_rate >= 50 ? 'text-green-400' : 'text-red-400'} />
           <StatCard label="Total P&L" value={`$${stats.total_pnl.toFixed(2)}`} color={stats.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'} />
           <StatCard label="Round Trips" value={stats.round_trip_trades} />
         </div>
+      ) : stats && unconfigured.length === 0 && (
+        <p className="text-gray-500 text-sm">
+          No trades yet — the scanner is running and will generate alerts when momentum is detected.
+        </p>
       )}
     </div>
   )

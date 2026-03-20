@@ -14,9 +14,6 @@ build/
 venv/
 ENV/
 
-# Environment / secrets
-.env
-
 # Database
 *.db
 *.sqlite3

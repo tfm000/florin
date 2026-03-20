@@ -2,20 +2,21 @@
 Penny stock universe manager.
 
 Responsibilities:
-  1. On startup, discover all penny stocks (< price threshold) on NASDAQ/NYSE
-  2. Cross-reference with Trading 212 instruments for ticker mapping
-  3. Cache results in SQLite — refresh daily at market open
-  4. Provide fast in-memory access to the active universe
+  1. On startup, discover all penny stocks via Alpaca (primary) or FMP (fallback)
+  2. Optionally enrich with market cap/sector from FMP
+  3. Cross-reference with Trading 212 instruments for ticker mapping
+  4. Cache results in SQLite — refresh daily at market open
+  5. Provide fast in-memory access to the active universe
 
 Data flow:
-  FMP Stock Screener → filter → T212 instrument match → SQLite cache → in-memory dict
+  Alpaca assets + snapshots → price filter → FMP enrichment (optional) → SQLite cache → in-memory dict
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import select, update
 
@@ -26,6 +27,9 @@ from data.fmp_provider import FMPProvider
 from db.database import Database
 from db.models import UniverseStockORM
 
+if TYPE_CHECKING:
+    from data.alpaca_provider import AlpacaProvider
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,17 +39,26 @@ class UniverseManager:
 
     The universe is the list of all stocks that qualify for scanning:
     - Listed on NASDAQ or NYSE
-    - Price below configurable threshold (default $5)
+    - Price within configurable range (default $0.01–$5)
     - Actively trading (not halted/delisted)
+
+    Primary source: Alpaca (free, reliable).
+    Optional enrichment: FMP for market cap/sector data.
 
     The universe is cached in SQLite and refreshed daily.
     An in-memory dict provides O(1) lookups during scanning.
     """
 
-    def __init__(self, settings: Settings, db: Database) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        db: Database,
+        data_provider: AlpacaProvider | None = None,
+    ) -> None:
         self._settings = settings
         self._db = db
-        self._fmp = FMPProvider(settings)
+        self._data_provider = data_provider
+        self._fmp = FMPProvider(settings) if settings.fmp_api_key else None
 
         # In-memory cache: ticker -> StockInfo
         self._stocks: dict[str, StockInfo] = {}
@@ -85,7 +98,7 @@ class UniverseManager:
 
         Strategy:
         1. Try loading from SQLite cache (fast)
-        2. If cache is stale (>24h) or empty, refresh from FMP
+        2. If cache is stale (>24h) or empty, refresh from Alpaca/FMP
         """
         # Try cache first
         cached = await self._load_from_cache()
@@ -103,7 +116,7 @@ class UniverseManager:
             if await self._is_cache_fresh():
                 return
 
-            logger.info("Cache is stale — refreshing from FMP")
+            logger.info("Cache is stale — refreshing")
 
         # Full refresh
         await self.refresh()
@@ -113,26 +126,47 @@ class UniverseManager:
 
     async def refresh(self) -> None:
         """
-        Full universe refresh from FMP.
+        Full universe refresh.
 
-        Fetches all penny stocks, maps T212 tickers, and persists to SQLite.
+        Primary: Alpaca (assets + snapshots filtered by price range).
+        Fallback: FMP stock screener (if Alpaca unavailable).
+        Optional: FMP enrichment for market cap/sector.
         """
-        if not self._settings.fmp_api_key:
-            logger.warning("FMP API key not configured — skipping universe refresh")
-            return
+        stocks: list[StockInfo] = []
 
-        logger.info("Refreshing penny stock universe from FMP...")
+        # Primary: Alpaca
+        if self._data_provider:
+            logger.info("Refreshing penny stock universe from Alpaca...")
+            try:
+                stocks = await self._data_provider.get_penny_stock_universe(
+                    price_min=self._settings.scan_price_min,
+                    price_max=self._settings.scan_price_max,
+                )
+            except Exception:
+                logger.exception("Alpaca universe discovery failed")
 
-        async with self._fmp:
-            stocks = await self._fmp.get_penny_stocks()
+        # Fallback: FMP screener
+        if not stocks and self._fmp:
+            logger.info("Falling back to FMP for universe discovery...")
+            try:
+                async with self._fmp:
+                    stocks = await self._fmp.get_penny_stocks()
+            except Exception:
+                logger.exception("FMP universe discovery failed")
 
         if not stocks:
-            logger.warning("FMP returned empty universe — keeping existing cache")
+            if self._stocks:
+                logger.warning("No stocks discovered — keeping existing cache")
+            else:
+                logger.warning("No stocks discovered and no cache available")
             return
 
         # Map T212 tickers
         for stock in stocks:
             stock.t212_ticker = f"{stock.ticker}{T212_TICKER_SUFFIX}"
+
+        # Apply market cap filter if we have market cap data and filters are set
+        stocks = self._apply_market_cap_filter(stocks)
 
         # Update in-memory cache
         self._stocks = {s.ticker: s for s in stocks}
@@ -145,6 +179,69 @@ class UniverseManager:
             "Universe refreshed: %d penny stocks across NASDAQ/NYSE",
             len(self._stocks),
         )
+
+        # Optional: FMP enrichment for market cap/sector (background, rate-limited)
+        await self._enrich_from_fmp()
+
+    async def _enrich_from_fmp(self) -> None:
+        """Enrich stocks missing market cap data using FMP profiles."""
+        if not self._fmp or not self._settings.fmp_api_key:
+            return
+
+        # Find tickers without market cap data
+        missing = [t for t, s in self._stocks.items() if not s.market_cap]
+        if not missing:
+            return
+
+        logger.info("Enriching %d tickers with FMP market cap data...", len(missing))
+        try:
+            async with self._fmp:
+                enriched = await self._fmp.enrich_batch(missing, max_calls=50)
+
+            for ticker, data in enriched.items():
+                stock = self._stocks.get(ticker)
+                if stock:
+                    stock.market_cap = data.get("market_cap", 0)
+                    stock.sector = data.get("sector", "")
+                    stock.industry = data.get("industry", "")
+
+            # Re-apply market cap filter and re-save
+            if enriched:
+                filtered = self._apply_market_cap_filter(list(self._stocks.values()))
+                self._stocks = {s.ticker: s for s in filtered}
+                await self._save_to_cache(list(self._stocks.values()))
+                logger.info("FMP enrichment complete: %d tickers updated", len(enriched))
+
+        except Exception:
+            logger.exception("FMP enrichment failed")
+
+    def _apply_market_cap_filter(self, stocks: list[StockInfo]) -> list[StockInfo]:
+        """Filter stocks by market cap if thresholds are configured."""
+        min_cap = self._settings.scan_market_cap_min
+        max_cap = self._settings.scan_market_cap_max
+
+        if not min_cap and not max_cap:
+            return stocks
+
+        filtered = []
+        for stock in stocks:
+            # If no market cap data, keep the stock (will be enriched later)
+            if not stock.market_cap:
+                filtered.append(stock)
+                continue
+            if min_cap and stock.market_cap < min_cap:
+                continue
+            if max_cap and stock.market_cap > max_cap:
+                continue
+            filtered.append(stock)
+
+        removed = len(stocks) - len(filtered)
+        if removed:
+            logger.info(
+                "Market cap filter removed %d stocks (min=$%.0f, max=$%.0f)",
+                removed, min_cap, max_cap,
+            )
+        return filtered
 
     async def update_prices(self, prices: dict[str, float]) -> None:
         """
@@ -159,7 +256,7 @@ class UniverseManager:
             if stock:
                 stock.last_price = price
                 # Check if stock has graduated out of penny stock territory
-                if price > self._settings.scan_price_threshold * 1.5:
+                if price > self._settings.scan_price_max * 1.5:
                     # 50% buffer to avoid constant churn at the boundary
                     stock.in_universe = False
                     removed.append(ticker)

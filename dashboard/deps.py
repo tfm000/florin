@@ -44,3 +44,15 @@ def get_ws_manager() -> "ConnectionManager":
 
 def get_shutdown_callback():
     return _state.get("shutdown_callback")
+
+
+def get_universe():
+    return _state.get("universe")
+
+
+def get_scanner():
+    return _state.get("scanner")
+
+
+def get_data_provider():
+    return _state.get("data_provider")

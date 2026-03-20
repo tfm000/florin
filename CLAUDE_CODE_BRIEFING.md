@@ -13,9 +13,8 @@ The user trades via a **Trading 212 Stocks and Shares ISA** and is aware that T2
 Phase 1 is **done**. The following files exist and are production-ready:
 
 ### Configuration
-- **`config/settings.py`** — Pydantic `BaseSettings` loading all config from `.env`. Includes typed enums for LLM mode (single/consensus), LLM providers, T212 environment (demo/live), Alpaca feed (iex/sip). Has derived properties like `t212_base_url`, `alpaca_data_ws_url`, `get_enabled_llm_providers()`. Singleton via `get_settings()`.
+- **`config/settings.py`** — Pydantic `BaseSettings` with defaults, overridden by database settings table (configured via dashboard). Includes typed enums for LLM mode (single/consensus), LLM providers, T212 environment (demo/live), Alpaca feed (iex/sip). Has derived properties like `t212_base_url`, `alpaca_data_ws_url`, `get_enabled_llm_providers()`. Singleton via `get_settings()`.
 - **`config/constants.py`** — All magic values: subreddit list, API base URLs, SEC EDGAR endpoints, fraud detection thresholds, LLM prompt templates (ANALYSIS_SYSTEM_PROMPT, SINGLE_REPORT_PROMPT, CONSENSUS_META_PROMPT), rate limits, T212 ticker suffix conventions.
-- **`.env.example`** — Fully documented template of every environment variable.
 
 ### Core Data Models (`core/models.py`)
 27 Pydantic models covering the entire data flow:

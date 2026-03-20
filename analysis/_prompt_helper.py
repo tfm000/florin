@@ -30,6 +30,7 @@ def build_user_prompt(
     alert: AlertSignal,
     sentiment: SentimentData,
     fraud_risk: FraudRiskScore,
+    user_context: str = "",
 ) -> str:
     """Build the user prompt from alert, sentiment, and fraud data."""
     # SEC summary from filings
@@ -51,6 +52,7 @@ def build_user_prompt(
         sentiment_summary=sentiment.to_summary(),
         sec_summary=sec_summary,
         fraud_summary=fraud_risk.to_summary(),
+        user_context=user_context or "No additional context provided.",
     )
 
 

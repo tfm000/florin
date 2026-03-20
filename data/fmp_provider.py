@@ -23,6 +23,7 @@ from core.models import StockInfo
 logger = logging.getLogger(__name__)
 
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_STABLE_URL = "https://financialmodelingprep.com/stable"
 
 
 class FMPProvider:
@@ -35,7 +36,8 @@ class FMPProvider:
 
     def __init__(self, settings: Settings) -> None:
         self._api_key = settings.fmp_api_key
-        self._price_threshold = settings.scan_price_threshold
+        self._price_min = settings.scan_price_min
+        self._price_max = settings.scan_price_max
         self._client: httpx.AsyncClient | None = None
 
     async def connect(self) -> None:
@@ -72,8 +74,8 @@ class FMPProvider:
         for exchange in ("NASDAQ", "NYSE"):
             try:
                 data = await self._get("stock-screener", params={
-                    "priceLowerThan": self._price_threshold,
-                    "priceMoreThan": 0.01,  # Exclude zero-price tickers
+                    "priceLowerThan": self._price_max,
+                    "priceMoreThan": self._price_min,
                     "exchange": exchange,
                     "isActivelyTrading": "true",
                     "limit": 5000,
@@ -99,8 +101,8 @@ class FMPProvider:
                         all_stocks.append(stock)
 
                 logger.info(
-                    "FMP: found %d penny stocks on %s (< $%.2f)",
-                    len(data), exchange, self._price_threshold,
+                    "FMP: found %d penny stocks on %s ($%.2f–$%.2f)",
+                    len(data), exchange, self._price_min, self._price_max,
                 )
 
             except httpx.HTTPStatusError as e:
@@ -110,6 +112,56 @@ class FMPProvider:
 
         logger.info("FMP: total penny stocks discovered: %d", len(all_stocks))
         return all_stocks
+
+    async def get_stock_profile(self, ticker: str) -> dict[str, Any] | None:
+        """
+        Get a single stock's profile (market cap, sector, industry).
+
+        Uses the /stable/profile endpoint which works on free tier
+        for individual symbols. Rate-limited to ~250 calls/day.
+        """
+        if not self._client:
+            raise RuntimeError("FMPProvider not connected — call connect() first")
+        if not self._api_key:
+            return None
+
+        try:
+            resp = await self._client.get(
+                f"{FMP_STABLE_URL}/profile",
+                params={"symbol": ticker, "apikey": self._api_key},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list) and data:
+                return data[0]
+        except Exception:
+            logger.debug("FMP profile fetch failed for %s", ticker)
+        return None
+
+    async def enrich_batch(
+        self, tickers: list[str], max_calls: int = 50,
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Enrich a batch of tickers with market cap/sector data.
+
+        Rate-limited: fetches up to max_calls profiles per invocation.
+        Returns dict of ticker -> {market_cap, sector, industry}.
+        """
+        import asyncio
+
+        results: dict[str, dict[str, Any]] = {}
+        for ticker in tickers[:max_calls]:
+            profile = await self.get_stock_profile(ticker)
+            if profile:
+                results[ticker] = {
+                    "market_cap": profile.get("mktCap", 0),
+                    "sector": profile.get("sector", ""),
+                    "industry": profile.get("industry", ""),
+                }
+            await asyncio.sleep(0.5)  # ~2 req/s to stay under limits
+
+        logger.info("FMP: enriched %d/%d tickers", len(results), len(tickers[:max_calls]))
+        return results
 
     async def get_stock_quote(self, ticker: str) -> dict[str, Any] | None:
         """Get a single stock's current quote. Used for spot-checks."""

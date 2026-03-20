@@ -26,6 +26,7 @@ class GeminiAnalyser(LLMAnalyser):
     """Cloud LLM analysis via Google Gemini."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._model_name_str = settings.gemini_model
         self._client = genai.Client(api_key=settings.gemini_api_key)
         self._config = types.GenerateContentConfig(
@@ -62,7 +63,7 @@ class GeminiAnalyser(LLMAnalyser):
         start = time.monotonic()
 
         try:
-            user_prompt = build_user_prompt(alert, sentiment, fraud_risk)
+            user_prompt = build_user_prompt(alert, sentiment, fraud_risk, self._settings.llm_user_context)
 
             response = await self._client.aio.models.generate_content(
                 model=self._model_name_str,

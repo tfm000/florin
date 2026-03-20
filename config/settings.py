@@ -1,5 +1,5 @@
 """
-Centralised configuration loaded from environment variables / .env file.
+Centralised configuration loaded from database settings table.
 
 All settings are typed, validated, and documented. Access via:
     from config.settings import get_settings
@@ -48,8 +48,6 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
@@ -119,7 +117,10 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # --- Scanner ---
-    scan_price_threshold: float = Field(default=5.0, ge=0.01, le=100.0)
+    scan_price_min: float = Field(default=0.01, ge=0.001, le=100.0)
+    scan_price_max: float = Field(default=5.0, ge=0.01, le=100.0)
+    scan_market_cap_min: float = Field(default=0.0, ge=0.0)
+    scan_market_cap_max: float = Field(default=0.0, ge=0.0)
     scan_momentum_threshold: float = Field(default=5.0, ge=1.0, le=100.0)
     scan_interval_seconds: int = Field(default=120, ge=10, le=3600)
     scan_cooldown_minutes: int = Field(default=30, ge=1, le=1440)
@@ -127,6 +128,7 @@ class Settings(BaseSettings):
 
     # --- Trading ---
     default_position_size: float = Field(default=100.0, ge=1.0)
+    position_size_unit: str = "gbp"
     default_stop_loss_pct: float = Field(default=10.0, ge=0.5, le=50.0)
     max_open_positions: int = Field(default=10, ge=1, le=100)
     max_daily_trades: int = Field(default=20, ge=1, le=200)
@@ -135,6 +137,7 @@ class Settings(BaseSettings):
     llm_mode: LLMMode = LLMMode.SINGLE
     llm_default_provider: LLMProvider = LLMProvider.GROQ
     llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE
+    llm_user_context: str = ""
 
     # --- Dashboard ---
     dashboard_host: str = "0.0.0.0"
@@ -195,7 +198,7 @@ def get_settings() -> Settings:
 
 
 async def load_db_overrides(db: object) -> None:
-    """Load setting overrides from the database on top of .env values."""
+    """Load setting overrides from the database."""
     from sqlalchemy import select
     from db.models import SettingORM
 
