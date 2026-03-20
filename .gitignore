@@ -1,6 +1,53 @@
-/.claude
-/.env.example
-/.pytest_cache
-/.venv
-/CLAUDE_CODE_BRIEFING.md
-/plan.md
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Environment / secrets
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (dashboard_ui)
+node_modules/
+dashboard_ui/dist/
+dashboard/static/
+
+# Logs
+*.log
+
+# HuggingFace model cache
+models/
+
+# Claude Code
+.claude/
