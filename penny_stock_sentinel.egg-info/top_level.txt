@@ -1,0 +1,11 @@
+analysis
+broker
+config
+core
+dashboard
+data
+db
+scanner
+sentiment
+telegram_bot
+tests

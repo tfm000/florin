@@ -1,0 +1,6 @@
+/.claude
+/.env.example
+/.pytest_cache
+/.venv
+/CLAUDE_CODE_BRIEFING.md
+/plan.md
