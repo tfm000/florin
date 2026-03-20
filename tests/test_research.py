@@ -75,6 +75,16 @@ async def app():
         "VIX": {"price": 15.2, "change_pct": -2.1},
         "S&P 500": {"price": 5150.0, "change_pct": 0.8},
     }
+    yf_mock.get_yield_curve_history.return_value = {
+        "dates": ["2024-01-02", "2024-06-01", "2024-12-01"],
+        "tenors": {
+            "3M": [5.35, 5.25, 4.50],
+            "2Y": [4.40, 4.60, 4.20],
+            "5Y": [3.90, 4.10, 3.80],
+            "10Y": [3.95, 4.30, 4.25],
+            "30Y": [4.10, 4.50, 4.45],
+        },
+    }
 
     app = create_app(settings, db, event_bus)
     set_state("yfinance_provider", yf_mock)
@@ -159,8 +169,27 @@ class TestYieldCurve:
         assert data["curve"]["10Y"] == 4.25
 
     @pytest.mark.asyncio
-    async def test_invalid_region_rejected(self, client):
-        resp = await client.get("/api/research/yield-curve?region=Invalid")
+    async def test_non_us_region_returns_us_data(self, client):
+        """Non-US regions are not supported; endpoint always returns US data."""
+        resp = await client.get("/api/research/yield-curve?region=UK")
+        assert resp.status_code == 200
+        assert resp.json()["region"] == "US"
+
+
+class TestYieldCurveHistory:
+    @pytest.mark.asyncio
+    async def test_get_yield_curve_history(self, client):
+        resp = await client.get("/api/research/yield-curve/history?period=1y")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["dates"]) == 3
+        assert "10Y" in data["tenors"]
+        assert len(data["tenors"]["10Y"]) == 3
+        assert data["tenors"]["10Y"][0] == 3.95
+
+    @pytest.mark.asyncio
+    async def test_invalid_period_rejected(self, client):
+        resp = await client.get("/api/research/yield-curve/history?period=invalid")
         assert resp.status_code == 422
 
 

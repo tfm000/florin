@@ -88,7 +88,7 @@ async def list_monitored(
 
     items = []
     for r in rows:
-        cached = price_cache.get(r.ticker, {})
+        cached = price_cache.get(r.ticker)
         items.append(MonitoredAssetResponse(
             id=r.id,
             ticker=r.ticker,
@@ -97,9 +97,9 @@ async def list_monitored(
             asset_type=r.asset_type,
             is_active=r.is_active,
             added_at=r.added_at,
-            current_price=cached.get("price") or cached.get("close"),
-            change_pct=cached.get("change_pct"),
-            volume=cached.get("volume"),
+            current_price=getattr(cached, "price", None) if cached else None,
+            change_pct=getattr(cached, "change_pct", None) if cached else None,
+            volume=getattr(cached, "volume", None) if cached else None,
         ))
 
     return PaginatedResponse(

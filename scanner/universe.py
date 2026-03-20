@@ -209,7 +209,8 @@ class UniverseManager:
             for ticker, snap in snapshots.items():
                 stock = self._stocks.get(ticker)
                 if stock and snap:
-                    price = snap.get("price") or snap.get("close")
+                    # snap is a StockQuote Pydantic model, not a dict
+                    price = getattr(snap, "price", None) or getattr(snap, "close", None)
                     if price:
                         stock.last_price = price
                         updated += 1

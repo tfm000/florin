@@ -96,8 +96,11 @@ async def get_universe(
 
     items = []
     for s in stocks:
-        cached = price_cache.get(s.ticker, {})
-        today_return = cached.get("change_pct")
+        cached = price_cache.get(s.ticker)
+        today_return = getattr(cached, "change_pct", None) if cached else None
+        # Filter out implausible returns (bad data from corporate actions)
+        if today_return is not None and abs(today_return) > 200:
+            today_return = None
 
         items.append(UniverseStockResponse(
             ticker=s.ticker,
@@ -110,7 +113,7 @@ async def get_universe(
             shares_outstanding=s.shares_outstanding,
             inferred_market_cap=s.inferred_market_cap,
             avg_volume=s.avg_volume,
-            last_price=cached.get("price") or s.last_price,
+            last_price=getattr(cached, "price", None) or s.last_price,
             today_return=today_return,
             is_monitored=s.ticker in monitored_tickers,
             in_universe=s.in_universe,

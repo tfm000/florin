@@ -89,7 +89,40 @@ class PolicyRate(BaseModel):
     currency: str
 
 
+class YieldCurveHistoryResponse(BaseModel):
+    dates: list[str]
+    tenors: dict[str, list[float | None]]
+
+
+class IVSkewPoint(BaseModel):
+    strike: float
+    moneyness: float = 0.0
+    call_iv: float | None = None
+    put_iv: float | None = None
+    raw_call_iv: float | None = None
+    raw_put_iv: float | None = None
+    vol: float | None = None
+    spread: float | None = None
+
+
+class IVTermPoint(BaseModel):
+    expiry: str
+    call_iv: float
+    put_iv: float
+    spread: float
+
+
+class PutCallIVResponse(BaseModel):
+    ticker: str
+    spot: float
+    skew_expiry: str = ""
+    available_expiries: list[str] = []
+    skew: list[IVSkewPoint]
+    term_structure: list[IVTermPoint]
+
+
 class MacroIndicator(BaseModel):
+    ticker: str = ""
     price: float
     change_pct: float
 
@@ -154,10 +187,15 @@ async def get_asset_history(
     ticker: str,
     period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
     interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
+    start: str = Query(default="", description="Custom start date (YYYY-MM-DD)"),
+    end: str = Query(default="", description="Custom end date (YYYY-MM-DD)"),
     yf=Depends(get_yfinance_dep),
 ):
-    """Historical OHLCV data."""
-    history = await yf.get_history(ticker.upper(), period=period, interval=interval)
+    """Historical OHLCV data. Use start/end for custom date ranges, or period for presets."""
+    if start and end:
+        history = await yf.get_history(ticker.upper(), start=start, end=end, interval=interval)
+    else:
+        history = await yf.get_history(ticker.upper(), period=period, interval=interval)
     return [HistoryPoint(**h) for h in history]
 
 
@@ -172,9 +210,6 @@ async def analyse_asset(
 
     Enriches the prompt with macro context, news, and performance data.
     """
-    from analysis._prompt_helper import build_research_prompt, parse_llm_response
-    from dashboard.deps import get_settings as _get_settings
-
     ticker = ticker.upper()
 
     # Gather data concurrently
@@ -191,75 +226,46 @@ async def analyse_asset(
     if not info.get("name") and not info.get("current_price"):
         raise NotFoundError(f"No data found for ticker {ticker}")
 
-    # Build the prompt
-    prompt = build_research_prompt(
-        asset_info=info,
-        performance=performance,
-        macro=macro,
-        news=news,
-        user_context=settings.llm_user_context,
-    )
-
-    # Get the default analyser
+    # Get the available analysers
     from dashboard.deps import _state
     analysers = _state.get("analysers", {})
     default_provider = settings.llm_default_provider.value
 
     analyser = analysers.get(default_provider)
     if not analyser:
+        # Try any non-finbert analyser
         for name, a in analysers.items():
             if name != "finbert":
                 analyser = a
                 break
 
     if not analyser:
-        raise ServiceUnavailableError("No LLM analysers available")
+        raise ServiceUnavailableError(
+            "No LLM analysers available. Configure Groq, Claude, Gemini, or start Ollama."
+        )
 
-    # Build minimal objects for the analyser interface
-    from config.constants import RESEARCH_ANALYSIS_SYSTEM_PROMPT
+    # Build a minimal AlertSignal and empty sentiment/fraud for the standard analyse() interface
     from core.models import AlertSignal, FraudRiskScore, SentimentData
 
-    # Use the analyser's raw call if available, otherwise go through analyse()
-    import time
-    start = time.monotonic()
+    alert = AlertSignal(
+        ticker=ticker,
+        price=info.get("current_price") or 0.0,
+        change_pct=0.0,
+        volume=0,
+    )
+    sentiment = SentimentData()
+    fraud_risk = FraudRiskScore()
 
     try:
-        if hasattr(analyser, "_call_llm"):
-            raw = await analyser._call_llm(RESEARCH_ANALYSIS_SYSTEM_PROMPT, prompt)
-        elif hasattr(analyser, "_generate"):
-            raw = await analyser._generate(RESEARCH_ANALYSIS_SYSTEM_PROMPT, prompt)
-        else:
-            # Fallback: construct minimal alert and use standard analyse()
-            alert = AlertSignal(
-                ticker=ticker,
-                price=info.get("current_price") or 0.0,
-                change_pct=0.0,
-                volume=0,
-            )
-            sentiment = SentimentData()
-            fraud_risk = FraudRiskScore()
-            analysis = await analyser.analyse(alert, sentiment, fraud_risk)
-            return LLMAnalysisResponse(
-                ticker=ticker,
-                provider=analysis.provider,
-                model=analysis.model,
-                sentiment_score=analysis.sentiment_score,
-                confidence=analysis.confidence,
-                bullish_signals=analysis.bullish_signals,
-                bearish_signals=analysis.bearish_signals,
-                recommendation=analysis.recommendation.value,
-                summary=analysis.summary,
-                key_factors=analysis.key_factors,
-                error=analysis.error,
-            )
-
-        latency = int((time.monotonic() - start) * 1000)
-        analysis = parse_llm_response(
-            raw, analyser.provider_name, analyser.model_name, latency,
-        )
+        analysis = await analyser.analyse(alert, sentiment, fraud_risk)
     except Exception as e:
         logger.exception("LLM analysis failed for %s", ticker)
-        raise ExternalServiceError(f"LLM analysis failed: {e}")
+        # Return error in response body rather than 502, so the frontend can show it
+        return LLMAnalysisResponse(
+            ticker=ticker,
+            provider=getattr(analyser, "provider_name", "unknown"),
+            error=f"LLM connection failed: {e}",
+        )
 
     return LLMAnalysisResponse(
         ticker=ticker,
@@ -315,12 +321,22 @@ async def get_market_news(
 
 @router.get("/research/yield-curve", response_model=YieldCurveResponse)
 async def get_yield_curve(
-    region: str = Query(default="US", pattern="^(US|UK|Japan|Europe)$"),
+    region: str = Query(default="US"),
     yf=Depends(get_yfinance_dep),
 ):
-    """Treasury yield curve data points."""
-    data = await yf.get_yield_curve(region)
+    """US Treasury yield curve data points."""
+    data = await yf.get_yield_curve("US")
     return YieldCurveResponse(**data)
+
+
+@router.get("/research/yield-curve/history", response_model=YieldCurveHistoryResponse)
+async def get_yield_curve_history(
+    period: str = Query(default="1y", pattern="^(1mo|3mo|6mo|1y|2y|5y)$"),
+    yf=Depends(get_yfinance_dep),
+):
+    """Historical US Treasury yield curves over time."""
+    data = await yf.get_yield_curve_history(period)
+    return YieldCurveHistoryResponse(**data)
 
 
 @router.get("/research/policy-rates", response_model=list[PolicyRate])
@@ -340,3 +356,14 @@ async def get_macro_summary(
     data = await yf.get_macro_summary()
     indicators = {k: MacroIndicator(**v) for k, v in data.items()}
     return MacroSummary(indicators=indicators)
+
+
+@router.get("/research/iv-spread", response_model=PutCallIVResponse)
+async def get_put_call_iv_spread(
+    ticker: str = Query(default="SPY", description="Equity ticker (default SPY)"),
+    expiry: str = Query(default="", description="Specific expiry date (YYYY-MM-DD), empty for auto-select"),
+    yf=Depends(get_yfinance_dep),
+):
+    """Put-call implied volatility spread: skew across strikes and term structure."""
+    data = await yf.get_put_call_iv_spread(ticker.upper(), expiry=expiry or None)
+    return PutCallIVResponse(**data)

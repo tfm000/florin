@@ -1,16 +1,14 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import SearchBar from '../components/SearchBar'
 import NewsCard from '../components/NewsCard'
 import YieldCurveChart from '../components/YieldCurveChart'
+import PutCallIVChart from '../components/PutCallIVChart'
 import MetricsGrid from '../components/MetricsGrid'
 
 export default function Research() {
   const navigate = useNavigate()
-  const [yieldRegion, setYieldRegion] = useState('US')
   const { data: news, loading: newsLoading } = useApi('/research/news')
-  const { data: yieldData } = useApi(`/research/yield-curve?region=${yieldRegion}`)
   const { data: rates } = useApi('/research/policy-rates')
   const { data: macro } = useApi('/research/macro')
 
@@ -24,6 +22,8 @@ export default function Research() {
         value: v.price,
         format: label.includes('Yield') || label === 'VIX' ? 'number' : 'dollar',
         color: v.change_pct >= 0 ? 'text-green-400' : 'text-red-400',
+        ticker: v.ticker,
+        changePct: v.change_pct,
       }))
     : []
 
@@ -59,22 +59,12 @@ export default function Research() {
 
         {/* Yield Curve */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-300">Yield Curve</h2>
-            <select
-              value={yieldRegion}
-              onChange={e => setYieldRegion(e.target.value)}
-              className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white"
-            >
-              <option value="US">US</option>
-              <option value="UK">UK</option>
-              <option value="Japan">Japan</option>
-              <option value="Europe">Europe</option>
-            </select>
-          </div>
-          <YieldCurveChart data={yieldData} region={yieldRegion} />
+          <YieldCurveChart />
         </div>
       </div>
+
+      {/* Put-Call IV Spread */}
+      <PutCallIVChart />
 
       {/* G10 Policy Rates */}
       {rates && (

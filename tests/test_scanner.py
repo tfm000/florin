@@ -188,7 +188,7 @@ class TestMomentumScanner:
         alerts = await scanner.scan_once()
         assert len(alerts) == 0
 
-    def test_best_change_pct_uses_largest(self) -> None:
+    def test_best_positive_change_uses_largest(self) -> None:
         scanner, _, _ = self._make_scanner()
 
         quote = StockQuote(
@@ -199,9 +199,38 @@ class TestMomentumScanner:
             volume=100_000,
         )
 
-        result = scanner._best_change_pct(quote)
+        result = scanner._best_positive_change(quote)
         # Should pick +25% from open as it's larger
         assert result == pytest.approx(25.0, abs=0.1)
+
+    def test_best_positive_change_ignores_negative(self) -> None:
+        scanner, _, _ = self._make_scanner()
+
+        quote = StockQuote(
+            ticker="TEST",
+            price=1.80,
+            open_price=2.00,   # -10% from open
+            prev_close=2.30,   # -21.7% from prev close
+            volume=100_000,
+        )
+
+        result = scanner._best_positive_change(quote)
+        assert result == 0.0  # No positive change
+
+    def test_best_positive_change_filters_implausible(self) -> None:
+        scanner, _, _ = self._make_scanner()
+
+        quote = StockQuote(
+            ticker="TEST",
+            price=10.0,
+            open_price=1.00,   # +900% — bad data
+            prev_close=9.50,   # +5.3% — real
+            volume=100_000,
+        )
+
+        result = scanner._best_positive_change(quote)
+        # Should pick +5.3% and filter out the 900%
+        assert result == pytest.approx(5.26, abs=0.1)
 
     def test_scanner_not_running_initially(self) -> None:
         scanner, _, _ = self._make_scanner()
