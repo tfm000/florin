@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from core.models import (
@@ -154,7 +154,7 @@ class SentimentAggregator:
 
         return SentimentData(
             ticker=ticker,
-            collected_at=datetime.utcnow(),
+            collected_at=datetime.now(UTC),
             # Reddit
             reddit_posts=reddit_posts,
             reddit_mention_count=reddit_data.get("mention_count", 0),

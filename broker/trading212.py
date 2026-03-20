@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -157,7 +157,7 @@ class Trading212Broker(Broker):
             total_value=data.get("total", 0.0),
             unrealised_pnl=data.get("pipiResult", 0.0),
             realised_pnl=data.get("result", 0.0),
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(UTC),
         )
 
     # =========================================================================
@@ -521,7 +521,7 @@ class Trading212Broker(Broker):
             price = item.get("filledValue", 0.0) / quantity if quantity > 0 else 0.0
 
             executed_str = item.get("dateExecuted", "")
-            executed_at = datetime.utcnow()
+            executed_at = datetime.now(UTC)
             if executed_str:
                 try:
                     executed_at = datetime.fromisoformat(executed_str.replace("Z", "+00:00"))

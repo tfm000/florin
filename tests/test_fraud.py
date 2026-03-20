@@ -1,6 +1,6 @@
 """Tests for the fraud detector module."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -67,7 +67,7 @@ class TestFraudDetector:
         """Stock with normal volume, news, and filings should score low."""
         alert = _make_alert(volume=60_000, avg_volume=50_000)
         sentiment = _make_sentiment(
-            sec_filings=[SECFiling(form_type="8-K", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="8-K", filed_date=datetime.now(UTC))],
             news_articles=[NewsArticle(title="Company announces earnings")],
         )
         result = await detector.assess(alert, sentiment)
@@ -98,7 +98,7 @@ class TestFraudDetector:
     @pytest.mark.asyncio
     async def test_new_reddit_accounts(self, detector):
         """Posts from new/low-karma accounts should flag."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         posts = [
             RedditPost(
                 subreddit="pennystocks", title=f"SCAM to the moon {i}",
@@ -115,7 +115,7 @@ class TestFraudDetector:
     @pytest.mark.asyncio
     async def test_coordinated_posting(self, detector):
         """Many posts in a short window should flag as coordinated."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         posts = [
             RedditPost(
                 subreddit="pennystocks", title=f"Buy SCAM {i}",
@@ -133,7 +133,7 @@ class TestFraudDetector:
         """Stocks under $1 should flag as high manipulation risk."""
         alert = _make_alert(price=0.05, volume=50_000, avg_volume=50_000)
         sentiment = _make_sentiment(
-            sec_filings=[SECFiling(form_type="10-K", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="10-K", filed_date=datetime.now(UTC))],
         )
         result = await detector.assess(alert, sentiment)
         assert any("Sub-dime" in f for f in result.flags)
@@ -143,7 +143,7 @@ class TestFraudDetector:
         """Stocks between $0.10 and $1 should flag but less severely."""
         alert = _make_alert(price=0.50, volume=50_000, avg_volume=50_000)
         sentiment = _make_sentiment(
-            sec_filings=[SECFiling(form_type="10-K", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="10-K", filed_date=datetime.now(UTC))],
         )
         result = await detector.assess(alert, sentiment)
         assert any("Sub-penny" in f for f in result.flags)
@@ -171,7 +171,7 @@ class TestFraudDetector:
     @pytest.mark.asyncio
     async def test_critical_risk_level(self, detector):
         """Multiple red flags should produce CRITICAL risk level."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         posts = [
             RedditPost(
                 subreddit="pennystocks", title=f"SCAM {i}",
@@ -191,7 +191,7 @@ class TestFraudDetector:
     @pytest.mark.asyncio
     async def test_score_clamped_to_10(self, detector):
         """Score should never exceed 10."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         posts = [
             RedditPost(
                 subreddit="pennystocks", title=f"SCAM {i}",
@@ -222,7 +222,7 @@ class TestFraudDetector:
         rich = _make_sentiment(
             reddit_posts=[RedditPost(subreddit="s", title=f"t{i}", score=1) for i in range(10)],
             stocktwits_messages=[StockTwitsMessage(text=f"m{i}") for i in range(10)],
-            sec_filings=[SECFiling(form_type="4", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="4", filed_date=datetime.now(UTC))],
             news_articles=[NewsArticle(title=f"n{i}") for i in range(3)],
         )
         r2 = await detector.assess(alert, rich)

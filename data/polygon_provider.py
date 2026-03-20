@@ -13,7 +13,7 @@ Requires a Polygon.io subscription ($29/mo for Stocks Starter plan).
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import AsyncIterator
 
 import httpx
@@ -151,7 +151,7 @@ class PolygonProvider(MarketDataProvider):
         try:
             resp = await self._http.get(
                 f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{tf_type}"
-                f"/2024-01-01/{datetime.utcnow().strftime('%Y-%m-%d')}",
+                f"/2024-01-01/{datetime.now(UTC).strftime('%Y-%m-%d')}",
                 params={
                     "apiKey": self._api_key,
                     "adjusted": "true",
@@ -209,7 +209,7 @@ class PolygonProvider(MarketDataProvider):
                 prev_close=prev_close,
                 volume=day.get("v", 0),
                 change_pct=change_pct,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(UTC),
             )
         except Exception:
             return None

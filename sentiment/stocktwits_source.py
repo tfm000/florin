@@ -11,7 +11,7 @@ No auth required for basic access. Rate limit: 200 requests/hour.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -105,7 +105,7 @@ class StockTwitsSource(SentimentSource):
                 sentiment = entities["sentiment"].get("basic")
 
             created_str = msg.get("created_at", "")
-            created_at = datetime.utcnow()
+            created_at = datetime.now(UTC)
             if created_str:
                 try:
                     created_at = datetime.fromisoformat(

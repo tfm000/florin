@@ -7,7 +7,7 @@ Every inter-module data exchange uses one of these models.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional
 
@@ -88,7 +88,7 @@ class StockQuote(BaseModel):
     prev_close: float = 0.0
     volume: int = 0
     change_pct: float = 0.0
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def change_from_open(self) -> float:
@@ -141,7 +141,7 @@ class AlertSignal(BaseModel):
     volume: int
     avg_volume: int = 0
     source: AlertSource = AlertSource.MOMENTUM
-    triggered_at: datetime = Field(default_factory=datetime.utcnow)
+    triggered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -161,7 +161,7 @@ class RedditPost(BaseModel):
     author: str = ""
     author_karma: int = 0
     account_age_days: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class StockTwitsMessage(BaseModel):
@@ -169,7 +169,7 @@ class StockTwitsMessage(BaseModel):
     text: str
     sentiment: Optional[str] = None  # "Bullish" | "Bearish" | None
     likes: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SECFiling(BaseModel):
@@ -191,14 +191,14 @@ class NewsArticle(BaseModel):
     source: str = ""
     url: str = ""
     summary: str = ""
-    published_at: datetime = Field(default_factory=datetime.utcnow)
+    published_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     relevance_score: float = 0.0
 
 
 class SentimentData(BaseModel):
     """Aggregated sentiment from all sources for a single ticker."""
     ticker: str
-    collected_at: datetime = Field(default_factory=datetime.utcnow)
+    collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Reddit
     reddit_posts: list[RedditPost] = Field(default_factory=list)
@@ -259,7 +259,7 @@ class FraudRiskScore(BaseModel):
     risk_level: FraudRisk = FraudRisk.LOW
     flags: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    assessed_at: datetime = Field(default_factory=datetime.utcnow)
+    assessed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def to_summary(self) -> str:
         lines = [f"Fraud Risk: {self.risk_level.value} (score: {self.score:.1f}/10, "
@@ -314,7 +314,7 @@ class AnalysisReport(BaseModel):
     final_confidence: float = 0.0
 
     mode: str = "single"  # "single" | "consensus"
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def get_best_analysis(self) -> Optional[LLMAnalysis]:
         """Return the primary analysis (single mode) or consensus (consensus mode)."""
@@ -374,7 +374,7 @@ class TradeRecord(BaseModel):
     status: OrderStatus = OrderStatus.FILLED
     broker_order_id: str = ""
     report_id: str = ""  # Link to the analysis report that triggered this trade
-    executed_at: datetime = Field(default_factory=datetime.utcnow)
+    executed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     notes: str = ""
 
     # For closed positions — P&L tracking
@@ -394,7 +394,7 @@ class AccountSummary(BaseModel):
     total_value: float = 0.0
     unrealised_pnl: float = 0.0
     realised_pnl: float = 0.0
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class OrderRequest(BaseModel):

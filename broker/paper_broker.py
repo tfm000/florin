@@ -9,7 +9,8 @@ Tracks virtual positions, P&L, and trade history in memory.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from broker.base import Broker
@@ -49,7 +50,7 @@ class PaperBroker(Broker):
         self._connected = False
 
         # Optional: reference to a price provider for realistic fills
-        self._price_getter: callable | None = None
+        self._price_getter: Callable | None = None
 
     @property
     def name(self) -> str:
@@ -59,7 +60,7 @@ class PaperBroker(Broker):
     def is_live(self) -> bool:
         return False
 
-    def set_price_getter(self, fn: callable) -> None:
+    def set_price_getter(self, fn: Callable) -> None:
         """
         Set a function to get current prices for realistic fills.
         fn(ticker: str) -> float | None
@@ -109,7 +110,7 @@ class PaperBroker(Broker):
             total_value=self._cash + market_value,
             unrealised_pnl=unrealised_pnl,
             realised_pnl=realised_pnl,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(UTC),
         )
 
     # =========================================================================
@@ -152,7 +153,7 @@ class PaperBroker(Broker):
             "quantity": order.quantity,
             "limit_price": order.limit_price,
             "stop_price": order.stop_price,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
 
         logger.info(
@@ -253,7 +254,7 @@ class PaperBroker(Broker):
                 quantity=quantity,
                 avg_price=price,
                 current_price=price,
-                opened_at=datetime.utcnow(),
+                opened_at=datetime.now(UTC),
             )
             self._positions[ticker] = pos
 
@@ -265,7 +266,7 @@ class PaperBroker(Broker):
             price=price,
             total_value=total_value,
             status=OrderStatus.FILLED,
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(UTC),
         )
         self._trades.append(trade)
 
@@ -320,7 +321,7 @@ class PaperBroker(Broker):
             is_closing_trade=True,
             realised_pnl=realised_pnl,
             realised_pnl_pct=realised_pnl_pct,
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(UTC),
         )
         self._trades.append(trade)
 

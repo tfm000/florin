@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, AsyncIterator
 from uuid import uuid4
@@ -52,7 +52,7 @@ class Event:
     type: EventType
     data: Any
     id: str = field(default_factory=lambda: uuid4().hex[:12])
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     source: str = ""
 
 

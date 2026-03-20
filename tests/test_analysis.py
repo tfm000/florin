@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -167,7 +167,7 @@ class TestFraudDetector:
         alert = make_alert(price=2.50, volume=15_000, avg_volume=10_000)
         from core.models import SECFiling, NewsArticle
         sentiment = make_sentiment(
-            sec_filings=[SECFiling(form_type="10-Q", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="10-Q", filed_date=datetime.now(UTC))],
             news_articles=[NewsArticle(title="Test news")],
         )
 
