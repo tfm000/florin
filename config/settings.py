@@ -36,6 +36,7 @@ class LLMProvider(str, Enum):
 class T212Environment(str, Enum):
     DEMO = "demo"
     LIVE = "live"
+    READONLY = "readonly"
 
 
 class AlpacaFeed(str, Enum):
@@ -65,9 +66,13 @@ class Settings(BaseSettings):
 
     @property
     def t212_base_url(self) -> str:
-        if self.t212_environment == T212Environment.LIVE:
+        if self.t212_environment in (T212Environment.LIVE, T212Environment.READONLY):
             return "https://live.trading212.com/api/v0"
         return "https://demo.trading212.com/api/v0"
+
+    @property
+    def t212_readonly(self) -> bool:
+        return self.t212_environment == T212Environment.READONLY
 
     # --- Alpaca ---
     alpaca_api_key: str = ""
