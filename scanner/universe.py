@@ -2,14 +2,15 @@
 Penny stock universe manager.
 
 Responsibilities:
-  1. On startup, discover all penny stocks via Alpaca (primary) or yfinance (fallback)
-  2. Optionally enrich with market cap/sector from yfinance
-  3. Cross-reference with Trading 212 instruments for ticker mapping
-  4. Cache results in SQLite — refresh daily at market open
-  5. Provide fast in-memory access to the active universe
+  1. On startup, discover all penny stocks via yfinance screener (primary) or Alpaca (fallback)
+  2. Update live prices from Alpaca snapshots
+  3. Enrich with market cap/sector from yfinance
+  4. Cross-reference with Trading 212 instruments for ticker mapping
+  5. Cache results in SQLite — refresh daily at market open
+  6. Provide fast in-memory access to the active universe
 
 Data flow:
-  Alpaca assets + snapshots → price filter → yfinance enrichment → SQLite cache → in-memory dict
+  yfinance screener → price/market cap filter → Alpaca live prices → yfinance enrichment → SQLite cache
 """
 
 from __future__ import annotations
@@ -42,8 +43,9 @@ class UniverseManager:
     - Price within configurable range (default $0.01–$5)
     - Actively trading (not halted/delisted)
 
-    Primary source: Alpaca (free, reliable).
-    Optional enrichment: yfinance for market cap/sector data.
+    Primary source: yfinance screener (no API key, price + market cap filtering).
+    Supplementary: Alpaca for live price updates.
+    Optional enrichment: yfinance for missing market cap/sector data.
 
     The universe is cached in SQLite and refreshed daily.
     An in-memory dict provides O(1) lookups during scanning.
@@ -129,26 +131,15 @@ class UniverseManager:
         """
         Full universe refresh.
 
-        Primary: Alpaca (assets + snapshots filtered by price range).
-        Fallback: yfinance screener.
-        Optional: yfinance enrichment for market cap/sector.
+        Primary: yfinance screener (price + market cap filtering, no API key needed).
+        Supplementary: Alpaca snapshots update live prices for the discovered set.
+        Optional: yfinance enrichment for missing market cap/sector data.
         """
         stocks: list[StockInfo] = []
 
-        # Primary: Alpaca
-        if self._data_provider:
-            logger.info("Refreshing penny stock universe from Alpaca...")
-            try:
-                stocks = await self._data_provider.get_penny_stock_universe(
-                    price_min=self._settings.scan_price_min,
-                    price_max=self._settings.scan_price_max,
-                )
-            except Exception:
-                logger.exception("Alpaca universe discovery failed")
-
-        # Fallback: yfinance screener
-        if not stocks and self._yfinance:
-            logger.info("Falling back to yfinance for universe discovery...")
+        # Primary: yfinance screener
+        if self._yfinance:
+            logger.info("Refreshing penny stock universe from yfinance...")
             try:
                 stocks = await self._yfinance.filter_penny_stocks(
                     price_min=self._settings.scan_price_min,
@@ -158,6 +149,17 @@ class UniverseManager:
                 )
             except Exception:
                 logger.exception("yfinance universe discovery failed")
+
+        # Fallback: Alpaca discovery if yfinance returned nothing
+        if not stocks and self._data_provider:
+            logger.info("Falling back to Alpaca for universe discovery...")
+            try:
+                stocks = await self._data_provider.get_penny_stock_universe(
+                    price_min=self._settings.scan_price_min,
+                    price_max=self._settings.scan_price_max,
+                )
+            except Exception:
+                logger.exception("Alpaca universe discovery failed")
 
         if not stocks:
             if self._stocks:
@@ -185,8 +187,36 @@ class UniverseManager:
             len(self._stocks),
         )
 
+        # Supplementary: update live prices from Alpaca snapshots
+        await self._update_prices_from_alpaca()
+
         # Optional: yfinance enrichment for market cap/sector (background, rate-limited)
         await self._enrich_from_yfinance()
+
+    async def _update_prices_from_alpaca(self) -> None:
+        """Update live prices for discovered stocks from Alpaca snapshots."""
+        if not self._data_provider:
+            return
+
+        tickers = list(self._stocks.keys())
+        if not tickers:
+            return
+
+        logger.info("Updating live prices from Alpaca for %d tickers...", len(tickers))
+        try:
+            snapshots = await self._data_provider.get_snapshot(tickers)
+            updated = 0
+            for ticker, snap in snapshots.items():
+                stock = self._stocks.get(ticker)
+                if stock and snap:
+                    price = snap.get("price") or snap.get("close")
+                    if price:
+                        stock.last_price = price
+                        updated += 1
+            if updated:
+                logger.info("Alpaca price update: %d/%d tickers updated", updated, len(tickers))
+        except Exception:
+            logger.exception("Alpaca price update failed")
 
     async def _enrich_from_yfinance(self) -> None:
         """Enrich stocks missing market cap data using yfinance."""

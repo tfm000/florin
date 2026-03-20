@@ -8,6 +8,9 @@ export default function Dashboard() {
   const { data: account, loading: accLoading } = useApi('/account', { interval: 30000 })
   const { data: stats } = useApi('/stats')
   const { data: health } = useApi('/health', { interval: 30000 })
+  const { data: watchlist } = useApi('/watchlist?limit=1')
+  const { data: monitor } = useApi('/monitor?limit=1')
+  const { data: universe } = useApi('/universe?limit=1')
 
   const unconfigured = health?.setup_checklist?.filter(item => !item.configured) || []
 
@@ -38,6 +41,14 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
+
+      {/* Quick Links */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <QuickLink to="/research" label="Research" description="Search & analyse any asset" />
+        <QuickLink to="/watchlist" label="Watchlist" count={watchlist?.total} />
+        <QuickLink to="/monitor" label="Live Monitor" count={monitor?.total} />
+        <QuickLink to="/penny-stocks" label="Penny Stocks" count={universe?.total} />
+      </div>
 
       {/* Account Summary */}
       {account && (
@@ -98,5 +109,22 @@ function StatCard({ label, value, color = 'text-white' }) {
       <p className="text-gray-400 text-xs uppercase">{label}</p>
       <p className={`font-mono text-lg ${color}`}>{value}</p>
     </div>
+  )
+}
+
+function QuickLink({ to, label, description, count }) {
+  return (
+    <Link
+      to={to}
+      className="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-indigo-500 transition-colors block"
+    >
+      <div className="flex justify-between items-start">
+        <p className="text-white font-semibold text-sm">{label}</p>
+        {count != null && (
+          <span className="text-xs text-gray-400 font-mono">{count}</span>
+        )}
+      </div>
+      {description && <p className="text-gray-500 text-xs mt-1">{description}</p>}
+    </Link>
   )
 }
