@@ -18,7 +18,7 @@ Signals checked:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from config.constants import (
     FRAUD_COORDINATED_POST_THRESHOLD,
@@ -105,7 +105,7 @@ class FraudDetector:
             risk_level=risk_level,
             flags=flags,
             confidence=round(confidence, 2),
-            assessed_at=datetime.utcnow(),
+            assessed_at=datetime.now(UTC),
         )
 
         if flags:

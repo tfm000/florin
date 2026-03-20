@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, AsyncIterator
 
 import httpx
@@ -454,7 +454,7 @@ class AlpacaProvider(MarketDataProvider):
                 prev_close=prev_close,
                 volume=daily_bar.get("v", 0),
                 change_pct=change_pct,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(UTC),
             )
         except Exception:
             logger.warning("Failed to parse snapshot for %s", ticker)

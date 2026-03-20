@@ -11,7 +11,7 @@ Both provide headlines, sources, timestamps, and relevance scores.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -152,7 +152,7 @@ class NewsSource(SentimentSource):
         """Parse an FMP news item."""
         try:
             published_str = item.get("publishedDate", "")
-            published_at = datetime.utcnow()
+            published_at = datetime.now(UTC)
             if published_str:
                 try:
                     published_at = datetime.fromisoformat(
@@ -178,7 +178,7 @@ class NewsSource(SentimentSource):
         """Parse an Alpha Vantage news item."""
         try:
             time_str = item.get("time_published", "")
-            published_at = datetime.utcnow()
+            published_at = datetime.now(UTC)
             if time_str:
                 try:
                     published_at = datetime.strptime(time_str, "%Y%m%dT%H%M%S")

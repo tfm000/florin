@@ -16,7 +16,7 @@ User-Agent header required.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -96,7 +96,7 @@ class SECEdgarSource(SentimentSource):
         self, ticker: str, company_name: str,
     ) -> list[SECFiling]:
         """Search EDGAR full-text search for recent filings."""
-        end_date = datetime.utcnow()
+        end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=LOOKBACK_DAYS)
 
         # Search by ticker
@@ -157,7 +157,7 @@ class SECEdgarSource(SentimentSource):
             try:
                 filed_date = datetime.strptime(filed_date_str, "%Y-%m-%d")
             except ValueError:
-                filed_date = datetime.utcnow()
+                filed_date = datetime.now(UTC)
 
             description = SEC_FORM_TYPES.get(base_form, form_type)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any
 
@@ -71,7 +71,7 @@ class TestSentimentAggregator:
                 "bearish_count": 1,
             }),
             MockSource("SEC EDGAR", {
-                "filings": [SECFiling(form_type="4", filed_date=datetime.utcnow(),
+                "filings": [SECFiling(form_type="4", filed_date=datetime.now(UTC),
                                       transaction_type="Purchase")],
                 "insider_buys": 1,
                 "insider_sells": 0,
@@ -280,7 +280,7 @@ class TestSentimentData:
             ],
             stocktwits_bullish_count=3,
             stocktwits_bearish_count=1,
-            sec_filings=[SECFiling(form_type="4", filed_date=datetime.utcnow())],
+            sec_filings=[SECFiling(form_type="4", filed_date=datetime.now(UTC))],
             insider_buy_count=2,
             insider_sell_count=0,
             news_articles=[NewsArticle(title="Big news", source="Reuters")],

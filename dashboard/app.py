@@ -54,8 +54,9 @@ def create_app(
     )
 
     # Register API routes (import here to avoid circular imports)
-    from dashboard.routes import positions, universe, reports, trades, account, orders, stats
+    from dashboard.routes import positions, universe, reports, trades, account, orders, stats, health
 
+    app.include_router(health.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
     app.include_router(universe.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")

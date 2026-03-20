@@ -14,7 +14,7 @@ Data flow:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import select, update
@@ -129,7 +129,7 @@ class UniverseManager:
 
         # Update in-memory cache
         self._stocks = {s.ticker: s for s in stocks}
-        self._last_refresh = datetime.utcnow()
+        self._last_refresh = datetime.now(UTC)
 
         # Persist to SQLite
         await self._save_to_cache(stocks)
@@ -218,7 +218,7 @@ class UniverseManager:
                         existing.avg_volume = stock.avg_volume
                         existing.last_price = stock.last_price
                         existing.in_universe = True
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = datetime.now(UTC)
                     else:
                         session.add(UniverseStockORM(
                             ticker=stock.ticker,
@@ -231,7 +231,7 @@ class UniverseManager:
                             avg_volume=stock.avg_volume,
                             last_price=stock.last_price,
                             in_universe=True,
-                            updated_at=datetime.utcnow(),
+                            updated_at=datetime.now(UTC),
                         ))
 
                 await session.commit()
@@ -254,7 +254,7 @@ class UniverseManager:
                 if row is None:
                     return False
 
-                age = datetime.utcnow() - row
+                age = datetime.now(UTC) - row
                 return age < timedelta(hours=24)
         except Exception:
             return False

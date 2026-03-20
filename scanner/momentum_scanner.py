@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from config.settings import Settings
 from core.events import EventBus, EventType
+from core.market_hours import is_market_open
 from core.models import AlertSignal, AlertSource, StockQuote
 from data.alpaca_provider import AlpacaProvider
 from scanner.base import Scanner
@@ -102,6 +103,10 @@ class MomentumScanner(Scanner):
         )
 
         while self._running:
+            if not is_market_open():
+                await asyncio.sleep(60)
+                continue
+
             try:
                 alerts = await self.scan_once()
 
@@ -140,7 +145,7 @@ class MomentumScanner(Scanner):
         self._scan_count += 1
         alerts: list[AlertSignal] = []
         cache = self._data.cache
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         # Clean expired cooldowns
         self._clean_cooldowns(now)

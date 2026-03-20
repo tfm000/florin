@@ -1,7 +1,7 @@
 """
 Google Gemini analyser.
 
-Uses Gemini 2.5 Flash-Lite via the Google Generative AI SDK.
+Uses Gemini 2.5 Flash-Lite via the google-genai SDK.
 Free tier handles the expected volume easily.
 """
 
@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 import time
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from analysis._prompt_helper import build_user_prompt, parse_llm_response
 from analysis.base import LLMAnalyser
@@ -26,15 +27,12 @@ class GeminiAnalyser(LLMAnalyser):
 
     def __init__(self, settings: Settings) -> None:
         self._model_name_str = settings.gemini_model
-        genai.configure(api_key=settings.gemini_api_key)
-        self._model = genai.GenerativeModel(
-            model_name=self._model_name_str,
+        self._client = genai.Client(api_key=settings.gemini_api_key)
+        self._config = types.GenerateContentConfig(
             system_instruction=ANALYSIS_SYSTEM_PROMPT,
-            generation_config=genai.GenerationConfig(
-                temperature=0.3,
-                max_output_tokens=1024,
-                response_mime_type="application/json",
-            ),
+            temperature=0.3,
+            max_output_tokens=1024,
+            response_mime_type="application/json",
         )
 
     @property
@@ -47,8 +45,10 @@ class GeminiAnalyser(LLMAnalyser):
 
     async def health_check(self) -> bool:
         try:
-            # Simple generation test
-            response = await self._model.generate_content_async("Say 'ok'")
+            response = await self._client.aio.models.generate_content(
+                model=self._model_name_str,
+                contents="Say 'ok'",
+            )
             return response.text is not None
         except Exception:
             return False
@@ -64,7 +64,11 @@ class GeminiAnalyser(LLMAnalyser):
         try:
             user_prompt = build_user_prompt(alert, sentiment, fraud_risk)
 
-            response = await self._model.generate_content_async(user_prompt)
+            response = await self._client.aio.models.generate_content(
+                model=self._model_name_str,
+                contents=user_prompt,
+                config=self._config,
+            )
             raw = response.text or ""
             latency = int((time.monotonic() - start) * 1000)
 
