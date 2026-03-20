@@ -13,7 +13,11 @@ import logging
 import re
 from typing import Any
 
-from config.constants import ANALYSIS_SYSTEM_PROMPT, SINGLE_REPORT_PROMPT
+from config.constants import (
+    ANALYSIS_SYSTEM_PROMPT,
+    RESEARCH_ANALYSIS_PROMPT,
+    SINGLE_REPORT_PROMPT,
+)
 from core.models import (
     AlertSignal,
     FraudRisk,
@@ -144,3 +148,70 @@ def _extract_json(raw: str) -> dict[str, Any]:
         pass
 
     raise ValueError(f"Could not extract JSON from response: {cleaned[:200]}")
+
+
+def build_research_prompt(
+    asset_info: dict,
+    performance: dict,
+    macro: dict,
+    news: list[dict],
+    user_context: str = "",
+) -> str:
+    """Build prompt for research analysis (any asset, not just penny stocks)."""
+    # Format performance metrics
+    perf_lines = []
+    if performance:
+        for key, label in [
+            ("sharpe_ratio", "Sharpe Ratio"),
+            ("max_drawdown_pct", "Max Drawdown"),
+            ("return_1m", "1M Return"),
+            ("return_6m", "6M Return"),
+            ("return_1y", "1Y Return"),
+            ("return_3y", "3Y Return"),
+        ]:
+            val = performance.get(key)
+            if val is not None:
+                if "return" in key or "drawdown" in key:
+                    perf_lines.append(f"- {label}: {val:+.2f}%")
+                else:
+                    perf_lines.append(f"- {label}: {val:.2f}")
+    performance_summary = "\n".join(perf_lines) if perf_lines else "No performance data available."
+
+    # Format macro context
+    macro_lines = []
+    for label, data in macro.items():
+        if isinstance(data, dict):
+            price = data.get("price", "N/A")
+            change = data.get("change_pct", 0)
+            macro_lines.append(f"- {label}: {price} ({change:+.2f}%)")
+    macro_summary = "\n".join(macro_lines) if macro_lines else "No macro data available."
+
+    # Format news
+    news_lines = []
+    for article in news[:8]:
+        title = article.get("title", "")
+        publisher = article.get("publisher", "")
+        if title:
+            news_lines.append(f"- {title} ({publisher})")
+    news_summary = "\n".join(news_lines) if news_lines else "No recent news found."
+
+    # Format values for the prompt
+    def _fmt(val, prefix="", suffix=""):
+        if val is None:
+            return "N/A"
+        return f"{prefix}{val}{suffix}"
+
+    return RESEARCH_ANALYSIS_PROMPT.format(
+        ticker=asset_info.get("ticker", ""),
+        name=asset_info.get("name", ""),
+        sector=asset_info.get("sector", "N/A"),
+        industry=asset_info.get("industry", "N/A"),
+        market_cap=_fmt(asset_info.get("market_cap")),
+        current_price=_fmt(asset_info.get("current_price"), prefix="$"),
+        pe_ratio=_fmt(asset_info.get("pe_ratio")),
+        short_interest=_fmt(asset_info.get("short_interest")),
+        performance_summary=performance_summary,
+        macro_summary=macro_summary,
+        news_summary=news_summary,
+        user_context=user_context or "No additional context provided.",
+    )

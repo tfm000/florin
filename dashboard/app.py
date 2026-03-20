@@ -65,9 +65,15 @@ def create_app(
     app.add_middleware(RequestIdMiddleware)
 
     # Register API routes (import here to avoid circular imports)
-    from dashboard.routes import positions, universe, reports, trades, account, orders, stats, health, settings
+    from dashboard.routes import (
+        positions, universe, reports, trades, account, orders,
+        stats, health, settings, research, watchlist, monitor,
+    )
 
     app.include_router(health.router, prefix="/api")
+    app.include_router(research.router, prefix="/api")
+    app.include_router(watchlist.router, prefix="/api")
+    app.include_router(monitor.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
     app.include_router(universe.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
