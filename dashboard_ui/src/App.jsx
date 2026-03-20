@@ -1,6 +1,11 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { useApi } from './hooks/useApi'
 import Dashboard from './pages/Dashboard'
+import Research from './pages/Research'
+import AssetResearch from './pages/AssetResearch'
+import Watchlist from './pages/Watchlist'
+import LiveMonitor from './pages/LiveMonitor'
 import Universe from './pages/Universe'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
@@ -10,13 +15,29 @@ import Stats from './pages/Stats'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard' },
-  { path: '/universe', label: 'Universe' },
+  { path: '/research', label: 'Research' },
+  { path: '/watchlist', label: 'Watchlist' },
+  { path: '/monitor', label: 'Live Monitor' },
+  { path: '/penny-stocks', label: 'Penny Stocks' },
   { path: '/reports', label: 'Reports' },
   { path: '/trades', label: 'Trades' },
   { path: '/account', label: 'Account' },
   { path: '/stats', label: 'Stats' },
   { path: '/settings', label: 'Settings' },
 ]
+
+function TradingModeBadge() {
+  const { data: health } = useApi('/health', { interval: 30000 })
+  if (!health) return null
+  const isPaper = health.paper_trading
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+      isPaper ? 'bg-yellow-800 text-yellow-300' : 'bg-red-800 text-red-300'
+    }`}>
+      {isPaper ? 'PAPER' : 'LIVE'}
+    </span>
+  )
+}
 
 export default function App() {
   const [terminating, setTerminating] = useState(false)
@@ -36,15 +57,16 @@ export default function App() {
       <div className="min-h-screen bg-gray-900 text-gray-100">
         {/* Nav Bar */}
         <nav className="bg-gray-800 border-b border-gray-700 px-4 py-3">
-          <div className="max-w-7xl mx-auto flex items-center gap-6">
-            <span className="text-white font-bold text-lg tracking-tight">Sentinel</span>
-            <div className="flex gap-1 flex-1">
+          <div className="max-w-7xl mx-auto flex items-center gap-4">
+            <span className="text-white font-bold text-lg tracking-tight font-mono">Sentinel Terminal</span>
+            <TradingModeBadge />
+            <div className="flex gap-1 flex-1 overflow-x-auto">
               {NAV_ITEMS.map(item => (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   className={({ isActive }) =>
-                    `px-3 py-1.5 rounded text-sm ${
+                    `px-3 py-1.5 rounded text-sm whitespace-nowrap ${
                       isActive
                         ? 'bg-indigo-600 text-white'
                         : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -69,7 +91,12 @@ export default function App() {
         <main className="max-w-7xl mx-auto px-4 py-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/universe" element={<Universe />} />
+            <Route path="/research" element={<Research />} />
+            <Route path="/research/:ticker" element={<AssetResearch />} />
+            <Route path="/watchlist" element={<Watchlist />} />
+            <Route path="/monitor" element={<LiveMonitor />} />
+            <Route path="/penny-stocks" element={<Universe />} />
+            <Route path="/universe" element={<Navigate to="/penny-stocks" replace />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/trades" element={<TradeHistory />} />
             <Route path="/account" element={<Account />} />
