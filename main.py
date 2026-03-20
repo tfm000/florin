@@ -1,5 +1,5 @@
 """
-Penny Stock Sentinel — Main Entry Point
+Sentinel Terminal — Main Entry Point
 
 Starts all services:
   1. Database initialisation
@@ -174,6 +174,12 @@ class Sentinel:
         if telegram_bot:
             services.append(asyncio.create_task(
                 telegram_bot.start_polling(), name="telegram-bot"
+            ))
+            # Alert listener — sends enriched alerts to Telegram with account context
+            from telegram_bot.handlers.alerts import alert_listener
+            services.append(asyncio.create_task(
+                alert_listener(self.event_bus, telegram_bot, broker, self.settings),
+                name="telegram-alerts",
             ))
 
         # Dashboard

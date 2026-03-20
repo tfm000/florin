@@ -13,11 +13,15 @@ from aiogram import Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message
 
+import re
+
 from config.settings import Settings
+from core.models import OrderRequest, Side
 from telegram_bot.formatters import (
     escape_md,
     format_account_summary,
     format_positions_list,
+    format_trade_confirmation,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,11 +53,12 @@ def register_command_handlers(
         if not _authorised(message):
             return
         await message.answer(
-            "🤖 *Penny Stock Sentinel*\n\n"
+            "🤖 *Sentinel Terminal*\n\n"
             "Commands:\n"
             "/status \\- System health\n"
             "/balance \\- Account summary\n"
             "/positions \\- Open positions\n"
+            "/buy TICKER \\[size\\] \\- Buy asset\n"
             "/settings \\- View config\n"
             "/mode \\- Switch LLM mode\n"
             "/kill \\- Emergency stop"
@@ -152,6 +157,49 @@ def register_command_handlers(
             f"Consensus mode uses all enabled LLMs and synthesises\\._"
         )
 
+    @dp.message(Command("buy"))
+    async def cmd_buy(message: Message) -> None:
+        """
+        Buy an asset with optional size specification.
+
+        Usage:
+            /buy TICKER         → use default position size
+            /buy TICKER 25      → buy 25 shares
+            /buy TICKER £50     → buy £50 worth
+            /buy TICKER $100    → buy $100 worth
+        """
+        if not _authorised(message):
+            return
+
+        if not broker:
+            await message.answer("🏦 No broker connected")
+            return
+
+        text = (message.text or "").strip()
+        parts = text.split(None, 2)  # ['/buy', 'TICKER', 'size?']
+
+        if len(parts) < 2:
+            await message.answer(
+                "Usage: /buy TICKER \\[size\\]\n"
+                "Examples: `/buy AAPL`, `/buy AAPL £50`, `/buy AAPL $100`, `/buy AAPL 25`"
+            )
+            return
+
+        ticker = parts[1].upper()
+        order = _parse_buy_order(ticker, parts[2] if len(parts) > 2 else None, settings)
+
+        try:
+            result = await broker.place_order(order)
+            if result.success:
+                msg = format_trade_confirmation(
+                    ticker, "BUY", result.filled_quantity, result.filled_price,
+                )
+                await message.answer(msg)
+            else:
+                await message.answer(f"❌ Order failed: {escape_md(result.error_message)}")
+        except Exception as e:
+            await message.answer(f"❌ Error: {escape_md(str(e))}")
+
     @dp.message(Command("kill"))
     async def cmd_kill(message: Message) -> None:
         if not _authorised(message):
@@ -175,3 +223,37 @@ def register_command_handlers(
 
         lines.append("Scanner paused \\(restart to resume\\)")
         await message.answer("\n".join(lines))
+
+
+def _parse_buy_order(ticker: str, size_str: str | None, settings: Settings) -> OrderRequest:
+    """
+    Parse size specification into an OrderRequest.
+
+    £50  → GBP value order
+    $100 → USD value order
+    25   → shares order
+    None → default position size from settings
+    """
+    if size_str is None:
+        # Use default from settings
+        unit = settings.position_size_unit
+        size = settings.default_position_size
+        if unit == "shares":
+            return OrderRequest(ticker=ticker, side=Side.BUY, quantity=size)
+        return OrderRequest(ticker=ticker, side=Side.BUY, quantity=0, target_value=size)
+
+    size_str = size_str.strip()
+
+    # £ prefix → GBP value
+    if size_str.startswith("£"):
+        value = float(size_str[1:])
+        return OrderRequest(ticker=ticker, side=Side.BUY, quantity=0, target_value=value)
+
+    # $ prefix → USD value
+    if size_str.startswith("$"):
+        value = float(size_str[1:])
+        return OrderRequest(ticker=ticker, side=Side.BUY, quantity=0, target_value=value)
+
+    # Plain number → shares
+    quantity = float(size_str)
+    return OrderRequest(ticker=ticker, side=Side.BUY, quantity=quantity)
