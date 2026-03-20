@@ -236,9 +236,30 @@ class TestHealthRoutes:
         resp = await client.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert data["status"] in ("ok", "setup_required")
         assert data["database"] is True
         assert "broker" in data
+        assert "setup_checklist" in data
+
+    @pytest.mark.asyncio
+    async def test_health_check_ok_when_configured(self, client):
+        """Health returns 'ok' when all required services are configured."""
+        from dashboard.deps import get_settings as get_dashboard_settings
+        settings = get_dashboard_settings()
+        original_fmp = settings.fmp_api_key
+        original_alpaca_key = settings.alpaca_api_key
+        original_alpaca_secret = settings.alpaca_api_secret
+        try:
+            settings.fmp_api_key = "test_key"
+            settings.alpaca_api_key = "test_key"
+            settings.alpaca_api_secret = "test_secret"
+            resp = await client.get("/api/health")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "ok"
+        finally:
+            settings.fmp_api_key = original_fmp
+            settings.alpaca_api_key = original_alpaca_key
+            settings.alpaca_api_secret = original_alpaca_secret
 
     @pytest.mark.asyncio
     async def test_terminate_no_handler(self, client):

@@ -25,6 +25,7 @@ class GroqAnalyser(LLMAnalyser):
     """Cloud LLM analysis via Groq (Llama 4 Scout)."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._model = settings.groq_model
         self._client = AsyncGroq(api_key=settings.groq_api_key)
 
@@ -52,7 +53,7 @@ class GroqAnalyser(LLMAnalyser):
         start = time.monotonic()
 
         try:
-            user_prompt = build_user_prompt(alert, sentiment, fraud_risk)
+            user_prompt = build_user_prompt(alert, sentiment, fraud_risk, self._settings.llm_user_context)
 
             response = await self._client.chat.completions.create(
                 model=self._model,

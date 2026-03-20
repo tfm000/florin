@@ -63,15 +63,7 @@ if %errorlevel% equ 0 (
     echo.
 )
 
-:: ── 5. Environment config ───────────────────────────────
-if not exist ".env" (
-    copy .env.example .env >nul
-    echo [OK] .env created from .env.example — edit it with your API keys
-) else (
-    echo [OK] .env already exists
-)
-
-:: ── 6. Database ─────────────────────────────────────────
+:: ── 5. Database ──────────────────────────────────────────
 echo Initialising database...
 %PYTHON% -c "import asyncio; from db.database import Database; asyncio.run((lambda: (db := Database('sqlite+aiosqlite:///./sentinel.db')) or asyncio.ensure_future(db.init()))())" 2>nul
 %PYTHON% -c "import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./sentinel.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')"
@@ -90,10 +82,10 @@ echo.
 echo === Setup complete! ===
 echo.
 echo Next steps:
-echo   1. Edit .env with your API keys (see README.md for details)
-echo   2. Start the app:
+echo   1. Start the app:
 echo      * Double-click Sentinel.bat, or
 echo      * Run: .venv\Scripts\activate ^&^& python main.py
+echo   2. Configure your API keys via the dashboard at http://localhost:8000/settings
 echo.
 echo   Dashboard will be available at http://localhost:8000
 echo.

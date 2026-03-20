@@ -32,7 +32,6 @@ COPY telegram_bot/ telegram_bot/
 COPY dashboard/ dashboard/
 COPY db/ db/
 COPY main.py ./
-COPY .env.example ./
 
 # Copy built React frontend from stage 1
 COPY --from=frontend /app/dashboard/static/ dashboard/static/

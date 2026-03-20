@@ -146,7 +146,7 @@ class UniverseStockORM(Base):
 
 
 # =============================================================================
-# Settings (runtime-configurable settings beyond .env)
+# Settings (runtime-configurable via dashboard)
 # =============================================================================
 
 class SettingORM(Base):

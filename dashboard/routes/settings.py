@@ -2,8 +2,7 @@
 
 Settings are layered:
   1. Defaults (hardcoded in Settings class)
-  2. .env file (loaded at startup)
-  3. Database overrides (SettingORM table — what this API reads/writes)
+  2. Database (SettingORM table — what this API reads/writes)
 
 API keys are masked when returned to the frontend.
 """
@@ -70,6 +69,7 @@ _SECTIONS = [
         "label": "Analysis Mode",
         "keys": [
             "llm_mode", "llm_default_provider", "llm_consensus_meta_provider",
+            "llm_user_context",
         ],
     },
     {
@@ -83,7 +83,9 @@ _SECTIONS = [
         "id": "scanner",
         "label": "Scanner",
         "keys": [
-            "scan_price_threshold", "scan_momentum_threshold",
+            "scan_price_min", "scan_price_max",
+            "scan_market_cap_min", "scan_market_cap_max",
+            "scan_momentum_threshold",
             "scan_interval_seconds", "scan_cooldown_minutes", "scan_min_volume",
         ],
     },
@@ -91,7 +93,8 @@ _SECTIONS = [
         "id": "trading",
         "label": "Trading",
         "keys": [
-            "default_position_size", "default_stop_loss_pct",
+            "default_position_size", "position_size_unit",
+            "default_stop_loss_pct",
             "max_open_positions", "max_daily_trades",
         ],
     },
@@ -113,11 +116,15 @@ _CHOICES: dict[str, list[str]] = {
     "llm_mode": ["single", "consensus"],
     "llm_default_provider": ["ollama", "groq", "gemini", "claude", "finbert"],
     "llm_consensus_meta_provider": ["ollama", "groq", "gemini", "claude"],
+    "position_size_unit": ["gbp", "usd", "shares"],
 }
 
 # Type hints for the frontend
 _FIELD_TYPES: dict[str, str] = {
-    "scan_price_threshold": "number",
+    "scan_price_min": "number",
+    "scan_price_max": "number",
+    "scan_market_cap_min": "number",
+    "scan_market_cap_max": "number",
     "scan_momentum_threshold": "number",
     "scan_interval_seconds": "number",
     "scan_cooldown_minutes": "number",
@@ -127,6 +134,7 @@ _FIELD_TYPES: dict[str, str] = {
     "max_open_positions": "number",
     "max_daily_trades": "number",
     "dashboard_port": "number",
+    "llm_user_context": "textarea",
 }
 
 
@@ -235,7 +243,7 @@ async def update_settings(payload: SettingsBulkUpdate) -> dict:
 
 @router.delete("/settings/{key}")
 async def delete_setting(key: str) -> dict:
-    """Remove a DB override, reverting to .env / default value."""
+    """Remove a DB override, reverting to the default value."""
     db = get_db()
 
     async with db.session() as session:

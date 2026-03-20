@@ -210,10 +210,117 @@ class AlpacaProvider(MarketDataProvider):
 
     async def get_instruments(self) -> list[StockInfo]:
         """
-        Not applicable for Alpaca — use FMPProvider for universe discovery.
+        Not applicable for Alpaca — use get_tradeable_assets() for universe discovery.
         Returns empty list.
         """
         return []
+
+    async def get_tradeable_assets(self) -> list[dict[str, str]]:
+        """
+        Fetch all tradeable US equity assets from Alpaca.
+
+        Calls /v2/assets on the trading API (paper-api.alpaca.markets).
+        Returns list of {symbol, name, exchange} for NASDAQ/NYSE active equities.
+        """
+        async with httpx.AsyncClient(
+            base_url="https://paper-api.alpaca.markets",
+            headers={
+                "APCA-API-KEY-ID": self._api_key,
+                "APCA-API-SECRET-KEY": self._api_secret,
+            },
+            timeout=30.0,
+        ) as client:
+            resp = await client.get(
+                "/v2/assets",
+                params={
+                    "status": "active",
+                    "asset_class": "us_equity",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        target_exchanges = {"NASDAQ", "NYSE", "NYSE ARCA", "NYSE MKT", "AMEX", "BATS"}
+        assets = []
+        for item in data:
+            if not item.get("tradable", False):
+                continue
+            exchange = item.get("exchange", "")
+            if exchange not in target_exchanges:
+                continue
+            assets.append({
+                "symbol": item["symbol"],
+                "name": item.get("name", ""),
+                "exchange": exchange,
+            })
+
+        logger.info("Alpaca: fetched %d tradeable US equity assets", len(assets))
+        return assets
+
+    async def get_penny_stock_universe(
+        self,
+        price_min: float = 0.01,
+        price_max: float = 5.0,
+    ) -> list[StockInfo]:
+        """
+        Discover penny stocks using Alpaca assets + snapshot pricing.
+
+        1. Fetch all tradeable assets via /v2/assets
+        2. Batch-fetch snapshots to get current prices
+        3. Filter to price range
+        """
+        assets = await self.get_tradeable_assets()
+        if not assets:
+            return []
+
+        # Build ticker list and metadata lookup
+        all_tickers = [a["symbol"] for a in assets]
+        meta = {a["symbol"]: a for a in assets}
+
+        # Fetch snapshots in batches
+        penny_stocks: list[StockInfo] = []
+        for i in range(0, len(all_tickers), REST_SNAPSHOT_BATCH_SIZE):
+            batch = all_tickers[i : i + REST_SNAPSHOT_BATCH_SIZE]
+            symbols = ",".join(batch)
+
+            try:
+                if not self._http:
+                    raise RuntimeError("Alpaca provider not connected")
+                resp = await self._http.get(
+                    "/v2/stocks/snapshots",
+                    params={"symbols": symbols, "feed": self._settings.alpaca_feed.value},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                for ticker, snap in data.items():
+                    quote = self._snapshot_to_quote(ticker, snap)
+                    if not quote:
+                        continue
+                    if price_min <= quote.price <= price_max:
+                        info = meta.get(ticker, {})
+                        penny_stocks.append(StockInfo(
+                            ticker=ticker,
+                            name=info.get("name", ""),
+                            exchange=info.get("exchange", ""),
+                            last_price=quote.price,
+                            avg_volume=quote.volume,
+                            in_universe=True,
+                        ))
+                        # Also populate price cache
+                        async with self._cache_lock:
+                            self._cache[ticker] = quote
+
+            except httpx.HTTPStatusError as e:
+                logger.error("Alpaca snapshot batch failed: %s", e)
+            except Exception:
+                logger.exception("Unexpected error in penny stock discovery batch")
+
+        logger.info(
+            "Alpaca: discovered %d penny stocks ($%.2f–$%.2f) from %d assets",
+            len(penny_stocks), price_min, price_max, len(all_tickers),
+        )
+        return penny_stocks
 
     # =========================================================================
     # WebSocket streaming

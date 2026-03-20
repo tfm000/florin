@@ -30,6 +30,7 @@ class OllamaAnalyser(LLMAnalyser):
     """Local LLM analysis via Ollama."""
 
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._host = settings.ollama_base_url
         self._model = settings.ollama_model
         self._client = ollama_client.AsyncClient(host=self._host)
@@ -61,7 +62,7 @@ class OllamaAnalyser(LLMAnalyser):
         start = time.monotonic()
 
         try:
-            user_prompt = build_user_prompt(alert, sentiment, fraud_risk)
+            user_prompt = build_user_prompt(alert, sentiment, fraud_risk, self._settings.llm_user_context)
 
             response = await self._client.chat(
                 model=self._model,

@@ -159,6 +159,16 @@ function SettingField({ field, editValue, onChange }) {
         className={inputClasses}
       />
     )
+  } else if (type === 'textarea') {
+    input = (
+      <textarea
+        value={displayValue}
+        onChange={e => onChange(key, e.target.value)}
+        className={inputClasses + ' min-h-[80px] resize-y'}
+        rows={3}
+        placeholder="Enter guidance for LLM analysis..."
+      />
+    )
   } else if (type === 'number') {
     input = (
       <input

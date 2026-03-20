@@ -18,6 +18,8 @@ async def get_universe(
     exchange: str | None = None,
     min_price: float | None = None,
     max_price: float | None = None,
+    min_market_cap: float | None = None,
+    max_market_cap: float | None = None,
     limit: int = 500,
     offset: int = 0,
 ):
@@ -34,6 +36,10 @@ async def get_universe(
             query = query.where(UniverseStockORM.last_price >= min_price)
         if max_price is not None:
             query = query.where(UniverseStockORM.last_price <= max_price)
+        if min_market_cap is not None:
+            query = query.where(UniverseStockORM.market_cap >= min_market_cap)
+        if max_market_cap is not None:
+            query = query.where(UniverseStockORM.market_cap <= max_market_cap)
 
         query = query.order_by(UniverseStockORM.ticker).offset(offset).limit(limit)
         result = await session.execute(query)
@@ -69,7 +75,10 @@ async def get_scanner_settings():
     """Get current scanner configuration."""
     settings = get_settings()
     return {
-        "price_threshold": settings.scan_price_threshold,
+        "price_min": settings.scan_price_min,
+        "price_max": settings.scan_price_max,
+        "market_cap_min": settings.scan_market_cap_min,
+        "market_cap_max": settings.scan_market_cap_max,
         "momentum_threshold": settings.scan_momentum_threshold,
         "scan_interval_seconds": settings.scan_interval_seconds,
         "cooldown_minutes": settings.scan_cooldown_minutes,

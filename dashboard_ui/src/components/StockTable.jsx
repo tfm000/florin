@@ -1,5 +1,13 @@
 import { useState } from 'react'
 
+function formatMarketCap(val) {
+  if (!val) return '—'
+  if (val >= 1e9) return `$${(val / 1e9).toFixed(1)}B`
+  if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`
+  if (val >= 1e3) return `$${(val / 1e3).toFixed(0)}K`
+  return `$${val.toFixed(0)}`
+}
+
 export default function StockTable({ stocks, onRowClick }) {
   const [sortField, setSortField] = useState('ticker')
   const [sortDir, setSortDir] = useState('asc')
@@ -52,6 +60,7 @@ export default function StockTable({ stocks, onRowClick }) {
               <SortHeader field="name">Name</SortHeader>
               <SortHeader field="exchange">Exchange</SortHeader>
               <SortHeader field="last_price">Price</SortHeader>
+              <SortHeader field="market_cap">Market Cap</SortHeader>
               <SortHeader field="sector">Sector</SortHeader>
               <SortHeader field="avg_volume">Avg Vol</SortHeader>
             </tr>
@@ -67,6 +76,7 @@ export default function StockTable({ stocks, onRowClick }) {
                 <td className="px-3 py-2 text-gray-300 truncate max-w-48">{s.name}</td>
                 <td className="px-3 py-2 text-gray-400">{s.exchange}</td>
                 <td className="px-3 py-2 font-mono text-white">${s.last_price.toFixed(2)}</td>
+                <td className="px-3 py-2 text-gray-400 font-mono">{formatMarketCap(s.market_cap)}</td>
                 <td className="px-3 py-2 text-gray-400 truncate max-w-32">{s.sector}</td>
                 <td className="px-3 py-2 text-gray-400 font-mono">{(s.avg_volume || 0).toLocaleString()}</td>
               </tr>

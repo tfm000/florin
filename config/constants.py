@@ -76,6 +76,9 @@ SINGLE_REPORT_PROMPT = """Analyse the following penny stock alert and sentiment 
 ## Fraud Risk Assessment
 {fraud_summary}
 
+## Additional Context from User
+{user_context}
+
 Respond with ONLY valid JSON in this exact schema:
 {{
     "sentiment_score": <float -10 to 10>,
