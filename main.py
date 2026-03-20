@@ -136,6 +136,10 @@ class Sentinel:
         set_state("scanner", scanner)
         set_state("data_provider", data_provider)
         set_state("yfinance_provider", yfinance_provider)
+        set_state("analysers", analysers)
+        set_state("report_generator", report_gen)
+        set_state("consensus_generator", consensus_gen)
+        set_state("fraud_detector", fraud_detector)
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---

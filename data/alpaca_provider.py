@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 WS_TICKER_BATCH_SIZE = 500
 
 # REST snapshot batch size
-REST_SNAPSHOT_BATCH_SIZE = 1000
+REST_SNAPSHOT_BATCH_SIZE = 200  # Keep URL under Alpaca's length limit
 
 
 class AlpacaProvider(MarketDataProvider):
@@ -78,6 +78,46 @@ class AlpacaProvider(MarketDataProvider):
     def cache(self) -> dict[str, StockQuote]:
         """Read-only access to the price cache."""
         return self._cache
+
+    async def _rate_limit_delay(self, resp: httpx.Response) -> None:
+        """
+        Adaptive rate limiting using Alpaca's response headers.
+
+        Reads X-RateLimit-Remaining and X-RateLimit-Reset to determine
+        the optimal delay. Falls back to a fixed 0.35s if headers are missing.
+        """
+        remaining = resp.headers.get("X-RateLimit-Remaining")
+        reset = resp.headers.get("X-RateLimit-Reset")
+
+        if remaining is not None and reset is not None:
+            try:
+                remaining_int = int(remaining)
+                import time as _time
+                reset_ts = int(reset)
+                now_ts = int(_time.time())
+                window_remaining = max(reset_ts - now_ts, 1)
+
+                if remaining_int <= 5:
+                    # Nearly exhausted — wait for the window to reset
+                    delay = window_remaining
+                    logger.warning(
+                        "Alpaca rate limit nearly exhausted (%d remaining), waiting %ds",
+                        remaining_int, delay,
+                    )
+                elif remaining_int <= 20:
+                    # Getting low — spread remaining requests across the window
+                    delay = window_remaining / max(remaining_int, 1)
+                else:
+                    # Plenty of headroom — minimal delay
+                    delay = 0.1
+
+                await asyncio.sleep(delay)
+                return
+            except (ValueError, TypeError):
+                pass
+
+        # Fallback: fixed delay (~3 req/sec, well within 200 req/min)
+        await asyncio.sleep(0.35)
 
     async def connect(self) -> None:
         """Initialise HTTP client. WebSocket connects separately via start_streaming."""
@@ -122,14 +162,15 @@ class AlpacaProvider(MarketDataProvider):
         Get current price snapshot for specific tickers via REST.
 
         Uses the /v2/stocks/snapshots endpoint which accepts multiple tickers.
+        Adaptive rate limiting via Alpaca's X-RateLimit-* response headers.
         """
         if not self._http:
             raise RuntimeError("Alpaca provider not connected")
 
         result: dict[str, StockQuote] = {}
+        total_batches = (len(tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
 
-        # Batch tickers to stay within URL length limits
-        for i in range(0, len(tickers), REST_SNAPSHOT_BATCH_SIZE):
+        for batch_num, i in enumerate(range(0, len(tickers), REST_SNAPSHOT_BATCH_SIZE)):
             batch = tickers[i : i + REST_SNAPSHOT_BATCH_SIZE]
             symbols = ",".join(batch)
 
@@ -145,12 +186,20 @@ class AlpacaProvider(MarketDataProvider):
                     quote = self._snapshot_to_quote(ticker, snap)
                     if quote:
                         result[ticker] = quote
-                        # Update cache
                         async with self._cache_lock:
                             self._cache[ticker] = quote
 
+                # Adaptive delay based on remaining rate limit
+                if batch_num < total_batches - 1:
+                    await self._rate_limit_delay(resp)
+
             except httpx.HTTPStatusError as e:
-                logger.error("Alpaca snapshot request failed: %s", e)
+                if e.response.status_code == 429:
+                    retry_after = int(e.response.headers.get("Retry-After", 60))
+                    logger.warning("Alpaca rate limited — waiting %ds", retry_after)
+                    await asyncio.sleep(retry_after)
+                else:
+                    logger.error("Alpaca snapshot request failed: %s", e)
             except Exception:
                 logger.exception("Unexpected error fetching Alpaca snapshots")
 
@@ -277,9 +326,11 @@ class AlpacaProvider(MarketDataProvider):
         all_tickers = [a["symbol"] for a in assets]
         meta = {a["symbol"]: a for a in assets}
 
-        # Fetch snapshots in batches
+        # Fetch snapshots in batches with adaptive rate limiting
         penny_stocks: list[StockInfo] = []
-        for i in range(0, len(all_tickers), REST_SNAPSHOT_BATCH_SIZE):
+        total_batches = (len(all_tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
+
+        for batch_num, i in enumerate(range(0, len(all_tickers), REST_SNAPSHOT_BATCH_SIZE)):
             batch = all_tickers[i : i + REST_SNAPSHOT_BATCH_SIZE]
             symbols = ",".join(batch)
 
@@ -307,12 +358,20 @@ class AlpacaProvider(MarketDataProvider):
                             avg_volume=quote.volume,
                             in_universe=True,
                         ))
-                        # Also populate price cache
                         async with self._cache_lock:
                             self._cache[ticker] = quote
 
+                # Adaptive delay based on remaining rate limit
+                if batch_num < total_batches - 1:
+                    await self._rate_limit_delay(resp)
+
             except httpx.HTTPStatusError as e:
-                logger.error("Alpaca snapshot batch failed: %s", e)
+                if e.response.status_code == 429:
+                    retry_after = int(e.response.headers.get("Retry-After", 60))
+                    logger.warning("Alpaca rate limited — waiting %ds", retry_after)
+                    await asyncio.sleep(retry_after)
+                else:
+                    logger.error("Alpaca snapshot batch failed: %s", e)
             except Exception:
                 logger.exception("Unexpected error in penny stock discovery batch")
 

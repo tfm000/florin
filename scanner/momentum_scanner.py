@@ -1,14 +1,14 @@
 """
-Momentum scanner — detects significant price moves in penny stocks.
+Momentum scanner — detects positive price moves in penny stocks.
 
-Triggers alerts when a stock moves more than the configured threshold
-(default 5%) from:
-  - Today's open price
-  - Previous close
-  - Rolling N-minute low (intraday reversal detection)
+Triggers alerts when a stock gains more than the configured threshold
+(default 5%) from today's open or previous close. Only upward moves
+are considered — we're looking for buying opportunities, not crashes.
 
 Features:
   - Configurable thresholds (price change %, minimum volume)
+  - Positive-only: ignores negative moves entirely
+  - Sanity filter: returns >200% are treated as bad data (corporate actions)
   - Per-ticker cooldown to avoid alert spam
   - Runs as a continuous async loop, polling the data provider's cache
 """
@@ -189,10 +189,10 @@ class MomentumScanner(Scanner):
         if quote.price <= 0:
             return None
 
-        # Check % change from various baselines
-        change_pct = self._best_change_pct(quote)
+        # Check % change — only interested in positive momentum (gainers)
+        change_pct = self._best_positive_change(quote)
 
-        if abs(change_pct) < self._momentum_threshold:
+        if change_pct < self._momentum_threshold:
             return None
 
         # Passed all filters — create alert
@@ -228,30 +228,37 @@ class MomentumScanner(Scanner):
 
         return alert
 
-    def _best_change_pct(self, quote: StockQuote) -> float:
+    def _best_positive_change(self, quote: StockQuote) -> float:
         """
-        Return the most significant % change for this quote.
+        Return the best positive % change for this quote.
 
-        Checks change from open and from previous close,
-        returns whichever has the larger absolute value.
+        Only considers upward moves (we're looking for momentum opportunities,
+        not crashes). Returns 0.0 if no positive change detected.
+
+        Filters out suspiciously large returns (>200%) which typically indicate
+        bad data from corporate actions (reverse splits, ticker changes).
         """
+        MAX_PLAUSIBLE_DAILY_RETURN = 200.0  # Filter out bad data
+
         candidates = []
 
-        if quote.open_price > 0:
-            candidates.append(quote.change_from_open)
-
         if quote.prev_close > 0:
-            candidates.append(quote.change_from_prev_close)
+            pct = quote.change_from_prev_close
+            if 0 < pct <= MAX_PLAUSIBLE_DAILY_RETURN:
+                candidates.append(pct)
 
-        # Also check the explicit change_pct if set by the data provider
-        if quote.change_pct != 0:
+        if quote.open_price > 0:
+            pct = quote.change_from_open
+            if 0 < pct <= MAX_PLAUSIBLE_DAILY_RETURN:
+                candidates.append(pct)
+
+        if quote.change_pct > 0 and quote.change_pct <= MAX_PLAUSIBLE_DAILY_RETURN:
             candidates.append(quote.change_pct)
 
         if not candidates:
             return 0.0
 
-        # Return the one with the largest absolute value
-        return max(candidates, key=abs)
+        return max(candidates)
 
     def _clean_cooldowns(self, now: datetime) -> None:
         """Remove expired cooldowns."""
