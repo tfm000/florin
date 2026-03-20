@@ -9,7 +9,6 @@ All settings are typed, validated, and documented. Access via:
 from __future__ import annotations
 
 from enum import Enum
-from functools import lru_cache
 from typing import Optional
 
 from pydantic import Field, field_validator
@@ -179,7 +178,40 @@ class Settings(BaseSettings):
         return upper
 
 
-@lru_cache(maxsize=1)
+_settings_instance: Settings | None = None
+
+
 def get_settings() -> Settings:
-    """Singleton settings instance — cached after first call."""
-    return Settings()
+    """Singleton settings instance."""
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+    return _settings_instance
+
+
+async def load_db_overrides(db: object) -> None:
+    """Load setting overrides from the database on top of .env values."""
+    from sqlalchemy import select
+    from db.models import SettingORM
+
+    settings = get_settings()
+
+    async with db.session() as session:  # type: ignore[union-attr]
+        result = await session.execute(select(SettingORM))
+        for row in result.scalars():
+            key, value = row.key, row.value
+            if not hasattr(settings, key):
+                continue
+
+            current = getattr(settings, key)
+            try:
+                if isinstance(current, int):
+                    setattr(settings, key, int(value))
+                elif isinstance(current, float):
+                    setattr(settings, key, float(value))
+                elif hasattr(current, "value"):
+                    setattr(settings, key, type(current)(value))
+                else:
+                    setattr(settings, key, value)
+            except (ValueError, KeyError):
+                pass

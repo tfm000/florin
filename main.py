@@ -56,6 +56,10 @@ class Sentinel:
         await self.db.init()
         logger.info("Database ready")
 
+        # Load settings overrides from DB (set via dashboard)
+        from config.settings import load_db_overrides
+        await load_db_overrides(self.db)
+
         # --- Validate required config ---
         warnings = []
         if not self.settings.alpaca_configured:
@@ -275,7 +279,7 @@ class Sentinel:
         while not self._shutdown_event.is_set():
             try:
                 await universe.refresh()
-                logger.info("Universe refreshed", count=len(universe))
+                logger.info("Universe refreshed", count=universe.size)
             except Exception as e:
                 logger.error("Universe refresh failed: %s", e)
             # Refresh daily
