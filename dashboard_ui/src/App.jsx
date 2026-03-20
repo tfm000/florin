@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { useApi } from './hooks/useApi'
+import { ChartColorProvider } from './hooks/useChartColors'
 import Dashboard from './pages/Dashboard'
 import Research from './pages/Research'
 import AssetResearch from './pages/AssetResearch'
@@ -53,6 +54,7 @@ export default function App() {
   }
 
   return (
+    <ChartColorProvider>
     <BrowserRouter>
       <div className="min-h-screen bg-gray-900 text-gray-100">
         {/* Nav Bar */}
@@ -106,5 +108,6 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+    </ChartColorProvider>
   )
 }

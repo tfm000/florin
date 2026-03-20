@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
+import { useChartColors } from '../hooks/useChartColors'
 
 const PERIODS = ['1mo', '3mo', '6mo', '1y', '2y']
-const COLORS = ['#6366F1', '#F59E0B', '#EF4444', '#10B981', '#8B5CF6']
 const TENORS = ['3M', '2Y', '5Y', '10Y', '30Y']
 
 export default function YieldCurveChart() {
+  const colors = useChartColors()
   const [period, setPeriod] = useState('1y')
   const [selectedDates, setSelectedDates] = useState([])
   const { data: history, loading } = useApi(`/research/yield-curve/history?period=${period}`)
@@ -137,10 +138,10 @@ export default function YieldCurveChart() {
                   key={key}
                   type="monotone"
                   dataKey={key}
-                  stroke={COLORS[i % COLORS.length]}
+                  stroke={colors.series[i % colors.series.length]}
                   strokeWidth={isToday ? 2.5 : 1.5}
                   strokeDasharray={isToday ? undefined : '5 3'}
-                  dot={{ fill: COLORS[i % COLORS.length], r: isToday ? 4 : 3 }}
+                  dot={{ fill: colors.series[i % colors.series.length], r: isToday ? 4 : 3 }}
                   connectNulls
                   hide={isHidden(key)}
                 />
@@ -189,7 +190,7 @@ export default function YieldCurveChart() {
             <div className="flex flex-wrap gap-1">
               {selectedDates.map((d, i) => (
                 <span key={d} className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-gray-700 text-white"
-                  style={{ borderLeft: `3px solid ${COLORS[(i + 1) % COLORS.length]}` }}
+                  style={{ borderLeft: `3px solid ${colors.series[(i + 1) % colors.series.length]}` }}
                 >
                   {d}
                   <button onClick={() => toggleDate(d)} className="text-gray-400 hover:text-red-400 ml-0.5">&times;</button>

@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
+import { useChartColors } from '../hooks/useChartColors'
 
 const VIEWS = [
   { key: 'combined', label: 'Combined (OTM)' },
@@ -13,6 +14,7 @@ const VIEWS = [
 ]
 
 export default function PutCallIVChart() {
+  const colors = useChartColors()
   const [ticker, setTicker] = useState('SPY')
   const [inputVal, setInputVal] = useState('SPY')
   const [view, setView] = useState('combined')
@@ -85,18 +87,18 @@ export default function PutCallIVChart() {
   const viewConfig = {
     combined: {
       lines: [
-        { key: 'vol', color: '#8B5CF6', label: 'Composite Vol', width: 2 },
-        { key: 'put_iv', color: '#EF4444', label: 'OTM Put', width: 1.5 },
-        { key: 'call_iv', color: '#22C55E', label: 'OTM Call', width: 1.5 },
+        { key: 'vol', color: colors.compositeVol, label: 'Composite Vol', width: 2 },
+        { key: 'put_iv', color: colors.putIv, label: 'OTM Put', width: 1.5 },
+        { key: 'call_iv', color: colors.callIv, label: 'OTM Call', width: 1.5 },
       ],
       compareKey: 'compare_vol',
     },
     puts: {
-      lines: [{ key: 'put_iv', color: '#EF4444', label: 'Put IV', width: 2 }],
+      lines: [{ key: 'put_iv', color: colors.putIv, label: 'Put IV', width: 2 }],
       compareKey: 'compare',
     },
     calls: {
-      lines: [{ key: 'call_iv', color: '#22C55E', label: 'Call IV', width: 2 }],
+      lines: [{ key: 'call_iv', color: colors.callIv, label: 'Call IV', width: 2 }],
       compareKey: 'compare',
     },
   }
@@ -284,8 +286,8 @@ export default function PutCallIVChart() {
                   entry
                 )}
               />
-              <Bar dataKey="put_iv" fill="#EF4444" opacity={0.6} hide={termLegend.isHidden('put_iv')} />
-              <Bar dataKey="call_iv" fill="#22C55E" opacity={0.6} hide={termLegend.isHidden('call_iv')} />
+              <Bar dataKey="put_iv" fill={colors.putIv} opacity={0.6} hide={termLegend.isHidden('put_iv')} />
+              <Bar dataKey="call_iv" fill={colors.callIv} opacity={0.6} hide={termLegend.isHidden('call_iv')} />
               <Bar dataKey="spread" fill="#6366F1" hide={termLegend.isHidden('spread')} />
             </BarChart>
           </ResponsiveContainer>

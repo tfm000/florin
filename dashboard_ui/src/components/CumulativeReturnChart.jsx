@@ -2,12 +2,12 @@ import { useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
-
-const COLORS = ['#22C55E', '#6366F1', '#F59E0B', '#EF4444', '#EC4899']
+import { useChartColors } from '../hooks/useChartColors'
 
 export default function CumulativeReturnChart({
   ticker, period = '1y', customStart = '', customEnd = '', compareTickers = [],
 }) {
+  const colors = useChartColors()
   const queryStr = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}&interval=1d`
     : `period=${period}&interval=1d`
@@ -124,7 +124,7 @@ export default function CumulativeReturnChart({
                 key={key}
                 type="monotone"
                 dataKey={key}
-                stroke={COLORS[i % COLORS.length]}
+                stroke={colors.series[i % colors.series.length]}
                 strokeWidth={i === 0 ? 2 : 1.5}
                 dot={false}
                 hide={isHidden(key)}

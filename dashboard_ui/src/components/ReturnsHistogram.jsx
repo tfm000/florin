@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
+import { useChartColors } from '../hooks/useChartColors'
 
 const NUM_BINS = 40
-const COLORS = ['#22C55E', '#6366F1', '#F59E0B', '#EF4444', '#EC4899']
 
 function computeReturns(history) {
   if (!history || history.length < 2) return []
@@ -45,6 +45,7 @@ function buildBins(returns, globalMin, globalMax) {
 export default function ReturnsHistogram({
   ticker, period = '1y', customStart = '', customEnd = '', compareTickers = [],
 }) {
+  const colors = useChartColors()
   const queryStr = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}&interval=1d`
     : `period=${period}&interval=1d`
@@ -150,7 +151,7 @@ export default function ReturnsHistogram({
             <Bar
               key={sym}
               dataKey={sym}
-              fill={COLORS[i % COLORS.length]}
+              fill={colors.series[i % colors.series.length]}
               opacity={allTickers.length > 1 ? 0.6 : 0.9}
               radius={[2, 2, 0, 0]}
               hide={isHidden(sym)}
@@ -178,7 +179,7 @@ export default function ReturnsHistogram({
               if (!s) return null
               return (
                 <tr key={sym} className="text-white">
-                  <td className="px-2 py-1 font-mono" style={{ color: COLORS[i % COLORS.length] }}>{sym}</td>
+                  <td className="px-2 py-1 font-mono" style={{ color: colors.series[i % colors.series.length] }}>{sym}</td>
                   <td className={`text-right px-2 py-1 font-mono ${s.mean >= 0 ? 'text-green-400' : 'text-red-400'}`}>{s.mean.toFixed(3)}%</td>
                   <td className="text-right px-2 py-1 font-mono">{s.stdDev.toFixed(3)}%</td>
                   <td className="text-right px-2 py-1 font-mono">{s.skewness.toFixed(3)}</td>
