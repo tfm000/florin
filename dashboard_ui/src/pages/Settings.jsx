@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useApi, apiPut } from '../hooks/useApi'
+import { useColorblindToggle } from '../hooks/useChartColors'
 
 export default function Settings() {
   const { data, loading, refetch } = useApi('/settings')
+  const [colorblind, setColorblind] = useColorblindToggle()
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState(null)
@@ -67,6 +69,42 @@ export default function Settings() {
           {message}
         </div>
       )}
+
+      {/* Display Preferences (client-side) */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 bg-gray-750 border-b border-gray-700">
+          <h2 className="text-white font-semibold">Display</h2>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white text-sm">Colorblind-friendly charts</p>
+              <p className="text-gray-500 text-xs">Replaces red/green with blue/orange for deuteranopia/protanopia</p>
+            </div>
+            <button
+              onClick={() => setColorblind(!colorblind)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                colorblind ? 'bg-indigo-600' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                  colorblind ? 'translate-x-5' : ''
+                }`}
+              />
+            </button>
+          </div>
+          {colorblind && (
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              <span>Active palette:</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#2563EB' }} /> Blue (positive)</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#EA580C' }} /> Orange (negative)</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#14B8A6' }} /> Teal</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#F59E0B' }} /> Amber</span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {sections.map(section => (
         <SettingsSection
