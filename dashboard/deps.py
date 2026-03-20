@@ -56,3 +56,7 @@ def get_scanner():
 
 def get_data_provider():
     return _state.get("data_provider")
+
+
+def get_yfinance_provider():
+    return _state.get("yfinance_provider")

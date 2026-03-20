@@ -24,7 +24,7 @@ router = APIRouter(tags=["settings"])
 _SECRET_KEYS = frozenset({
     "t212_api_key", "t212_api_secret",
     "alpaca_api_key", "alpaca_api_secret",
-    "polygon_api_key", "fmp_api_key",
+    "polygon_api_key",
     "reddit_client_id", "reddit_client_secret",
     "groq_api_key", "gemini_api_key", "anthropic_api_key",
     "telegram_bot_token",
@@ -44,7 +44,7 @@ _SECTIONS = [
         "label": "Market Data",
         "keys": [
             "alpaca_api_key", "alpaca_api_secret", "alpaca_feed",
-            "polygon_api_key", "fmp_api_key",
+            "polygon_api_key",
         ],
     },
     {
@@ -87,6 +87,7 @@ _SECTIONS = [
             "scan_market_cap_min", "scan_market_cap_max",
             "scan_momentum_threshold",
             "scan_interval_seconds", "scan_cooldown_minutes", "scan_min_volume",
+            "market_cap_source",
         ],
     },
     {
@@ -117,6 +118,7 @@ _CHOICES: dict[str, list[str]] = {
     "llm_default_provider": ["ollama", "groq", "gemini", "claude", "finbert"],
     "llm_consensus_meta_provider": ["ollama", "groq", "gemini", "claude"],
     "position_size_unit": ["gbp", "usd", "shares"],
+    "market_cap_source": ["yfinance", "inferred"],
 }
 
 # Type hints for the frontend

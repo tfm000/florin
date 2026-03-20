@@ -77,7 +77,7 @@ class TestUniverseRoutes:
         resp = await client.get("/api/universe/settings")
         assert resp.status_code == 200
         data = resp.json()
-        assert "price_threshold" in data
+        assert "price_max" in data
         assert "momentum_threshold" in data
         assert "scan_interval_seconds" in data
 
@@ -246,18 +246,15 @@ class TestHealthRoutes:
         """Health returns 'ok' when all required services are configured."""
         from dashboard.deps import get_settings as get_dashboard_settings
         settings = get_dashboard_settings()
-        original_fmp = settings.fmp_api_key
         original_alpaca_key = settings.alpaca_api_key
         original_alpaca_secret = settings.alpaca_api_secret
         try:
-            settings.fmp_api_key = "test_key"
             settings.alpaca_api_key = "test_key"
             settings.alpaca_api_secret = "test_secret"
             resp = await client.get("/api/health")
             assert resp.status_code == 200
             assert resp.json()["status"] == "ok"
         finally:
-            settings.fmp_api_key = original_fmp
             settings.alpaca_api_key = original_alpaca_key
             settings.alpaca_api_secret = original_alpaca_secret
 

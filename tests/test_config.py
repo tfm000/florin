@@ -105,16 +105,16 @@ class TestLoadDbOverrides:
         await db.init()
 
         async with db.session() as session:
-            session.add(SettingORM(key="scan_price_threshold", value="3.5"))
+            session.add(SettingORM(key="scan_price_max", value="3.5"))
             await session.commit()
 
-        s = Settings(scan_price_threshold=5.0)
+        s = Settings(scan_price_max=5.0)
         import config.settings as mod
         old = mod._settings_instance
         mod._settings_instance = s
         try:
             await load_db_overrides(db)
-            assert s.scan_price_threshold == 3.5
+            assert s.scan_price_max == 3.5
         finally:
             mod._settings_instance = old
             await db.close()

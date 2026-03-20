@@ -1,7 +1,7 @@
 """
 Abstract interface for market data providers.
 
-Implementations: AlpacaProvider, PolygonProvider, FMPProvider
+Implementations: AlpacaProvider, PolygonProvider
 All are interchangeable — swap by changing config.
 """
 

@@ -226,25 +226,9 @@ class TestStockTwitsSource:
 
 
 class TestNewsSource:
-    def test_parse_fmp_article(self) -> None:
-        from config.settings import Settings
-        source = NewsSource(Settings(fmp_api_key="test"))
-
-        article = source._parse_fmp_article({
-            "title": "TEST Corp beats earnings",
-            "site": "MarketWatch",
-            "url": "https://example.com/article",
-            "text": "Full article text here...",
-            "publishedDate": "2024-06-15T10:30:00.000Z",
-        })
-
-        assert article is not None
-        assert article.title == "TEST Corp beats earnings"
-        assert article.source == "MarketWatch"
-
     def test_parse_av_article(self) -> None:
         from config.settings import Settings
-        source = NewsSource(Settings(fmp_api_key="test"))
+        source = NewsSource(Settings())
 
         article = source._parse_av_article({
             "title": "AI Revolution",

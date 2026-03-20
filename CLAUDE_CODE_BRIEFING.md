@@ -58,17 +58,17 @@ All dependencies declared. Python >=3.12. Ruff + mypy configured. Test config fo
 Refer to the implementation plan document for full details. Here's the summary:
 
 ### Phase 2 — Market Data & Scanner
-- `scanner/universe.py` — Fetch all instruments from T212 API + FMP, filter to penny stocks (<$5, NASDAQ+NYSE), cache in SQLite, refresh daily.
+- `scanner/universe.py` — Discover penny stocks via Alpaca (primary) or yfinance (fallback), filter by price/market cap, cache in SQLite, refresh daily.
 - `data/alpaca_provider.py` — Implement `MarketDataProvider`. WebSocket streaming minute bars via Alpaca free tier (IEX feed). In-memory price cache. REST fallback for sparse tickers.
 - `data/polygon_provider.py` — Implement `MarketDataProvider` using Polygon.io Snapshot All Tickers endpoint. Paid fallback.
-- `data/fmp_provider.py` — FMP Stock Screener for universe discovery.
+- `data/yfinance_provider.py` — yfinance for market cap, sector enrichment, asset search, and news.
 - `scanner/momentum_scanner.py` — Implement `Scanner`. Detects >X% moves from open/prev close. Cooldown per ticker. Min volume filter. Publishes `MOMENTUM_ALERT`.
 
 ### Phase 3 — Sentiment Scraping
 - `sentiment/reddit_source.py` — PRAW (sync, wrap with `asyncio.to_thread`). Search penny stock subreddits. Extract posts, scores, author metadata.
 - `sentiment/stocktwits_source.py` — REST API. Pre-labelled bullish/bearish. 
 - `sentiment/sec_edgar_source.py` — Free API at data.sec.gov. Form 4 (insider trades), 8-K (material events). 10 req/sec, no auth.
-- `sentiment/news_source.py` — Alpha Vantage / FMP news endpoints.
+- `sentiment/news_source.py` — yfinance + Alpha Vantage news endpoints.
 - `sentiment/aggregator.py` — Orchestrates all sources with `asyncio.gather()`. Handles partial failures. Produces `SentimentData`.
 
 ### Phase 4 — LLM Analysis Engine

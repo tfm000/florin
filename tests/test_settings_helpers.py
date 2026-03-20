@@ -33,9 +33,9 @@ class TestApplySetting:
         assert s.scan_interval_seconds == 60
 
     def test_apply_float(self):
-        s = Settings(scan_price_threshold=5.0)
-        _apply_setting(s, "scan_price_threshold", "3.5")
-        assert s.scan_price_threshold == 3.5
+        s = Settings(scan_price_max=5.0)
+        _apply_setting(s, "scan_price_max", "3.5")
+        assert s.scan_price_max == 3.5
 
     def test_apply_string(self):
         s = Settings(ollama_model="old")

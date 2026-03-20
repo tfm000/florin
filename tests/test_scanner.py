@@ -24,8 +24,7 @@ from scanner.universe import UniverseManager
 class TestUniverseManager:
     def _make_universe(self) -> UniverseManager:
         settings = Settings(
-            fmp_api_key="test",
-            scan_price_threshold=5.0,
+            scan_price_max=5.0,
         )
         db = MagicMock()
         return UniverseManager(settings, db)

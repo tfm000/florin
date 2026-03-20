@@ -88,9 +88,6 @@ class Settings(BaseSettings):
     # --- Polygon ---
     polygon_api_key: str = ""
 
-    # --- FMP ---
-    fmp_api_key: str = ""
-
     # --- Reddit ---
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
@@ -125,6 +122,7 @@ class Settings(BaseSettings):
     scan_interval_seconds: int = Field(default=120, ge=10, le=3600)
     scan_cooldown_minutes: int = Field(default=30, ge=1, le=1440)
     scan_min_volume: int = Field(default=10_000, ge=0)
+    market_cap_source: str = "yfinance"  # "yfinance" or "inferred"
 
     # --- Trading ---
     default_position_size: float = Field(default=100.0, ge=1.0)

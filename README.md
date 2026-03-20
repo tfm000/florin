@@ -36,7 +36,6 @@ All settings are configured via the **dashboard Settings page** at `http://local
 | `ALPACA_API_KEY` | Alpaca market data | [alpaca.markets](https://alpaca.markets) — free tier available |
 | `ALPACA_API_SECRET` | Alpaca secret | Same as above |
 | `ALPACA_FEED` | `iex` (free) or `sip` (paid) | Default: `iex` |
-| `FMP_API_KEY` | Financial Modeling Prep | [financialmodelingprep.com](https://financialmodelingprep.com) — universe discovery |
 | `POLYGON_API_KEY` | Polygon.io (fallback) | [polygon.io](https://polygon.io) — optional |
 
 ### Broker
