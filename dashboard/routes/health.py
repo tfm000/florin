@@ -1,4 +1,4 @@
-"""Health check endpoint."""
+"""Health check endpoints — liveness, readiness, and combined."""
 
 from __future__ import annotations
 
@@ -18,9 +18,44 @@ from dashboard.deps import (
 router = APIRouter(tags=["health"])
 
 
+@router.get("/health/live")
+async def liveness() -> dict:
+    """Liveness probe — is the process alive? Always returns 200."""
+    return {"status": "alive"}
+
+
+@router.get("/health/ready")
+async def readiness() -> dict:
+    """Readiness probe — are all critical dependencies healthy?"""
+    db = get_db()
+    broker = get_broker()
+
+    db_ok = False
+    try:
+        async with db.session() as session:
+            await session.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+
+    broker_ok = False
+    if broker:
+        try:
+            broker_ok = await broker.health_check()
+        except Exception:
+            pass
+
+    ready = db_ok and broker_ok
+    return {
+        "status": "ready" if ready else "not_ready",
+        "database": db_ok,
+        "broker": broker_ok,
+    }
+
+
 @router.get("/health")
 async def health_check() -> dict:
-    """Return component health status and pipeline readiness."""
+    """Return component health status, pipeline readiness, and trading mode."""
     settings = get_settings()
     db = get_db()
     broker = get_broker()
@@ -40,10 +75,12 @@ async def health_check() -> dict:
     # Broker
     broker_ok = False
     broker_name = None
+    broker_is_live = False
     if broker:
         try:
             broker_ok = await broker.health_check()
             broker_name = broker.name
+            broker_is_live = broker.is_live
         except Exception:
             pass
 
@@ -74,8 +111,14 @@ async def health_check() -> dict:
 
     return {
         "status": status,
+        "paper_trading": settings.paper_trading,
+        "trading_mode": "PAPER" if settings.paper_trading else "LIVE",
         "database": db_ok,
-        "broker": {"connected": broker_ok, "name": broker_name},
+        "broker": {
+            "connected": broker_ok,
+            "name": broker_name,
+            "is_live": broker_is_live,
+        },
         "market_data": {
             "alpaca_configured": settings.alpaca_configured,
             "alpaca_connected": data_provider is not None,

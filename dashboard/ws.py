@@ -91,6 +91,9 @@ async def event_bridge(event_bus: EventBus, ws_manager: ConnectionManager) -> No
         EventType.TRADE_FAILED: "trades",
         EventType.ACCOUNT_UPDATE: "account",
         EventType.SCANNER_STATUS: "status",
+        EventType.PRICE_UPDATE: "prices",
+        EventType.MONITOR_UPDATE: "monitor",
+        EventType.WATCHLIST_UPDATE: "watchlist",
     }
 
     async for event in event_bus.subscribe_all():

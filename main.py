@@ -44,11 +44,12 @@ class Sentinel:
         """Initialise and start all services."""
         setup_logging(self.settings.log_level, self.settings.app_env)
         logger.info(
-            "Starting Penny Stock Sentinel",
+            "Starting Sentinel Terminal",
             env=self.settings.app_env.value,
             llm_mode=self.settings.llm_mode.value,
             price_range=f"${self.settings.scan_price_min:.2f}-${self.settings.scan_price_max:.2f}",
             momentum_threshold=self.settings.scan_momentum_threshold,
+            paper_trading=self.settings.paper_trading,
         )
 
         # --- Database ---
@@ -77,8 +78,9 @@ class Sentinel:
 
         # --- Initialise components ---
 
-        # Broker
-        broker = await self._init_broker()
+        # Broker — wrapped in SafeBroker for paper trading safety
+        raw_broker = await self._init_broker()
+        broker = await self._wrap_broker(raw_broker)
 
         # Market data provider
         data_provider = None
@@ -223,6 +225,27 @@ class Sentinel:
         await broker.connect()
         logger.info("Paper broker active")
         return broker
+
+    async def _wrap_broker(self, inner_broker: Any) -> Any:
+        """Wrap the broker in SafeBroker to enforce paper_trading mode."""
+        from broker.paper_broker import PaperBroker
+        from broker.safe_broker import SafeBroker
+
+        paper_broker = PaperBroker(initial_cash=10_000.0, currency="GBP")
+        await paper_broker.connect()
+
+        safe = SafeBroker(
+            inner=inner_broker,
+            paper_broker=paper_broker,
+            paper_mode=self.settings.paper_trading,
+        )
+
+        if self.settings.paper_trading:
+            logger.info("PAPER TRADING MODE — orders will NOT reach live broker")
+        else:
+            logger.warning("LIVE TRADING ENABLED — orders will reach %s", inner_broker.name)
+
+        return safe
 
     def _init_sentiment(self) -> Any:
         """Initialise sentiment aggregator with all sources."""
