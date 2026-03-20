@@ -107,3 +107,56 @@ class TestOrderRoutes:
     async def test_pending_no_broker(self, client):
         resp = await client.get("/api/orders/pending")
         assert resp.status_code == 503
+
+
+class TestSettingsRoutes:
+    @pytest.mark.asyncio
+    async def test_get_settings(self, client):
+        resp = await client.get("/api/settings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sections" in data
+        section_ids = [s["id"] for s in data["sections"]]
+        assert "scanner" in section_ids
+        assert "llm" in section_ids
+        assert "broker" in section_ids
+
+    @pytest.mark.asyncio
+    async def test_settings_masks_secrets(self, client):
+        resp = await client.get("/api/settings")
+        data = resp.json()
+        # Find broker section
+        broker = next(s for s in data["sections"] if s["id"] == "broker")
+        api_key_field = next(f for f in broker["fields"] if f["key"] == "t212_api_key")
+        assert api_key_field["is_secret"] is True
+
+    @pytest.mark.asyncio
+    async def test_update_settings(self, client):
+        resp = await client.put("/api/settings", json={
+            "settings": [{"key": "scan_interval_seconds", "value": "60"}]
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "scan_interval_seconds" in data["updated"]
+
+    @pytest.mark.asyncio
+    async def test_update_persists(self, client):
+        await client.put("/api/settings", json={
+            "settings": [{"key": "scan_min_volume", "value": "5000"}]
+        })
+        resp = await client.get("/api/settings")
+        data = resp.json()
+        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
+        vol_field = next(f for f in scanner["fields"] if f["key"] == "scan_min_volume")
+        assert vol_field["value"] == "5000"
+        assert vol_field["has_db_override"] is True
+
+    @pytest.mark.asyncio
+    async def test_delete_setting(self, client):
+        # Set then delete
+        await client.put("/api/settings", json={
+            "settings": [{"key": "log_level", "value": "DEBUG"}]
+        })
+        resp = await client.delete("/api/settings/log_level")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == "log_level"

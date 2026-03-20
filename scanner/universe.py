@@ -108,12 +108,19 @@ class UniverseManager:
         # Full refresh
         await self.refresh()
 
+    def __len__(self) -> int:
+        return len(self._stocks)
+
     async def refresh(self) -> None:
         """
         Full universe refresh from FMP.
 
         Fetches all penny stocks, maps T212 tickers, and persists to SQLite.
         """
+        if not self._settings.fmp_api_key:
+            logger.warning("FMP API key not configured — skipping universe refresh")
+            return
+
         logger.info("Refreshing penny stock universe from FMP...")
 
         async with self._fmp:

@@ -54,7 +54,7 @@ def create_app(
     )
 
     # Register API routes (import here to avoid circular imports)
-    from dashboard.routes import positions, universe, reports, trades, account, orders, stats, health
+    from dashboard.routes import positions, universe, reports, trades, account, orders, stats, health, settings
 
     app.include_router(health.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
@@ -64,6 +64,7 @@ def create_app(
     app.include_router(account.router, prefix="/api")
     app.include_router(orders.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint
@@ -80,6 +81,9 @@ def create_app(
 
 async def serve(app: FastAPI, settings: Settings) -> None:
     """Run the dashboard server (called from main.py)."""
+    import asyncio
+    import webbrowser
+
     import uvicorn
 
     config = uvicorn.Config(
@@ -89,4 +93,13 @@ async def serve(app: FastAPI, settings: Settings) -> None:
         log_level="warning",
     )
     server = uvicorn.Server(config)
+
+    # Open browser once server is ready
+    async def _open_browser() -> None:
+        await asyncio.sleep(1.0)
+        url = f"http://localhost:{settings.dashboard_port}"
+        logger.info("Opening dashboard: %s", url)
+        webbrowser.open(url)
+
+    asyncio.create_task(_open_browser())
     await server.serve()
