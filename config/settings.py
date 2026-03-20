@@ -125,6 +125,7 @@ class Settings(BaseSettings):
     market_cap_source: str = "yfinance"  # "yfinance" or "inferred"
 
     # --- Trading ---
+    paper_trading: bool = True  # DEFAULT TRUE — must explicitly set False for live trading
     default_position_size: float = Field(default=100.0, ge=1.0)
     position_size_unit: str = "gbp"
     default_stop_loss_pct: float = Field(default=10.0, ge=0.5, le=50.0)

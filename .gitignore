@@ -14,15 +14,27 @@ build/
 venv/
 ENV/
 
+# Environment / secrets
+.env
+.env.*
+!.env.example
+credentials.json
+*.pem
+*.key
+
 # Database
 *.db
 *.sqlite3
+
+# Alembic
+alembic/versions/__pycache__/
 
 # Testing / coverage
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
+.hypothesis/
 
 # IDE
 .vscode/

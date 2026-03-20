@@ -16,8 +16,14 @@ from fastapi.staticfiles import StaticFiles
 
 from config.settings import Settings
 from core.events import EventBus
+from core.exceptions import SentinelError
 from db.database import Database
 from dashboard.deps import set_state
+from dashboard.middleware import (
+    RequestIdMiddleware,
+    RateLimitMiddleware,
+    sentinel_exception_handler,
+)
 from dashboard.ws import ConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -38,13 +44,16 @@ def create_app(
     set_state("ws_manager", ConnectionManager())
 
     app = FastAPI(
-        title="Penny Stock Sentinel",
-        version="0.1.0",
+        title="Sentinel Terminal",
+        version="0.2.0",
         docs_url="/api/docs",
         redoc_url=None,
     )
 
-    # CORS — allow React dev server
+    # Exception handler for domain exceptions
+    app.add_exception_handler(SentinelError, sentinel_exception_handler)
+
+    # Middleware (applied bottom-to-top: RequestId runs first, then RateLimit, then CORS)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -52,6 +61,8 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestIdMiddleware)
 
     # Register API routes (import here to avoid circular imports)
     from dashboard.routes import positions, universe, reports, trades, account, orders, stats, health, settings
