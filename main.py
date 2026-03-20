@@ -62,8 +62,6 @@ class Sentinel:
 
         # --- Validate required config ---
         warnings = []
-        if not self.settings.fmp_api_key:
-            warnings.append("FMP API key not configured — market cap/sector enrichment disabled (optional)")
         if not self.settings.alpaca_configured:
             warnings.append("Alpaca API not configured — market data unavailable")
         if not self.settings.t212_configured:
@@ -90,9 +88,13 @@ class Sentinel:
             await data_provider.connect()
             logger.info("Alpaca data provider connected")
 
+        # yfinance provider (always available, no API key needed)
+        from data.yfinance_provider import YFinanceProvider
+        yfinance_provider = YFinanceProvider()
+
         # Universe manager
         from scanner.universe import UniverseManager
-        universe = UniverseManager(self.settings, self.db, data_provider)
+        universe = UniverseManager(self.settings, self.db, data_provider, yfinance_provider)
 
         # Scanner
         scanner = None
@@ -131,6 +133,7 @@ class Sentinel:
         set_state("universe", universe)
         set_state("scanner", scanner)
         set_state("data_provider", data_provider)
+        set_state("yfinance_provider", yfinance_provider)
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---

@@ -1,11 +1,9 @@
 """
 News sentiment source.
 
-Aggregates financial news from free API tiers:
-  - FMP (Financial Modeling Prep) stock news endpoint
+Aggregates financial news from:
+  - yfinance (Yahoo Finance news for ticker)
   - Alpha Vantage News Sentiment endpoint (if configured)
-
-Both provide headlines, sources, timestamps, and relevance scores.
 """
 
 from __future__ import annotations
@@ -22,7 +20,6 @@ from sentiment.base import SentimentSource
 
 logger = logging.getLogger(__name__)
 
-FMP_NEWS_URL = "https://financialmodelingprep.com/api/v3/stock_news"
 ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
 
 MAX_ARTICLES = 15
@@ -30,14 +27,13 @@ MAX_ARTICLES = 15
 
 class NewsSource(SentimentSource):
     """
-    Fetches financial news from FMP and Alpha Vantage free tiers.
+    Fetches financial news from yfinance and Alpha Vantage free tiers.
 
     Returns recent news articles mentioning the given ticker,
     with headline, source, and relevance scoring.
     """
 
     def __init__(self, settings: Settings) -> None:
-        self._fmp_key = settings.fmp_api_key
         # Alpha Vantage key reuse — add to settings if needed
         self._av_key = ""  # Optional, not in settings yet
 
@@ -46,17 +42,8 @@ class NewsSource(SentimentSource):
         return "News"
 
     async def health_check(self) -> bool:
-        if not self._fmp_key:
-            return False
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    FMP_NEWS_URL,
-                    params={"apikey": self._fmp_key, "limit": 1},
-                )
-                return resp.status_code == 200
-        except Exception:
-            return False
+        # yfinance is always available (no API key needed)
+        return True
 
     async def fetch(self, ticker: str, company_name: str = "") -> dict[str, Any]:
         """
@@ -66,10 +53,9 @@ class NewsSource(SentimentSource):
         """
         articles: list[NewsArticle] = []
 
-        # FMP news (primary)
-        if self._fmp_key:
-            fmp_articles = await self._fetch_fmp_news(ticker)
-            articles.extend(fmp_articles)
+        # yfinance news (primary)
+        yf_articles = await self._fetch_yfinance_news(ticker)
+        articles.extend(yf_articles)
 
         # Alpha Vantage news (supplementary)
         if self._av_key:
@@ -85,38 +71,48 @@ class NewsSource(SentimentSource):
 
         return {"articles": articles[:MAX_ARTICLES]}
 
-    async def _fetch_fmp_news(self, ticker: str) -> list[NewsArticle]:
-        """Fetch news from FMP stock_news endpoint."""
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    FMP_NEWS_URL,
-                    params={
-                        "tickers": ticker,
-                        "limit": MAX_ARTICLES,
-                        "apikey": self._fmp_key,
-                    },
-                )
+    async def _fetch_yfinance_news(self, ticker: str) -> list[NewsArticle]:
+        """Fetch news from yfinance."""
+        import asyncio
+        import yfinance as yf
 
-                if resp.status_code != 200:
-                    logger.warning("FMP news returned %d", resp.status_code)
-                    return []
-
-                data = resp.json()
-                if not isinstance(data, list):
-                    return []
-
+        def _get() -> list[NewsArticle]:
+            try:
+                t = yf.Ticker(ticker)
+                news = t.news or []
                 articles = []
-                for item in data:
-                    article = self._parse_fmp_article(item)
-                    if article:
-                        articles.append(article)
+                for item in news:
+                    content = item.get("content", {}) if isinstance(item, dict) else {}
+                    title = content.get("title") or item.get("title", "")
+                    if not title:
+                        continue
 
-                return articles
+                    pub_time = content.get("pubDate") or item.get("providerPublishTime", "")
+                    published_at = datetime.now(UTC)
+                    if isinstance(pub_time, (int, float)):
+                        published_at = datetime.fromtimestamp(pub_time, tz=UTC)
+                    elif isinstance(pub_time, str) and pub_time:
+                        try:
+                            published_at = datetime.fromisoformat(pub_time.replace("Z", "+00:00"))
+                        except ValueError:
+                            pass
 
-        except Exception:
-            logger.exception("FMP news fetch failed for %s", ticker)
-            return []
+                    articles.append(NewsArticle(
+                        title=title,
+                        source=content.get("provider", {}).get("displayName", "")
+                            or item.get("publisher", ""),
+                        url=content.get("canonicalUrl", {}).get("url", "")
+                            or item.get("link", ""),
+                        summary=(content.get("summary", "") or "")[:300],
+                        published_at=published_at,
+                        relevance_score=1.0,
+                    ))
+                return articles[:MAX_ARTICLES]
+            except Exception:
+                logger.exception("yfinance news fetch failed for %s", ticker)
+                return []
+
+        return await asyncio.to_thread(_get)
 
     async def _fetch_av_news(self, ticker: str) -> list[NewsArticle]:
         """Fetch news from Alpha Vantage News Sentiment endpoint."""
@@ -147,30 +143,6 @@ class NewsSource(SentimentSource):
         except Exception:
             logger.exception("Alpha Vantage news fetch failed for %s", ticker)
             return []
-
-    def _parse_fmp_article(self, item: dict[str, Any]) -> NewsArticle | None:
-        """Parse an FMP news item."""
-        try:
-            published_str = item.get("publishedDate", "")
-            published_at = datetime.now(UTC)
-            if published_str:
-                try:
-                    published_at = datetime.fromisoformat(
-                        published_str.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    pass
-
-            return NewsArticle(
-                title=item.get("title", ""),
-                source=item.get("site", ""),
-                url=item.get("url", ""),
-                summary=(item.get("text", "") or "")[:300],
-                published_at=published_at,
-                relevance_score=1.0,  # FMP doesn't provide relevance
-            )
-        except Exception:
-            return None
 
     def _parse_av_article(
         self, item: dict[str, Any], ticker: str,

@@ -180,7 +180,7 @@ class PolygonProvider(MarketDataProvider):
             return []
 
     async def get_instruments(self) -> list[StockInfo]:
-        """Not used — FMPProvider handles universe discovery."""
+        """Not used — Alpaca/yfinance handles universe discovery."""
         return []
 
     def _snap_to_quote(self, snap: dict) -> StockQuote | None:

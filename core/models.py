@@ -112,6 +112,8 @@ class StockInfo(BaseModel):
     sector: str = ""
     industry: str = ""
     market_cap: Optional[float] = None
+    shares_outstanding: Optional[int] = None
+    inferred_market_cap: Optional[float] = None  # shares_outstanding × price
     avg_volume: int = 0
     last_price: float = 0.0
     in_universe: bool = True  # Still qualifies as penny stock

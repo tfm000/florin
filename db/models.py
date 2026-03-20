@@ -139,6 +139,8 @@ class UniverseStockORM(Base):
     sector: Mapped[str] = mapped_column(String(100), default="")
     industry: Mapped[str] = mapped_column(String(100), default="")
     market_cap: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    shares_outstanding: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    inferred_market_cap: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     avg_volume: Mapped[int] = mapped_column(Integer, default=0)
     last_price: Mapped[float] = mapped_column(Float, default=0.0)
     in_universe: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
@@ -172,3 +174,34 @@ class TelegramMessageORM(Base):
     report_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     last_updated: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Watchlist
+# =============================================================================
+
+class WatchlistORM(Base):
+    __tablename__ = "watchlist"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    ticker: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    asset_type: Mapped[str] = mapped_column(String(20), default="equity")  # equity, crypto, etf, bond, index
+    notes: Mapped[str] = mapped_column(Text, default="")
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Monitored Assets (live price tracking via Alpaca)
+# =============================================================================
+
+class MonitoredAssetORM(Base):
+    __tablename__ = "monitored_assets"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    ticker: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # alpaca, manual
+    asset_type: Mapped[str] = mapped_column(String(20), default="equity")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

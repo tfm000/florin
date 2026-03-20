@@ -61,18 +61,9 @@ async def health_check() -> dict:
             "description": "Required for stock universe discovery, real-time market data, and price streaming.",
             "configured": settings.alpaca_configured,
         },
-        {
-            "key": "fmp_api_key",
-            "label": "FMP API Key (optional)",
-            "description": "Optional. Enriches stocks with market cap, sector, and industry data.",
-            "configured": bool(settings.fmp_api_key),
-            "optional": True,
-        },
     ]
 
-    all_configured = all(
-        item["configured"] for item in checklist if not item.get("optional")
-    )
+    all_configured = all(item["configured"] for item in checklist)
 
     if not db_ok:
         status = "degraded"
@@ -90,7 +81,6 @@ async def health_check() -> dict:
             "alpaca_connected": data_provider is not None,
         },
         "universe": {
-            "fmp_configured": bool(settings.fmp_api_key),
             "ticker_count": universe_size,
             "last_refresh": universe_refresh,
         },

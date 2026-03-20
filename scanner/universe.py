@@ -2,14 +2,14 @@
 Penny stock universe manager.
 
 Responsibilities:
-  1. On startup, discover all penny stocks via Alpaca (primary) or FMP (fallback)
-  2. Optionally enrich with market cap/sector from FMP
+  1. On startup, discover all penny stocks via Alpaca (primary) or yfinance (fallback)
+  2. Optionally enrich with market cap/sector from yfinance
   3. Cross-reference with Trading 212 instruments for ticker mapping
   4. Cache results in SQLite — refresh daily at market open
   5. Provide fast in-memory access to the active universe
 
 Data flow:
-  Alpaca assets + snapshots → price filter → FMP enrichment (optional) → SQLite cache → in-memory dict
+  Alpaca assets + snapshots → price filter → yfinance enrichment → SQLite cache → in-memory dict
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ from sqlalchemy import select, update
 from config.constants import SUPPORTED_EXCHANGES, T212_TICKER_SUFFIX
 from config.settings import Settings
 from core.models import StockInfo
-from data.fmp_provider import FMPProvider
 from db.database import Database
 from db.models import UniverseStockORM
 
 if TYPE_CHECKING:
     from data.alpaca_provider import AlpacaProvider
+    from data.yfinance_provider import YFinanceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class UniverseManager:
     - Actively trading (not halted/delisted)
 
     Primary source: Alpaca (free, reliable).
-    Optional enrichment: FMP for market cap/sector data.
+    Optional enrichment: yfinance for market cap/sector data.
 
     The universe is cached in SQLite and refreshed daily.
     An in-memory dict provides O(1) lookups during scanning.
@@ -54,11 +54,12 @@ class UniverseManager:
         settings: Settings,
         db: Database,
         data_provider: AlpacaProvider | None = None,
+        yfinance_provider: YFinanceProvider | None = None,
     ) -> None:
         self._settings = settings
         self._db = db
         self._data_provider = data_provider
-        self._fmp = FMPProvider(settings) if settings.fmp_api_key else None
+        self._yfinance = yfinance_provider
 
         # In-memory cache: ticker -> StockInfo
         self._stocks: dict[str, StockInfo] = {}
@@ -98,7 +99,7 @@ class UniverseManager:
 
         Strategy:
         1. Try loading from SQLite cache (fast)
-        2. If cache is stale (>24h) or empty, refresh from Alpaca/FMP
+        2. If cache is stale (>24h) or empty, refresh from Alpaca/yfinance
         """
         # Try cache first
         cached = await self._load_from_cache()
@@ -129,8 +130,8 @@ class UniverseManager:
         Full universe refresh.
 
         Primary: Alpaca (assets + snapshots filtered by price range).
-        Fallback: FMP stock screener (if Alpaca unavailable).
-        Optional: FMP enrichment for market cap/sector.
+        Fallback: yfinance screener.
+        Optional: yfinance enrichment for market cap/sector.
         """
         stocks: list[StockInfo] = []
 
@@ -145,14 +146,18 @@ class UniverseManager:
             except Exception:
                 logger.exception("Alpaca universe discovery failed")
 
-        # Fallback: FMP screener
-        if not stocks and self._fmp:
-            logger.info("Falling back to FMP for universe discovery...")
+        # Fallback: yfinance screener
+        if not stocks and self._yfinance:
+            logger.info("Falling back to yfinance for universe discovery...")
             try:
-                async with self._fmp:
-                    stocks = await self._fmp.get_penny_stocks()
+                stocks = await self._yfinance.filter_penny_stocks(
+                    price_min=self._settings.scan_price_min,
+                    price_max=self._settings.scan_price_max,
+                    market_cap_min=self._settings.scan_market_cap_min,
+                    market_cap_max=self._settings.scan_market_cap_max,
+                )
             except Exception:
-                logger.exception("FMP universe discovery failed")
+                logger.exception("yfinance universe discovery failed")
 
         if not stocks:
             if self._stocks:
@@ -180,12 +185,12 @@ class UniverseManager:
             len(self._stocks),
         )
 
-        # Optional: FMP enrichment for market cap/sector (background, rate-limited)
-        await self._enrich_from_fmp()
+        # Optional: yfinance enrichment for market cap/sector (background, rate-limited)
+        await self._enrich_from_yfinance()
 
-    async def _enrich_from_fmp(self) -> None:
-        """Enrich stocks missing market cap data using FMP profiles."""
-        if not self._fmp or not self._settings.fmp_api_key:
+    async def _enrich_from_yfinance(self) -> None:
+        """Enrich stocks missing market cap data using yfinance."""
+        if not self._yfinance:
             return
 
         # Find tickers without market cap data
@@ -193,27 +198,30 @@ class UniverseManager:
         if not missing:
             return
 
-        logger.info("Enriching %d tickers with FMP market cap data...", len(missing))
+        logger.info("Enriching %d tickers with yfinance data...", len(missing))
         try:
-            async with self._fmp:
-                enriched = await self._fmp.enrich_batch(missing, max_calls=50)
+            enriched = await self._yfinance.enrich_batch(missing, max_calls=50)
 
             for ticker, data in enriched.items():
                 stock = self._stocks.get(ticker)
                 if stock:
-                    stock.market_cap = data.get("market_cap", 0)
+                    stock.market_cap = data.get("market_cap")
                     stock.sector = data.get("sector", "")
                     stock.industry = data.get("industry", "")
+                    stock.shares_outstanding = data.get("shares_outstanding")
+                    # Compute inferred market cap
+                    if stock.shares_outstanding and stock.last_price:
+                        stock.inferred_market_cap = stock.shares_outstanding * stock.last_price
 
             # Re-apply market cap filter and re-save
             if enriched:
                 filtered = self._apply_market_cap_filter(list(self._stocks.values()))
                 self._stocks = {s.ticker: s for s in filtered}
                 await self._save_to_cache(list(self._stocks.values()))
-                logger.info("FMP enrichment complete: %d tickers updated", len(enriched))
+                logger.info("yfinance enrichment complete: %d tickers updated", len(enriched))
 
         except Exception:
-            logger.exception("FMP enrichment failed")
+            logger.exception("yfinance enrichment failed")
 
     def _apply_market_cap_filter(self, stocks: list[StockInfo]) -> list[StockInfo]:
         """Filter stocks by market cap if thresholds are configured."""
@@ -223,15 +231,18 @@ class UniverseManager:
         if not min_cap and not max_cap:
             return stocks
 
+        use_inferred = self._settings.market_cap_source == "inferred"
+
         filtered = []
         for stock in stocks:
+            cap = stock.inferred_market_cap if use_inferred else stock.market_cap
             # If no market cap data, keep the stock (will be enriched later)
-            if not stock.market_cap:
+            if not cap:
                 filtered.append(stock)
                 continue
-            if min_cap and stock.market_cap < min_cap:
+            if min_cap and cap < min_cap:
                 continue
-            if max_cap and stock.market_cap > max_cap:
+            if max_cap and cap > max_cap:
                 continue
             filtered.append(stock)
 
@@ -290,6 +301,8 @@ class UniverseManager:
                         sector=row.sector,
                         industry=row.industry,
                         market_cap=row.market_cap,
+                        shares_outstanding=row.shares_outstanding,
+                        inferred_market_cap=row.inferred_market_cap,
                         avg_volume=row.avg_volume,
                         last_price=row.last_price,
                         in_universe=row.in_universe,
@@ -319,6 +332,8 @@ class UniverseManager:
                         existing.sector = stock.sector
                         existing.industry = stock.industry
                         existing.market_cap = stock.market_cap
+                        existing.shares_outstanding = stock.shares_outstanding
+                        existing.inferred_market_cap = stock.inferred_market_cap
                         existing.avg_volume = stock.avg_volume
                         existing.last_price = stock.last_price
                         existing.in_universe = True
@@ -332,6 +347,8 @@ class UniverseManager:
                             sector=stock.sector,
                             industry=stock.industry,
                             market_cap=stock.market_cap,
+                            shares_outstanding=stock.shares_outstanding,
+                            inferred_market_cap=stock.inferred_market_cap,
                             avg_volume=stock.avg_volume,
                             last_price=stock.last_price,
                             in_universe=True,
