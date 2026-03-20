@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class SentinelBot:
     """
-    Telegram bot for Penny Stock Sentinel.
+    Telegram bot for Sentinel Terminal.
 
     Provides:
     - Alert notifications with BUY/DENY buttons

@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # --- Reddit ---
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
-    reddit_user_agent: str = "penny-stock-sentinel/0.1"
+    reddit_user_agent: str = "sentinel-terminal/0.2"
 
     # --- LLM: Ollama ---
     ollama_base_url: str = "http://localhost:11434"
