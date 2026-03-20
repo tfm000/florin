@@ -10,7 +10,6 @@ const TENORS = ['3M', '2Y', '5Y', '10Y', '30Y']
 export default function YieldCurveChart() {
   const [period, setPeriod] = useState('1y')
   const [selectedDates, setSelectedDates] = useState([])
-  const { data: current } = useApi('/research/yield-curve')
   const { data: history, loading } = useApi(`/research/yield-curve/history?period=${period}`)
 
   // Available dates from history (sample evenly for the picker)
@@ -19,34 +18,40 @@ export default function YieldCurveChart() {
     return history.dates
   }, [history])
 
-  // Build chart data: each tenor is a row, each selected date + "Today" is a line
+  // Helper: extract a curve at a given date index from history
+  const getCurveAt = (idx) => {
+    if (!history?.tenors) return null
+    const curve = {}
+    for (const tenor of TENORS) {
+      const vals = history.tenors[tenor]
+      if (vals && vals[idx] != null) {
+        curve[tenor] = vals[idx]
+      }
+    }
+    return Object.keys(curve).length > 0 ? curve : null
+  }
+
+  // "Today" = latest date in the history (same data source, no discrepancy)
+  const latestDate = history?.dates?.[history.dates.length - 1] || ''
+
+  // Build chart data: each tenor is a row, each selected date + "Latest" is a line
   const chartData = useMemo(() => {
     const lines = []
 
-    // Today's curve
-    if (current?.curve) {
-      lines.push({ label: 'Today', curve: current.curve })
+    // Latest curve from history
+    if (history?.dates?.length > 0) {
+      const curve = getCurveAt(history.dates.length - 1)
+      if (curve) lines.push({ label: `Today (${latestDate})`, curve })
     }
 
     // Historical curves from selected dates
-    if (history?.tenors && selectedDates.length > 0) {
-      for (const dateStr of selectedDates) {
-        const idx = history.dates.indexOf(dateStr)
-        if (idx === -1) continue
-        const curve = {}
-        for (const tenor of TENORS) {
-          const vals = history.tenors[tenor]
-          if (vals && vals[idx] != null) {
-            curve[tenor] = vals[idx]
-          }
-        }
-        if (Object.keys(curve).length > 0) {
-          lines.push({ label: dateStr, curve })
-        }
-      }
+    for (const dateStr of selectedDates) {
+      const idx = history?.dates?.indexOf(dateStr)
+      if (idx == null || idx === -1) continue
+      const curve = getCurveAt(idx)
+      if (curve) lines.push({ label: dateStr, curve })
     }
 
-    // Transform to recharts format: [{tenor: "3M", Today: 4.2, "2024-06-01": 3.8}, ...]
     return TENORS.map(tenor => {
       const point = { tenor }
       for (const line of lines) {
@@ -56,10 +61,10 @@ export default function YieldCurveChart() {
       }
       return point
     })
-  }, [current, history, selectedDates])
+  }, [history, selectedDates, latestDate])
 
   const { handleLegendClick, isHidden, legendFormatter } = useLegendToggle()
-  const lineKeys = ['Today', ...selectedDates]
+  const lineKeys = latestDate ? [`Today (${latestDate})`, ...selectedDates] : [...selectedDates]
 
   const toggleDate = (dateStr) => {
     setSelectedDates(prev =>
@@ -69,16 +74,17 @@ export default function YieldCurveChart() {
     )
   }
 
-  // Sample dates for the picker — show ~12 evenly spaced dates
+  // Sample dates for the picker — show ~12 evenly spaced dates, excluding the latest (already shown as "Today")
   const pickerDates = useMemo(() => {
-    if (availableDates.length <= 12) return availableDates
-    const step = Math.floor(availableDates.length / 12)
+    const filtered = availableDates.filter(d => d !== latestDate)
+    if (filtered.length <= 12) return filtered
+    const step = Math.floor(filtered.length / 12)
     const sampled = []
-    for (let i = 0; i < availableDates.length; i += step) {
-      sampled.push(availableDates[i])
+    for (let i = 0; i < filtered.length; i += step) {
+      sampled.push(filtered[i])
     }
     return sampled
-  }, [availableDates])
+  }, [availableDates, latestDate])
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -124,30 +130,77 @@ export default function YieldCurveChart() {
                 formatter={legendFormatter}
               />
             )}
-            {lineKeys.map((key, i) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={COLORS[i % COLORS.length]}
-                strokeWidth={key === 'Today' ? 2.5 : 1.5}
-                strokeDasharray={key === 'Today' ? undefined : '5 3'}
-                dot={{ fill: COLORS[i % COLORS.length], r: key === 'Today' ? 4 : 3 }}
-                connectNulls
-                hide={isHidden(key)}
-              />
-            ))}
+            {lineKeys.map((key, i) => {
+              const isToday = key.startsWith('Today')
+              return (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={COLORS[i % COLORS.length]}
+                  strokeWidth={isToday ? 2.5 : 1.5}
+                  strokeDasharray={isToday ? undefined : '5 3'}
+                  dot={{ fill: COLORS[i % COLORS.length], r: isToday ? 4 : 3 }}
+                  connectNulls
+                  hide={isHidden(key)}
+                />
+              )
+            })}
           </LineChart>
         </ResponsiveContainer>
       )}
 
       {/* Date picker */}
-      {pickerDates.length > 0 && (
-        <div className="mt-3">
-          <p className="text-xs text-gray-500 mb-2">
-            Compare with historical dates (click to overlay, max 4):
-          </p>
+      {availableDates.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {/* Custom date input */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Add date:</span>
+            <input
+              type="date"
+              min={availableDates[0]}
+              max={latestDate}
+              onChange={(e) => {
+                const val = e.target.value
+                if (!val) return
+                // Snap to nearest available date
+                const nearest = availableDates.reduce((best, d) =>
+                  Math.abs(new Date(d) - new Date(val)) < Math.abs(new Date(best) - new Date(val)) ? d : best
+                )
+                if (nearest !== latestDate && !selectedDates.includes(nearest)) {
+                  toggleDate(nearest)
+                }
+                e.target.value = ''
+              }}
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+            />
+            {selectedDates.length > 0 && (
+              <button
+                onClick={() => setSelectedDates([])}
+                className="text-xs text-gray-500 hover:text-red-400"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {/* Selected dates as removable chips */}
+          {selectedDates.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {selectedDates.map((d, i) => (
+                <span key={d} className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-gray-700 text-white"
+                  style={{ borderLeft: `3px solid ${COLORS[(i + 1) % COLORS.length]}` }}
+                >
+                  {d}
+                  <button onClick={() => toggleDate(d)} className="text-gray-400 hover:text-red-400 ml-0.5">&times;</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Quick-pick presets */}
           <div className="flex flex-wrap gap-1">
+            <span className="text-xs text-gray-500 mr-1">Quick:</span>
             {pickerDates.map(d => (
               <button
                 key={d}
@@ -158,7 +211,7 @@ export default function YieldCurveChart() {
                     : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
                 }`}
               >
-                {d.slice(5)} {/* show MM-DD */}
+                {d.slice(2)}
               </button>
             ))}
           </div>
