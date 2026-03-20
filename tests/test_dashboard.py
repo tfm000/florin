@@ -70,7 +70,10 @@ class TestUniverseRoutes:
     async def test_get_universe_empty(self, client):
         resp = await client.get("/api/universe")
         assert resp.status_code == 200
-        assert resp.json() == []
+        data = resp.json()
+        assert data["items"] == []
+        assert data["total"] == 0
+        assert data["has_more"] is False
 
     @pytest.mark.asyncio
     async def test_get_scanner_settings(self, client):

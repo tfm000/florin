@@ -1,0 +1,185 @@
+"""Tests for Research API endpoints."""
+
+import pytest
+from unittest.mock import AsyncMock, patch
+from httpx import ASGITransport, AsyncClient
+
+from config.settings import Settings
+from core.events import EventBus
+from dashboard.app import create_app
+from dashboard.deps import set_state
+from db.database import Database
+
+
+@pytest.fixture
+async def app():
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        t212_api_key="",
+        t212_api_secret="",
+    )
+    db = Database(settings.database_url)
+    await db.init()
+    event_bus = EventBus()
+
+    # Mock yfinance provider
+    yf_mock = AsyncMock()
+    yf_mock.search.return_value = [
+        {"ticker": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ", "type": "EQUITY"},
+        {"ticker": "AAPD", "name": "Direxion AAPL Bear", "exchange": "NYSE", "type": "ETF"},
+    ]
+    yf_mock.get_info.return_value = {
+        "ticker": "AAPL",
+        "name": "Apple Inc.",
+        "sector": "Technology",
+        "industry": "Consumer Electronics",
+        "market_cap": 3000000000000,
+        "pe_ratio": 28.5,
+        "forward_pe": 25.0,
+        "short_interest": 0.007,
+        "exchange": "NASDAQ",
+        "shares_outstanding": 15000000000,
+        "current_price": 195.50,
+        "previous_close": 194.00,
+        "fifty_two_week_high": 199.62,
+        "fifty_two_week_low": 164.08,
+        "dividend_yield": 0.005,
+        "beta": 1.24,
+        "currency": "USD",
+        "quote_type": "EQUITY",
+    }
+    yf_mock.get_performance_metrics.return_value = {
+        "sharpe_ratio": 1.42,
+        "max_drawdown_pct": 12.5,
+        "return_1m": 3.2,
+        "return_6m": 15.8,
+        "return_1y": 28.4,
+        "return_3y": 45.2,
+    }
+    yf_mock.get_history.return_value = [
+        {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
+        {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+    ]
+    yf_mock.get_news.return_value = [
+        {"title": "Apple Q4 Earnings Beat", "publisher": "Reuters", "url": "https://example.com", "published_at": "2024-01-01", "summary": "Strong results"},
+    ]
+    yf_mock.get_yield_curve.return_value = {
+        "region": "US",
+        "curve": {"3M": 5.35, "2Y": 4.62, "5Y": 4.15, "10Y": 4.25, "30Y": 4.45},
+    }
+    yf_mock.get_g10_rates.return_value = [
+        {"country": "United States", "central_bank": "Federal Reserve", "rate": 4.50, "currency": "USD"},
+        {"country": "Eurozone", "central_bank": "ECB", "rate": 2.65, "currency": "EUR"},
+    ]
+    yf_mock.get_macro_summary.return_value = {
+        "VIX": {"price": 15.2, "change_pct": -2.1},
+        "S&P 500": {"price": 5150.0, "change_pct": 0.8},
+    }
+
+    app = create_app(settings, db, event_bus)
+    set_state("yfinance_provider", yf_mock)
+    yield app
+    await db.close()
+
+
+@pytest.fixture
+async def client(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+class TestSearch:
+    @pytest.mark.asyncio
+    async def test_search_returns_results(self, client):
+        resp = await client.get("/api/research/search?q=AAPL")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["ticker"] == "AAPL"
+        assert data[0]["name"] == "Apple Inc."
+
+    @pytest.mark.asyncio
+    async def test_search_requires_query(self, client):
+        resp = await client.get("/api/research/search")
+        assert resp.status_code == 422
+
+
+class TestAssetInfo:
+    @pytest.mark.asyncio
+    async def test_get_asset_info(self, client):
+        resp = await client.get("/api/research/asset/AAPL")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "AAPL"
+        assert data["name"] == "Apple Inc."
+        assert data["market_cap"] == 3000000000000
+        assert data["sharpe_ratio"] == 1.42
+        assert data["return_1y"] == 28.4
+
+
+class TestHistory:
+    @pytest.mark.asyncio
+    async def test_get_history(self, client):
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["close"] == 191.5
+
+    @pytest.mark.asyncio
+    async def test_invalid_period_rejected(self, client):
+        resp = await client.get("/api/research/asset/AAPL/history?period=invalid")
+        assert resp.status_code == 422
+
+
+class TestNews:
+    @pytest.mark.asyncio
+    async def test_get_ticker_news(self, client):
+        resp = await client.get("/api/research/news?ticker=AAPL")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["title"] == "Apple Q4 Earnings Beat"
+
+    @pytest.mark.asyncio
+    async def test_get_general_news(self, client):
+        resp = await client.get("/api/research/news")
+        assert resp.status_code == 200
+
+
+class TestYieldCurve:
+    @pytest.mark.asyncio
+    async def test_get_yield_curve(self, client):
+        resp = await client.get("/api/research/yield-curve?region=US")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["region"] == "US"
+        assert "10Y" in data["curve"]
+        assert data["curve"]["10Y"] == 4.25
+
+    @pytest.mark.asyncio
+    async def test_invalid_region_rejected(self, client):
+        resp = await client.get("/api/research/yield-curve?region=Invalid")
+        assert resp.status_code == 422
+
+
+class TestPolicyRates:
+    @pytest.mark.asyncio
+    async def test_get_policy_rates(self, client):
+        resp = await client.get("/api/research/policy-rates")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["country"] == "United States"
+        assert data[0]["rate"] == 4.50
+
+
+class TestMacro:
+    @pytest.mark.asyncio
+    async def test_get_macro_summary(self, client):
+        resp = await client.get("/api/research/macro")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "VIX" in data["indicators"]
+        assert data["indicators"]["VIX"]["price"] == 15.2

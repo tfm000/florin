@@ -113,6 +113,49 @@ Analyse the reports and respond with ONLY valid JSON:
     "dissenting_view": "<brief note on any outlier opinion, or null>"
 }}"""
 
+# --- Research analysis prompt (for any asset, not just penny stocks) ---
+RESEARCH_ANALYSIS_SYSTEM_PROMPT = """You are a senior financial analyst. You provide data-driven
+analysis of any publicly traded asset. You have access to macro context, recent news, and
+performance metrics. Always respond with valid JSON matching the requested schema.
+Be specific and cite the data provided."""
+
+RESEARCH_ANALYSIS_PROMPT = """Analyse the following asset.
+
+## Asset Information
+- Ticker: {ticker}
+- Name: {name}
+- Sector: {sector}
+- Industry: {industry}
+- Market Cap: {market_cap}
+- Current Price: {current_price}
+- P/E Ratio: {pe_ratio}
+- Short Interest: {short_interest}
+
+## Performance Metrics
+{performance_summary}
+
+## Macro Context
+{macro_summary}
+
+## Recent News Headlines
+{news_summary}
+
+## Additional Context from User
+{user_context}
+
+Respond with ONLY valid JSON in this exact schema:
+{{
+    "sentiment_score": <float -10 to 10>,
+    "confidence": <float 0 to 1>,
+    "bullish_signals": [<string>, ...],
+    "bearish_signals": [<string>, ...],
+    "risk_level": <int 1 to 5>,
+    "fraud_risk": <"LOW" | "MEDIUM" | "HIGH" | "CRITICAL">,
+    "recommendation": <"STRONG_BUY" | "BUY" | "HOLD" | "AVOID" | "STRONG_AVOID">,
+    "summary": "<2-3 sentence summary>",
+    "key_factors": ["<most important factor 1>", "<factor 2>", "<factor 3>"]
+}}"""
+
 # --- Dashboard ---
 DASHBOARD_PAGE_SIZE = 50  # Default pagination size
 
