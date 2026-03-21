@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 # TTL cache implementation
 _cache: dict[str, tuple[float, Any]] = {}
 
-INFO_TTL = 300  # 5 minutes
+INFO_TTL = 300  # 5 minutes (asset info, IV spreads)
+MACRO_TTL = 60  # 1 minute (indices, commodities, crypto, FX)
 HISTORY_TTL = 3600  # 1 hour
 SEARCH_TTL = 300  # 5 minutes
 
@@ -618,17 +619,33 @@ class YFinanceProvider:
         ]
 
     async def get_macro_summary(self) -> dict:
-        """Macro economic indicators for LLM context (VIX, DXY, key indices, oil, gold)."""
+        """Macro economic indicators including crypto and FX."""
         symbols = {
+            # Indices & Volatility
             "VIX": "^VIX",
             "DXY": "DX-Y.NYB",
             "S&P 500": "^GSPC",
             "NASDAQ": "^IXIC",
             "Dow Jones": "^DJI",
             "Russell 2000": "^RUT",
+            # Commodities
             "Crude Oil": "CL=F",
             "Gold": "GC=F",
+            "Silver": "SI=F",
+            "Nat Gas": "NG=F",
+            # Fixed Income
             "10Y Yield": "^TNX",
+            # Crypto
+            "Bitcoin": "BTC-USD",
+            "Ethereum": "ETH-USD",
+            "Solana": "SOL-USD",
+            # G10 FX
+            "EUR/USD": "EURUSD=X",
+            "GBP/USD": "GBPUSD=X",
+            "USD/JPY": "USDJPY=X",
+            "USD/CHF": "USDCHF=X",
+            "AUD/USD": "AUDUSD=X",
+            "USD/CAD": "USDCAD=X",
         }
 
         def _get() -> dict:
@@ -649,4 +666,10 @@ class YFinanceProvider:
                     logger.debug("Failed to get macro data for %s", label)
             return summary
 
-        return await asyncio.to_thread(_get)
+        cached = _get_cached("macro_summary", MACRO_TTL)
+        if cached is not None:
+            return cached
+
+        result = await asyncio.to_thread(_get)
+        _set_cached("macro_summary", result)
+        return result

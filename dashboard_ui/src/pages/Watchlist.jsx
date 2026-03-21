@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useApi, apiDelete } from '../hooks/useApi'
+import ExportButton from '../components/ExportButton'
 
 export default function Watchlist() {
   const navigate = useNavigate()
@@ -18,7 +19,10 @@ export default function Watchlist() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-white">Watchlist</h1>
-        {data && <span className="text-gray-400 text-sm">{data.total} assets</span>}
+        <div className="flex items-center gap-3">
+          {data && <span className="text-gray-400 text-sm">{data.total} assets</span>}
+          {items.length > 0 && <ExportButton data={items} filename="watchlist" />}
+        </div>
       </div>
 
       {loading && <p className="text-gray-500">Loading watchlist...</p>}

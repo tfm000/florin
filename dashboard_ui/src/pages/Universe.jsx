@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
+import ExportButton from '../components/ExportButton'
 
 function formatMarketCap(val) {
   if (!val) return '—'
@@ -18,9 +19,10 @@ export default function Universe() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-white">Penny Stocks</h1>
-        {data && (
-          <span className="text-gray-400 text-sm">{data.total} stocks</span>
-        )}
+        <div className="flex items-center gap-3">
+          {data && <span className="text-gray-400 text-sm">{data.total} stocks</span>}
+          {stocks.length > 0 && <ExportButton data={stocks} filename="penny_stocks" />}
+        </div>
       </div>
 
       {loading && <p className="text-gray-500">Loading universe...</p>}

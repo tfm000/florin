@@ -1,4 +1,5 @@
 import { useApi } from '../hooks/useApi'
+import ExportButton from '../components/ExportButton'
 
 export default function TradeHistory() {
   const { data: trades, loading, error } = useApi('/trades')
@@ -7,7 +8,10 @@ export default function TradeHistory() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-white">Trade History</h1>
-        {trades && <span className="text-gray-400 text-sm">{trades.length} trades</span>}
+        <div className="flex items-center gap-3">
+          {trades && <span className="text-gray-400 text-sm">{trades.length} trades</span>}
+          {trades?.length > 0 && <ExportButton data={trades} filename="trades" />}
+        </div>
       </div>
 
       {loading && <p className="text-gray-500">Loading trades...</p>}
