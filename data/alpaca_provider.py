@@ -330,6 +330,11 @@ class AlpacaProvider(MarketDataProvider):
         penny_stocks: list[StockInfo] = []
         total_batches = (len(all_tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
 
+        # Filter out warrants, preferred shares, and other non-standard
+        # tickers that Alpaca rejects (e.g. MOBBW, CIG-C, DJTWW).
+        # Alpaca only accepts plain equity symbols: uppercase letters only.
+        all_tickers = [t for t in all_tickers if t.isalpha()]
+
         for batch_num, i in enumerate(range(0, len(all_tickers), REST_SNAPSHOT_BATCH_SIZE)):
             batch = all_tickers[i : i + REST_SNAPSHOT_BATCH_SIZE]
             symbols = ",".join(batch)

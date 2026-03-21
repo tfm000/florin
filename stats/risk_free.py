@@ -71,6 +71,15 @@ _RATE_LOCK = asyncio.Lock()
 _MIN_INTERVAL = 1.0  # 1 req/s per source — conservative
 
 
+def _normalize_date(s: str) -> str:
+    """Extract YYYY-MM-DD from any date/datetime string.
+
+    yfinance returns dates like '2025-03-21 00:00:00-04:00' — we only
+    need the date portion for DB queries and central bank API calls.
+    """
+    return s[:10]
+
+
 # ---------------------------------------------------------------------------
 # Data container
 # ---------------------------------------------------------------------------
@@ -130,6 +139,8 @@ class RiskFreeRateFetcher:
     async def ensure_rates(self, currency: str, start: str, end: str) -> None:
         """Ensure DB has rates for [start, end]. Fetches only missing ranges."""
         currency = currency.upper()
+        start = _normalize_date(start)
+        end = _normalize_date(end)
         if currency not in BENCHMARKS:
             return
 
@@ -182,6 +193,9 @@ class RiskFreeRateFetcher:
     ) -> np.ndarray:
         """Get daily risk-free rates aligned to *dates*.
 
+        *dates* may contain full datetime strings (e.g. from yfinance);
+        only the ``YYYY-MM-DD`` prefix is used.
+
         Returns array in DECIMAL form, converted using the correct day
         count convention for each benchmark:
 
@@ -194,7 +208,10 @@ class RiskFreeRateFetcher:
         """
         currency = currency.upper()
         if not dates or currency not in BENCHMARKS:
-            return np.zeros(len(dates), dtype=np.float64)
+            return np.zeros(len(dates) if dates else 0, dtype=np.float64)
+
+        # Normalize dates — yfinance may pass full datetime strings
+        dates = [_normalize_date(d) for d in dates]
 
         # Ensure we have the data
         await self.ensure_rates(currency, dates[0], dates[-1])
@@ -294,7 +311,17 @@ class RiskFreeRateFetcher:
         if not fn:
             return []
         await self._rate_limit()
-        return await fn(start, end)
+        try:
+            return await fn(start, end)
+        except httpx.HTTPStatusError as e:
+            logger.warning(
+                "%s rate fetch returned HTTP %d for %s",
+                currency, e.response.status_code, e.request.url,
+            )
+            return []
+        except (httpx.RequestError, ValueError) as e:
+            logger.warning("%s rate fetch failed: %s", currency, e)
+            return []
 
     # -- storage -----------------------------------------------------------
 
@@ -581,7 +608,12 @@ class RiskFreeRateFetcher:
         return observations
 
     async def _fetch_nowa(self, start: str, end: str) -> list[RateObservation]:
-        """NOK NOWA from Norges Bank SDMX API."""
+        """NOK NOWA from Norges Bank SDMX API.
+
+        The CSV is semicolon-delimited and contains multiple unit types
+        (Transactions, Volume, Rate, Index, etc.). We filter for
+        UNIT_MEASURE=R (Rate) rows only.
+        """
         url = (
             "https://data.norges-bank.no/api/data/SHORT_RATES/.NOWA"
             f"?startPeriod={start}&endPeriod={end}&format=csv"
@@ -590,9 +622,12 @@ class RiskFreeRateFetcher:
         resp.raise_for_status()
 
         observations = []
-        reader = csv.DictReader(io.StringIO(resp.text))
+        reader = csv.DictReader(io.StringIO(resp.text), delimiter=";")
         for row in reader:
             try:
+                # Only take Rate rows, not Transactions/Volume/Index
+                if row.get("UNIT_MEASURE", "").strip() != "R":
+                    continue
                 d = row.get("TIME_PERIOD", "").strip()
                 val = row.get("OBS_VALUE", "").strip()
                 if d and val:
@@ -619,7 +654,14 @@ class RiskFreeRateFetcher:
             logger.warning("openpyxl not installed — cannot fetch RBNZ OCR data")
             return []
 
-        resp = await self._client.get(url)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (compatible; PennyStockSentinel/1.0; "
+                "+https://github.com/penny-stock-sentinel)"
+            ),
+            "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, */*",
+        }
+        resp = await self._client.get(url, headers=headers)
         resp.raise_for_status()
 
         observations = []
