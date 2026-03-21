@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from stats.core import VaRStats
+from stats.core import VaRStats, annualized_return, annualized_volatility
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,24 @@ class ParametricStats:
     sortino: float
 
 
+def sample_log_t(fitted_t, n_samples: int, scale: float = 1.0, eps: float = 0.001) -> np.ndarray:
+    """Sample from a Student-t distribution with given parameters."""
+    log_samples = np.asarray(fitted_t.rvs(n_samples), dtype=np.float64) / scale
+
+    # Clip to eliminate infinite variance from heavy Student-t tails
+    percentiles_to_clip = fitted_t.ppf([eps, 1 - eps]) / scale
+    log_samples = np.clip(log_samples, percentiles_to_clip[0], percentiles_to_clip[1])
+
+    samples = np.exp(log_samples) - 1
+    return samples
+
+
 def fit_student_t(
     log_rets: np.ndarray,
     rf_daily: float | np.ndarray = 0.0,
     trading_days: int = 252,
     n_samples: int = 10_000,
+    scale: float = 100.0,
 ) -> ParametricStats | None:
     """Fit Student-t to *log_rets*, sample, compute parametric metrics.
 
@@ -44,6 +57,8 @@ def fit_student_t(
                When an array, its mean is used for the sampled paths.
     trading_days : annualisation factor.
     n_samples : Monte-Carlo sample size.
+    scale : scaling factor for fitting — helps copulax avoid degenerate fits
+            on tiny-magnitude data (e.g. daily log returns ~0.02).
 
     Returns ``None`` if copulax is unavailable or fitting fails.
     """
@@ -51,36 +66,42 @@ def fit_student_t(
     if len(log_rets) < 10:
         return None
 
+    # Compute log excess returns: log(1 + r - rf) = log(exp(log_r) - rf)
+    # This can produce NaN when rf > exp(log_r), so we clamp the argument.
+    gross = np.exp(log_rets) - rf_daily  # 1 + simple_excess
+    gross = np.clip(gross, 1e-10, None)  # prevent log(0) or log(negative)
+    log_excess_rets = np.log(gross)
+
     try:
         from copulax.univariate import student_t
 
-        fitted = student_t.fit(log_rets)
+        # Scale up by the provided factor before fitting — copulax can produce degenerate
+        # fits on tiny-magnitude data (daily log returns ~0.02).
+        fitted = student_t.fit(log_rets * scale)
+        fitted_excess = student_t.fit(log_excess_rets * scale)
 
-        # Sample and project back to simple-return space
-        log_samples = np.asarray(fitted.rvs(n_samples), dtype=np.float64)
-        simple_samples = np.exp(log_samples) - 1
+        # Sample, scale back down, project to simple-return space
+        simple_samples = sample_log_t(fitted, n_samples, scale=scale)
+        excess_samples = sample_log_t(fitted_excess, n_samples, scale=scale)
 
-        # Annualised return / vol
-        ann_ret = float(np.mean(simple_samples)) * trading_days * 100
-        ann_vol = float(np.std(simple_samples, ddof=1)) * np.sqrt(trading_days) * 100
+        # Annualised return / vol (these already return percentages)
+        ann_ret = annualized_return(simple_samples, trading_days)
+        ann_vol = annualized_volatility(simple_samples, trading_days)
 
-        # Use mean of rf_daily for the sampled (iid) paths
-        rf_scalar = float(np.mean(rf_daily)) if isinstance(rf_daily, np.ndarray) else float(rf_daily)
-
-        # Sharpe
-        excess = simple_samples - rf_scalar
-        mean_ex = float(np.mean(excess))
-        std_ex = float(np.std(excess, ddof=1))
+        # Sharpe from the fitted excess-return distribution
+        mean_ex = float(np.mean(excess_samples))
+        std_ex = float(np.std(excess_samples, ddof=1))
         p_sharpe = (mean_ex / std_ex * np.sqrt(trading_days)) if std_ex > 0 else 0.0
 
         # Sortino
-        downside = np.minimum(excess, 0.0)
+        downside = np.minimum(excess_samples, 0.0)
         ds_std = float(np.sqrt(np.mean(downside ** 2)))
         p_sortino = (mean_ex / ds_std * np.sqrt(trading_days)) if ds_std > 0 else 0.0
 
         # Parametric VaR / CVaR via the fitted distribution's PPF
-        log_var_95 = float(fitted.ppf(0.05))
-        log_var_99 = float(fitted.ppf(0.01))
+        # PPF returns scaled values, so divide by scale before exp()
+        log_var_95 = float(fitted.ppf(0.05)) / scale
+        log_var_99 = float(fitted.ppf(0.01)) / scale
         p_var_95 = (np.exp(log_var_95) - 1) * 100
         p_var_99 = (np.exp(log_var_99) - 1) * 100
 
