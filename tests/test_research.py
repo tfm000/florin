@@ -213,3 +213,113 @@ class TestMacro:
         data = resp.json()
         assert "VIX" in data["indicators"]
         assert data["indicators"]["VIX"]["price"] == 15.2
+
+
+class TestHolders:
+    @pytest.mark.asyncio
+    async def test_get_holders(self, client, app):
+        # Configure mock holders response
+        yf_mock = app.state.__dict__.get("yfinance_provider", None)
+        # Access the mock through deps
+        from dashboard.deps import _state
+
+        yf_mock = _state["yfinance_provider"]
+        yf_mock.get_holders.return_value = {
+            "breakdown": {
+                "insiders_pct": 0.07,
+                "institutions_pct": 0.61,
+                "institutions_float_pct": 0.65,
+                "institutions_count": 5200,
+            },
+            "institutional": [
+                {
+                    "holder": "Vanguard Group",
+                    "shares": 1300000000,
+                    "value": 254150000000,
+                    "pct_held": 0.087,
+                    "pct_change": 0.01,
+                    "date_reported": "2024-09-30",
+                },
+            ],
+            "mutual_fund": [
+                {
+                    "holder": "Vanguard Total Stock Mkt Idx",
+                    "shares": 400000000,
+                    "value": 78200000000,
+                    "pct_held": 0.027,
+                    "pct_change": -0.005,
+                    "date_reported": "2024-09-30",
+                },
+            ],
+        }
+
+        resp = await client.get("/api/research/holders/AAPL")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "AAPL"
+        assert len(data["institutional"]) == 1
+        assert data["institutional"][0]["holder"] == "Vanguard Group"
+        assert len(data["mutual_fund"]) == 1
+        assert data["mutual_fund"][0]["holder"] == "Vanguard Total Stock Mkt Idx"
+
+
+class TestAnalyse:
+    @pytest.mark.asyncio
+    async def test_analyse_returns_error_without_llm(self, client):
+        """POST analyse should return 503 when no LLM analysers are configured."""
+        set_state("analysers", {})
+        set_state("sentiment_aggregator", None)
+
+        resp = await client.post("/api/research/asset/AAPL/analyse")
+        # Without any analysers, the endpoint raises ServiceUnavailableError (503)
+        assert resp.status_code == 503
+        data = resp.json()
+        assert "detail" in data or "error" in data
+
+
+class TestIVSpread:
+    @pytest.mark.asyncio
+    async def test_get_iv_spread(self, client):
+        from dashboard.deps import _state
+
+        yf_mock = _state["yfinance_provider"]
+        yf_mock.get_put_call_iv_spread.return_value = {
+            "ticker": "SPY",
+            "spot": 515.0,
+            "skew_expiry": "2024-03-15",
+            "available_expiries": ["2024-03-15", "2024-04-19", "2024-06-21"],
+            "skew": [
+                {
+                    "strike": 510.0,
+                    "moneyness": -0.97,
+                    "call_iv": 0.15,
+                    "put_iv": 0.18,
+                    "vol": 0.165,
+                    "spread": 0.03,
+                },
+                {
+                    "strike": 515.0,
+                    "moneyness": 0.0,
+                    "call_iv": 0.13,
+                    "put_iv": 0.14,
+                    "vol": 0.135,
+                    "spread": 0.01,
+                },
+            ],
+            "term_structure": [
+                {"expiry": "2024-03-15", "call_iv": 0.13, "put_iv": 0.15, "spread": 0.02},
+                {"expiry": "2024-04-19", "call_iv": 0.14, "put_iv": 0.16, "spread": 0.02},
+            ],
+        }
+
+        resp = await client.get("/api/research/iv-spread?ticker=SPY")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "SPY"
+        assert data["spot"] == 515.0
+        assert len(data["skew"]) == 2
+        assert data["skew"][0]["strike"] == 510.0
+        assert data["skew"][0]["spread"] == 0.03
+        assert len(data["term_structure"]) == 2
+        assert data["term_structure"][0]["expiry"] == "2024-03-15"
+        assert len(data["available_expiries"]) == 3
