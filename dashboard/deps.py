@@ -60,3 +60,11 @@ def get_data_provider():
 
 def get_yfinance_provider():
     return _state.get("yfinance_provider")
+
+
+def get_sentiment_aggregator():
+    return _state.get("sentiment_aggregator")
+
+
+def get_rf_fetcher():
+    return _state.get("rf_fetcher")

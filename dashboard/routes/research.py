@@ -32,6 +32,13 @@ class SearchResult(BaseModel):
     type: str
 
 
+class CompanyOfficer(BaseModel):
+    name: str = ""
+    title: str = ""
+    age: int | None = None
+    total_pay: float | None = None
+
+
 class AssetInfo(BaseModel):
     ticker: str
     name: str = ""
@@ -51,6 +58,55 @@ class AssetInfo(BaseModel):
     beta: float | None = None
     currency: str = "USD"
     quote_type: str = ""
+    # Qualitative / descriptive
+    long_business_summary: str = ""
+    website: str = ""
+    full_time_employees: int | None = None
+    country: str = ""
+    city: str = ""
+    state: str = ""
+    company_officers: list[CompanyOfficer] = []
+    # Valuation ratios
+    price_to_book: float | None = None
+    peg_ratio: float | None = None
+    enterprise_value: float | None = None
+    enterprise_to_revenue: float | None = None
+    enterprise_to_ebitda: float | None = None
+    price_to_sales: float | None = None
+    # EPS
+    trailing_eps: float | None = None
+    forward_eps: float | None = None
+    # Analyst consensus
+    target_mean_price: float | None = None
+    target_high_price: float | None = None
+    target_low_price: float | None = None
+    analyst_count: int | None = None
+    recommendation: str = ""
+    # Balance sheet / liquidity
+    current_ratio: float | None = None
+    quick_ratio: float | None = None
+    total_cash: float | None = None
+    total_debt: float | None = None
+    operating_cashflow: float | None = None
+    # Extra financials
+    revenue: float | None = None
+    net_income: float | None = None
+    profit_margin: float | None = None
+    operating_margin: float | None = None
+    return_on_equity: float | None = None
+    return_on_assets: float | None = None
+    debt_to_equity: float | None = None
+    free_cash_flow: float | None = None
+    earnings_growth: float | None = None
+    revenue_growth: float | None = None
+    gross_margins: float | None = None
+    ebitda_margins: float | None = None
+    ebitda: float | None = None
+    gross_profits: float | None = None
+    # Trading / per-share
+    average_volume: int | None = None
+    book_value: float | None = None
+    revenue_per_share: float | None = None
     # Performance metrics (joined)
     sharpe_ratio: float | None = None
     max_drawdown_pct: float | None = None
@@ -202,13 +258,15 @@ async def get_asset_history(
 @router.post("/research/asset/{ticker}/analyse", response_model=LLMAnalysisResponse)
 async def analyse_asset(
     ticker: str,
+    mode: str = Query(default="all", pattern="^(all|legitimate)$"),
     yf=Depends(get_yfinance_dep),
     settings=Depends(get_settings_dep),
 ):
     """
     Generate an LLM analysis report for any asset.
 
-    Enriches the prompt with macro context, news, and performance data.
+    Enriches the prompt with macro context, news, performance data, and sentiment.
+    mode="all" uses all sentiment sources; mode="legitimate" excludes Reddit/StockTwits.
     """
     ticker = ticker.upper()
 
@@ -244,7 +302,7 @@ async def analyse_asset(
             "No LLM analysers available. Configure Groq, Claude, Gemini, or start Ollama."
         )
 
-    # Build a minimal AlertSignal and empty sentiment/fraud for the standard analyse() interface
+    # Build a minimal AlertSignal and fetch real sentiment data
     from core.models import AlertSignal, FraudRiskScore, SentimentData
 
     alert = AlertSignal(
@@ -253,7 +311,24 @@ async def analyse_asset(
         change_pct=0.0,
         volume=0,
     )
-    sentiment = SentimentData()
+
+    # Fetch sentiment from aggregator (with source filtering)
+    sentiment_agg = _state.get("sentiment_aggregator")
+    if sentiment_agg:
+        try:
+            company_name = info.get("name", "")
+            if mode == "legitimate":
+                sentiment = await sentiment_agg.fetch_filtered(
+                    ticker, company_name, ["SEC EDGAR", "News"]
+                )
+            else:
+                sentiment = await sentiment_agg.fetch(ticker, company_name)
+        except Exception as e:
+            logger.warning("Sentiment fetch failed for %s: %s", ticker, e)
+            sentiment = SentimentData(ticker=ticker)
+    else:
+        sentiment = SentimentData(ticker=ticker)
+
     fraud_risk = FraudRiskScore()
 
     try:

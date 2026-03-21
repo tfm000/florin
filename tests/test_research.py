@@ -20,6 +20,7 @@ async def app():
     )
     db = Database(settings.database_url)
     await db.init()
+    await db.create_tables()
     event_bus = EventBus()
 
     # Mock yfinance provider

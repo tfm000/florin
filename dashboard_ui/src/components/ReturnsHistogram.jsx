@@ -20,28 +20,48 @@ function computeReturns(history) {
   return returns
 }
 
-function computeStats(returns) {
+// Stats for regime splits only (inherently client-side since the split is UI state).
+// Main ticker/compare ticker stats come from the /stats/returns/ API.
+function computeRegimeStats(returns) {
   if (returns.length === 0) return null
   const n = returns.length
-  const sorted = [...returns].sort((a, b) => a - b)
   const mean = returns.reduce((s, r) => s + r, 0) / n
-  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / n
+  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1)
   const stdDev = Math.sqrt(variance)
-  const skewness = stdDev > 0 ? returns.reduce((s, r) => s + ((r - mean) / stdDev) ** 3, 0) / n : 0
-  const kurtosis = stdDev > 0 ? returns.reduce((s, r) => s + ((r - mean) / stdDev) ** 4, 0) / n - 3 : 0
+  const skewness = n > 2 && stdDev > 0
+    ? (n / ((n - 1) * (n - 2))) * returns.reduce((s, r) => s + ((r - mean) / stdDev) ** 3, 0)
+    : 0
+  const kurtosis = n > 3 && stdDev > 0
+    ? (n * (n + 1) / ((n - 1) * (n - 2) * (n - 3))) *
+      returns.reduce((s, r) => s + ((r - mean) / stdDev) ** 4, 0) -
+      3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
+    : 0
 
-  // VaR and CVaR at 95% confidence (5th percentile)
+  const sorted = [...returns].sort((a, b) => a - b)
   const varIdx = Math.max(0, Math.floor(0.05 * n) - 1)
   const var95 = sorted[varIdx]
   const tailSlice = sorted.slice(0, varIdx + 1)
   const cvar95 = tailSlice.length > 0
     ? tailSlice.reduce((s, r) => s + r, 0) / tailSlice.length
     : var95
-
-  // Annualized Sharpe
   const sharpe = stdDev > 0 ? (mean / stdDev) * Math.sqrt(252) : 0
 
   return { mean, stdDev, skewness, kurtosis, var95, cvar95, sharpe, n }
+}
+
+// Convert API stats response to the format used in the stats table
+function apiStatsToDisplay(apiStats) {
+  if (!apiStats) return null
+  return {
+    mean: apiStats.mean_daily_pct,
+    stdDev: apiStats.std_dev_daily_pct,
+    skewness: apiStats.skewness,
+    kurtosis: apiStats.excess_kurtosis,
+    var95: apiStats.var_95_pct,
+    cvar95: apiStats.cvar_95_pct,
+    sharpe: apiStats.sharpe,
+    n: apiStats.trading_days,
+  }
 }
 
 function buildBins(returns, globalMin, globalMax) {
@@ -68,12 +88,24 @@ export default function ReturnsHistogram({
     ? `start=${customStart}&end=${customEnd}&interval=1d`
     : `period=${period}&interval=1d`
 
+  const statsQueryStr = customStart && customEnd
+    ? `start=${customStart}&end=${customEnd}`
+    : `period=${period}`
+
   const { data: history, loading } = useApi(`/research/asset/${ticker}/history?${queryStr}`)
   const { data: cmp0 } = useApi(compareTickers[0] ? `/research/asset/${compareTickers[0]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[0] })
   const { data: cmp1 } = useApi(compareTickers[1] ? `/research/asset/${compareTickers[1]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[1] })
   const { data: cmp2 } = useApi(compareTickers[2] ? `/research/asset/${compareTickers[2]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[2] })
   const { data: cmp3 } = useApi(compareTickers[3] ? `/research/asset/${compareTickers[3]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[3] })
   const cmpData = [cmp0, cmp1, cmp2, cmp3]
+
+  // Fetch canonical stats from API for each ticker
+  const { data: apiStats0 } = useApi(`/stats/returns/${ticker}?${statsQueryStr}`)
+  const { data: apiStatsCmp0 } = useApi(compareTickers[0] ? `/stats/returns/${compareTickers[0]}?${statsQueryStr}` : null, { autoFetch: !!compareTickers[0] })
+  const { data: apiStatsCmp1 } = useApi(compareTickers[1] ? `/stats/returns/${compareTickers[1]}?${statsQueryStr}` : null, { autoFetch: !!compareTickers[1] })
+  const { data: apiStatsCmp2 } = useApi(compareTickers[2] ? `/stats/returns/${compareTickers[2]}?${statsQueryStr}` : null, { autoFetch: !!compareTickers[2] })
+  const { data: apiStatsCmp3 } = useApi(compareTickers[3] ? `/stats/returns/${compareTickers[3]}?${statsQueryStr}` : null, { autoFetch: !!compareTickers[3] })
+  const apiStatsAll = [apiStatsCmp0, apiStatsCmp1, apiStatsCmp2, apiStatsCmp3]
 
   const { handleLegendClick, isHidden, legendFormatter } = useLegendToggle()
 
@@ -159,18 +191,21 @@ export default function ReturnsHistogram({
       })
     }
 
+    // Use API-fetched stats for main + compare tickers (canonical, server-side)
     const allStats = {}
-    for (const [sym, returns] of Object.entries(allReturns)) {
-      allStats[sym] = computeStats(returns)
-    }
+    allStats[ticker] = apiStatsToDisplay(apiStats0)
+    compareTickers.forEach((sym, i) => {
+      allStats[sym] = apiStatsToDisplay(apiStatsAll[i])
+    })
 
+    // Regime stats still computed client-side (per-regime split is UI state)
     const regimeStats = {}
     for (const [key, returns] of Object.entries(regimeReturns)) {
-      regimeStats[key] = computeStats(returns)
+      regimeStats[key] = computeRegimeStats(returns)
     }
 
     return { chartData, allStats, regimeStats }
-  }, [history, cmpData, ticker, compareTickers, allTickers, showRegimes, regimeMap])
+  }, [history, cmpData, ticker, compareTickers, allTickers, showRegimes, regimeMap, apiStats0, apiStatsAll])
 
   if (loading) return <p className="text-gray-500 text-sm py-4 text-center">Loading...</p>
   if (chartData.length === 0) return null

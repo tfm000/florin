@@ -82,6 +82,7 @@ class TestLoadDbOverrides:
     async def test_applies_int_override(self):
         db = Database("sqlite+aiosqlite:///:memory:")
         await db.init()
+        await db.create_tables()
 
         async with db.session() as session:
             session.add(SettingORM(key="scan_interval_seconds", value="60"))
@@ -103,6 +104,7 @@ class TestLoadDbOverrides:
     async def test_applies_float_override(self):
         db = Database("sqlite+aiosqlite:///:memory:")
         await db.init()
+        await db.create_tables()
 
         async with db.session() as session:
             session.add(SettingORM(key="scan_price_max", value="3.5"))
@@ -123,6 +125,7 @@ class TestLoadDbOverrides:
     async def test_skips_unknown_keys(self):
         db = Database("sqlite+aiosqlite:///:memory:")
         await db.init()
+        await db.create_tables()
 
         async with db.session() as session:
             session.add(SettingORM(key="nonexistent_key", value="whatever"))
@@ -143,6 +146,7 @@ class TestLoadDbOverrides:
     async def test_applies_enum_override(self):
         db = Database("sqlite+aiosqlite:///:memory:")
         await db.init()
+        await db.create_tables()
 
         async with db.session() as session:
             session.add(SettingORM(key="llm_default_provider", value="gemini"))
