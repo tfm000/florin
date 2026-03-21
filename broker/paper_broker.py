@@ -256,6 +256,7 @@ class PaperBroker(Broker):
                 current_price=price,
                 opened_at=datetime.now(UTC),
             )
+            pos.update_pnl(price)
             self._positions[ticker] = pos
 
         trade = TradeRecord(

@@ -167,6 +167,10 @@ class AlpacaProvider(MarketDataProvider):
         if not self._http:
             raise RuntimeError("Alpaca provider not connected")
 
+        # Filter out warrants, preferred shares, and other non-standard
+        # tickers that Alpaca rejects (e.g. MOBBW, CIG-C, DJTWW).
+        tickers = [t for t in tickers if t.isalpha()]
+
         result: dict[str, StockQuote] = {}
         total_batches = (len(tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
 

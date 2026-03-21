@@ -49,13 +49,28 @@ class Database:
         """
         logger.info("Initialising database: %s", self._url)
 
+        is_sqlite = "sqlite" in self._url
         self._engine = create_async_engine(
             self._url,
             echo=False,
             pool_pre_ping=True,
-            # SQLite-specific: enable WAL mode for concurrent reads
-            connect_args={"check_same_thread": False} if "sqlite" in self._url else {},
+            connect_args={
+                "check_same_thread": False,
+                # Wait up to 30s for the write lock instead of failing immediately
+                "timeout": 30,
+            } if is_sqlite else {},
         )
+
+        # Enable WAL mode for concurrent reads + single writer without locking
+        if is_sqlite:
+            from sqlalchemy import event, text
+
+            @event.listens_for(self._engine.sync_engine, "connect")
+            def _set_sqlite_pragma(dbapi_connection, _connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.close()
 
         self._session_factory = async_sessionmaker(
             bind=self._engine,
