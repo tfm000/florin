@@ -13,10 +13,10 @@ const VIEWS = [
   { key: 'calls', label: 'Call Surface' },
 ]
 
-export default function PutCallIVChart() {
+export default function PutCallIVChart({ initialTicker = 'SPY' }) {
   const colors = useChartColors()
-  const [ticker, setTicker] = useState('SPY')
-  const [inputVal, setInputVal] = useState('SPY')
+  const [ticker, setTicker] = useState(initialTicker)
+  const [inputVal, setInputVal] = useState(initialTicker)
   const [view, setView] = useState('combined')
   const [selectedExpiry, setSelectedExpiry] = useState('')
   const [compareExpiry, setCompareExpiry] = useState('')

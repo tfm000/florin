@@ -4,7 +4,12 @@ import { useApi } from './hooks/useApi'
 import { ChartColorProvider } from './hooks/useChartColors'
 import Dashboard from './pages/Dashboard'
 import Research from './pages/Research'
-import AssetResearch from './pages/AssetResearch'
+import AssetLayout from './pages/AssetLayout'
+import OverviewTab from './pages/OverviewTab'
+import QuantitativeTab from './pages/QuantitativeTab'
+import OptionsTab from './pages/OptionsTab'
+import HoldersTab from './pages/HoldersTab'
+import BrokerTab from './pages/BrokerTab'
 import Watchlist from './pages/Watchlist'
 import LiveMonitor from './pages/LiveMonitor'
 import Universe from './pages/Universe'
@@ -20,7 +25,6 @@ import MonitorAsset from './pages/MonitorAsset'
 import DataDownload from './pages/DataDownload'
 import MarketNews from './pages/MarketNews'
 import Portfolio from './pages/Portfolio'
-import InsiderTrading from './pages/InsiderTrading'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard' },
@@ -30,7 +34,6 @@ const NAV_ITEMS = [
   { path: '/penny-stocks', label: 'Penny Stocks' },
   { path: '/screener', label: 'Screener' },
   { path: '/13f', label: '13F' },
-  { path: '/insiders', label: 'Insiders' },
   { path: '/news', label: 'News' },
   { path: '/calendar', label: 'Calendar' },
   { path: '/reports', label: 'Reports' },
@@ -109,14 +112,20 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/research" element={<Research />} />
-            <Route path="/research/:ticker" element={<AssetResearch />} />
+            <Route path="/research/:ticker" element={<AssetLayout />}>
+              <Route index element={<OverviewTab />} />
+              <Route path="quantitative" element={<QuantitativeTab />} />
+              <Route path="options" element={<OptionsTab />} />
+              <Route path="holders" element={<HoldersTab />} />
+              <Route path="broker" element={<BrokerTab />} />
+            </Route>
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/monitor" element={<LiveMonitor />} />
             <Route path="/monitor/:ticker" element={<MonitorAsset />} />
             <Route path="/penny-stocks" element={<Universe />} />
             <Route path="/screener" element={<Screener />} />
             <Route path="/13f" element={<Filings13F />} />
-            <Route path="/insiders" element={<InsiderTrading />} />
+            <Route path="/insiders" element={<Navigate to="/research" replace />} />
             <Route path="/news" element={<MarketNews />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/universe" element={<Navigate to="/penny-stocks" replace />} />

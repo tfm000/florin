@@ -132,8 +132,17 @@ async def get_portfolio_analytics(
 
     histories = await asyncio.gather(*[yf.get_history(t, period=period) for t in tickers])
 
-    def _compute():
+    # Fetch risk-free rate for portfolio's primary currency (USD default)
+    from dashboard.deps import get_rf_fetcher
+    rf_fetcher = get_rf_fetcher()
+
+    def _compute(rf_daily_rates):
         import numpy as np
+        from stats.core import (
+            log_returns, annualized_volatility,
+            sharpe_ratio, sortino_ratio,
+            max_drawdown_from_log_returns, historical_var, historical_cvar,
+        )
 
         # Find common dates
         date_sets = [{h["date"] for h in hist} for hist in histories if hist]
@@ -143,56 +152,55 @@ async def get_portfolio_analytics(
         if len(common) < 10:
             return None
 
-        # Build weighted portfolio returns
+        # Build weighted portfolio log returns
         port_returns = np.zeros(len(common) - 1)
         for i, hist in enumerate(histories):
             if not hist:
                 continue
-            ticker = tickers[i]
-            w = weights.get(ticker, 0)
+            t = tickers[i]
+            w = weights.get(t, 0)
             price_map = {h["date"]: h["close"] for h in hist}
-            prices = [price_map[d] for d in common]
-            rets = np.array([np.log(prices[j] / prices[j - 1]) for j in range(1, len(prices))])
+            prices = np.array([price_map[d] for d in common])
+            rets = log_returns(prices)
             port_returns += w * rets
 
-        n = len(port_returns)
-        mean = np.mean(port_returns)
-        std = np.std(port_returns, ddof=1)
-        ann_vol = std * np.sqrt(252) * 100
+        # Convert to simple returns for risk-adjusted metrics
+        port_simple = np.exp(port_returns) - 1
 
-        # Risk-free rate (approximate)
-        rf_daily = 0.045 / 252
-
-        sharpe = ((mean - rf_daily) / std * np.sqrt(252)) if std > 0 else 0
-        downside = port_returns[port_returns < rf_daily] - rf_daily
-        down_std = np.sqrt(np.mean(downside ** 2)) if len(downside) > 0 else std
-        sortino = ((mean - rf_daily) / down_std * np.sqrt(252)) if down_std > 0 else 0
-
-        # Max drawdown
-        cum = np.cumsum(port_returns)
-        peak = np.maximum.accumulate(cum)
-        dd = cum - peak
-        max_dd = float(np.min(dd)) * 100
-
-        # Total return
+        ann_vol = annualized_volatility(port_returns)
+        sharpe = sharpe_ratio(port_simple, rf_daily_rates)
+        sortino = sortino_ratio(port_simple, rf_daily_rates)
+        dd = max_drawdown_from_log_returns(port_returns)
         total_ret = (np.exp(np.sum(port_returns)) - 1) * 100
 
-        # Historical VaR/CVaR
+        # VaR/CVaR on log returns, convert to simple return space
         var_95 = (np.exp(np.percentile(port_returns, 5)) - 1) * 100
         mask = port_returns <= np.percentile(port_returns, 5)
-        cvar_95 = (np.exp(np.mean(port_returns[mask])) - 1) * 100 if mask.any() else var_95
+        cvar_95 = (
+            (np.exp(np.mean(port_returns[mask])) - 1) * 100
+            if mask.any() else var_95
+        )
 
         return {
             "total_return": round(total_ret, 2),
             "annualized_vol": round(ann_vol, 2),
             "sharpe": round(float(sharpe), 4),
             "sortino": round(float(sortino), 4),
-            "max_drawdown": round(max_dd, 2),
+            "max_drawdown": round(-dd.max_drawdown_pct, 2),
             "var_95": round(var_95, 4),
             "cvar_95": round(cvar_95, 4),
         }
 
-    result = await asyncio.to_thread(_compute)
+    # Get rf daily rates (aligned to common dates minus first)
+    rf_daily = np.float64(0.0)
+    if rf_fetcher:
+        # Use dates from the first ticker's history as proxy for common dates
+        all_dates = sorted({h["date"] for h in histories[0]}) if histories[0] else []
+        if all_dates:
+            rf_full = await rf_fetcher.get_daily_rates("USD", all_dates)
+            rf_daily = rf_full[1:]  # align to returns (n-1)
+
+    result = await asyncio.to_thread(_compute, rf_daily)
     if result is None:
         return PortfolioAnalytics(portfolio_id=portfolio_id, period=period)
 

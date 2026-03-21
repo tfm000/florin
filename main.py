@@ -55,6 +55,7 @@ class Sentinel:
         # --- Database ---
         self.db = Database(self.settings.database_url)
         await self.db.init()
+        await self.db.run_migrations()
         logger.info("Database ready")
 
         # Load settings overrides from DB (set via dashboard)
@@ -140,6 +141,10 @@ class Sentinel:
         set_state("report_generator", report_gen)
         set_state("consensus_generator", consensus_gen)
         set_state("fraud_detector", fraud_detector)
+        set_state("sentiment_aggregator", sentiment_agg)
+        from stats.risk_free import RiskFreeRateFetcher
+        rf_fetcher = RiskFreeRateFetcher(self.db)
+        set_state("rf_fetcher", rf_fetcher)
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---
@@ -151,6 +156,11 @@ class Sentinel:
         # Universe refresh
         services.append(asyncio.create_task(
             self._universe_refresh_loop(universe), name="universe-refresh"
+        ))
+
+        # Risk-free rate daily refresh
+        services.append(asyncio.create_task(
+            self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
         ))
 
         # Scanner
@@ -338,6 +348,16 @@ class Sentinel:
             except Exception as e:
                 logger.error("Universe refresh failed: %s", e)
             # Refresh daily
+            await asyncio.sleep(86_400)
+
+    async def _rf_refresh_loop(self, rf_fetcher: Any) -> None:
+        """Refresh G10 risk-free rates daily from central bank APIs."""
+        while not self._shutdown_event.is_set():
+            try:
+                await rf_fetcher.refresh_today()
+                logger.info("Risk-free rates refreshed")
+            except Exception as e:
+                logger.error("Risk-free rate refresh failed: %s", e)
             await asyncio.sleep(86_400)
 
     async def _alert_pipeline(

@@ -20,6 +20,7 @@ async def app():
     )
     db = Database(settings.database_url)
     await db.init()
+    await db.create_tables()
     event_bus = EventBus()
 
     app = create_app(settings, db, event_bus)
@@ -38,6 +39,7 @@ async def readonly_app():
     )
     db = Database(settings.database_url)
     await db.init()
+    await db.create_tables()
     event_bus = EventBus()
 
     from broker.paper_broker import PaperBroker

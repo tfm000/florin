@@ -16,7 +16,7 @@ const fmtValue = (n) => {
 }
 
 export default function TopHolders({ ticker }) {
-  const { data, loading } = useApi(`/research/holders/${ticker}`)
+  const { data, loading, error } = useApi(`/research/holders/${ticker}`)
   const [tab, setTab] = useState('institutional')
 
   if (loading) return (
@@ -26,60 +26,84 @@ export default function TopHolders({ ticker }) {
     </div>
   )
 
-  if (!data || (!data.institutional?.length && !data.mutual_fund?.length)) return null
+  if (error) return (
+    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+      <h3 className="text-white font-semibold mb-2">Top Holders</h3>
+      <p className="text-red-400 text-sm">Error loading holder data</p>
+    </div>
+  )
+
+  if (!data || (!data.institutional?.length && !data.mutual_fund?.length && !data.major)) return null
 
   const major = data.major
-  const holders = tab === 'institutional' ? data.institutional : data.mutual_fund
+  const hasInstitutional = data.institutional?.length > 0
+  const hasMutualFund = data.mutual_fund?.length > 0
+
+  // Build major holder cards dynamically, only showing non-null/non-zero values
+  const majorItems = major ? [
+    { label: 'Insiders', value: major.insiders_pct, fmt: v => `${v.toFixed(2)}%` },
+    { label: 'Institutions', value: major.institutions_pct, fmt: v => `${v.toFixed(2)}%` },
+    { label: 'Inst. Float', value: major.institutions_float_pct, fmt: v => `${v.toFixed(2)}%` },
+    { label: 'Inst. Count', value: major.institutions_count, fmt: v => v.toLocaleString() },
+  ].filter(m => m.value != null && m.value !== 0) : []
+
+  // Auto-select first available tab
+  const activeTab = tab === 'institutional' && !hasInstitutional && hasMutualFund
+    ? 'mutual_fund' : tab
+  const holders = activeTab === 'institutional' ? data.institutional : data.mutual_fund
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-3">
       <h3 className="text-white font-semibold">Top Holders</h3>
 
       {/* Major holders breakdown */}
-      {major && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-gray-900/50 rounded-lg p-2.5">
-            <p className="text-gray-500 text-xs uppercase">Insiders</p>
-            <p className="text-white font-mono text-sm">{major.insiders_pct.toFixed(2)}%</p>
-          </div>
-          <div className="bg-gray-900/50 rounded-lg p-2.5">
-            <p className="text-gray-500 text-xs uppercase">Institutions</p>
-            <p className="text-white font-mono text-sm">{major.institutions_pct.toFixed(2)}%</p>
-          </div>
-          <div className="bg-gray-900/50 rounded-lg p-2.5">
-            <p className="text-gray-500 text-xs uppercase">Inst. Float</p>
-            <p className="text-white font-mono text-sm">{major.institutions_float_pct.toFixed(2)}%</p>
-          </div>
-          <div className="bg-gray-900/50 rounded-lg p-2.5">
-            <p className="text-gray-500 text-xs uppercase">Inst. Count</p>
-            <p className="text-white font-mono text-sm">{major.institutions_count.toLocaleString()}</p>
-          </div>
+      {majorItems.length > 0 && (
+        <div className={`grid gap-3 ${
+          majorItems.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' :
+          majorItems.length === 3 ? 'grid-cols-3' :
+          majorItems.length === 2 ? 'grid-cols-2' : 'grid-cols-1'
+        }`}>
+          {majorItems.map(m => (
+            <div key={m.label} className="bg-gray-900/50 rounded-lg p-2.5">
+              <p className="text-gray-500 text-xs uppercase">{m.label}</p>
+              <p className="text-white font-mono text-sm">{m.fmt(m.value)}</p>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Tab switcher */}
-      <div className="flex gap-1 bg-gray-900/50 rounded-lg p-0.5 w-fit">
-        <button
-          onClick={() => setTab('institutional')}
-          className={`px-3 py-1 rounded text-xs font-medium transition ${
-            tab === 'institutional'
-              ? 'bg-gray-700 text-white'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          Institutional ({data.institutional?.length || 0})
-        </button>
-        <button
-          onClick={() => setTab('mutual_fund')}
-          className={`px-3 py-1 rounded text-xs font-medium transition ${
-            tab === 'mutual_fund'
-              ? 'bg-gray-700 text-white'
-              : 'text-gray-400 hover:text-gray-300'
-          }`}
-        >
-          Mutual Funds ({data.mutual_fund?.length || 0})
-        </button>
-      </div>
+      {/* Tab switcher — only show if both categories have data */}
+      {hasInstitutional && hasMutualFund && (
+        <div className="flex gap-1 bg-gray-900/50 rounded-lg p-0.5 w-fit">
+          <button
+            onClick={() => setTab('institutional')}
+            className={`px-3 py-1 rounded text-xs font-medium transition ${
+              activeTab === 'institutional'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Institutional ({data.institutional.length})
+          </button>
+          <button
+            onClick={() => setTab('mutual_fund')}
+            className={`px-3 py-1 rounded text-xs font-medium transition ${
+              activeTab === 'mutual_fund'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Mutual Funds ({data.mutual_fund.length})
+          </button>
+        </div>
+      )}
+
+      {/* Single-category label when only one type exists */}
+      {hasInstitutional !== hasMutualFund && (
+        <p className="text-gray-400 text-xs uppercase font-medium">
+          {hasInstitutional ? 'Institutional Holders' : 'Mutual Fund Holders'}
+        </p>
+      )}
 
       {/* Holders table */}
       {holders && holders.length > 0 && (

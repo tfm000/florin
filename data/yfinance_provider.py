@@ -103,6 +103,64 @@ class YFinanceProvider:
                     "beta": info.get("beta"),
                     "currency": info.get("currency", "USD"),
                     "quote_type": info.get("quoteType", ""),
+                    # Qualitative / descriptive
+                    "long_business_summary": info.get("longBusinessSummary", ""),
+                    "website": info.get("website", ""),
+                    "full_time_employees": info.get("fullTimeEmployees"),
+                    "country": info.get("country", ""),
+                    "city": info.get("city", ""),
+                    "state": info.get("state", ""),
+                    # Key people
+                    "company_officers": [
+                        {
+                            "name": o.get("name", ""),
+                            "title": o.get("title", ""),
+                            "age": o.get("age"),
+                            "total_pay": o.get("totalPay"),
+                        }
+                        for o in (info.get("companyOfficers") or [])[:10]
+                    ],
+                    # Valuation ratios
+                    "price_to_book": info.get("priceToBook"),
+                    "peg_ratio": info.get("pegRatio"),
+                    "enterprise_value": info.get("enterpriseValue"),
+                    "enterprise_to_revenue": info.get("enterpriseToRevenue"),
+                    "enterprise_to_ebitda": info.get("enterpriseToEbitda"),
+                    "price_to_sales": info.get("priceToSalesTrailing12Months"),
+                    # EPS
+                    "trailing_eps": info.get("trailingEps"),
+                    "forward_eps": info.get("forwardEps"),
+                    # Analyst consensus
+                    "target_mean_price": info.get("targetMeanPrice"),
+                    "target_high_price": info.get("targetHighPrice"),
+                    "target_low_price": info.get("targetLowPrice"),
+                    "analyst_count": info.get("numberOfAnalystOpinions"),
+                    "recommendation": info.get("recommendationKey", ""),
+                    # Balance sheet / liquidity
+                    "current_ratio": info.get("currentRatio"),
+                    "quick_ratio": info.get("quickRatio"),
+                    "total_cash": info.get("totalCash"),
+                    "total_debt": info.get("totalDebt"),
+                    "operating_cashflow": info.get("operatingCashflow"),
+                    # Extra financials
+                    "revenue": info.get("totalRevenue"),
+                    "net_income": info.get("netIncomeToCommon"),
+                    "profit_margin": info.get("profitMargins"),
+                    "operating_margin": info.get("operatingMargins"),
+                    "return_on_equity": info.get("returnOnEquity"),
+                    "return_on_assets": info.get("returnOnAssets"),
+                    "debt_to_equity": info.get("debtToEquity"),
+                    "free_cash_flow": info.get("freeCashflow"),
+                    "earnings_growth": info.get("earningsGrowth"),
+                    "revenue_growth": info.get("revenueGrowth"),
+                    "gross_margins": info.get("grossMargins"),
+                    "ebitda_margins": info.get("ebitdaMargins"),
+                    "ebitda": info.get("ebitda"),
+                    "gross_profits": info.get("grossProfits"),
+                    # Trading / per-share
+                    "average_volume": info.get("averageVolume"),
+                    "book_value": info.get("bookValue"),
+                    "revenue_per_share": info.get("revenuePerShare"),
                 }
             except Exception:
                 logger.exception("yfinance get_info failed for %s", ticker)
@@ -157,48 +215,33 @@ class YFinanceProvider:
         _set_cached(cache_key, result)
         return result
 
-    async def get_performance_metrics(self, ticker: str) -> dict:
+    async def get_performance_metrics(
+        self, ticker: str, period: str = "3y",
+    ) -> dict:
         """Sharpe, max drawdown, period returns from history."""
-        history = await self.get_history(ticker, period="3y", interval="1d")
+        history = await self.get_history(ticker, period=period, interval="1d")
         if not history:
             return {}
 
-        closes = [h["close"] for h in history if h["close"] > 0]
+        import numpy as np
+        from stats.core import (
+            simple_returns, sharpe_ratio, max_drawdown, period_return,
+        )
+
+        closes = np.array([h["close"] for h in history if h["close"] > 0])
         if len(closes) < 2:
             return {}
 
-        # Daily returns
-        returns = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
-
-        # Sharpe ratio (annualised, risk-free = 0 for simplicity)
-        import statistics
-        mean_ret = statistics.mean(returns)
-        std_ret = statistics.stdev(returns) if len(returns) > 1 else 0.0001
-        sharpe = (mean_ret / std_ret) * (252 ** 0.5) if std_ret > 0 else 0.0
-
-        # Max drawdown
-        peak = closes[0]
-        max_dd = 0.0
-        for c in closes:
-            if c > peak:
-                peak = c
-            dd = (peak - c) / peak if peak > 0 else 0
-            if dd > max_dd:
-                max_dd = dd
-
-        # Period returns
-        def _period_return(n_days: int) -> float | None:
-            if len(closes) < n_days:
-                return None
-            return ((closes[-1] - closes[-n_days]) / closes[-n_days]) * 100
+        rets = simple_returns(closes)
+        dd = max_drawdown(closes)
 
         return {
-            "sharpe_ratio": round(sharpe, 2),
-            "max_drawdown_pct": round(max_dd * 100, 2),
-            "return_1m": _period_return(21),
-            "return_6m": _period_return(126),
-            "return_1y": _period_return(252),
-            "return_3y": _period_return(756),
+            "sharpe_ratio": round(sharpe_ratio(rets), 2),
+            "max_drawdown_pct": round(dd.max_drawdown_pct, 2),
+            "return_1m": period_return(closes, 21),
+            "return_6m": period_return(closes, 126),
+            "return_1y": period_return(closes, 252),
+            "return_3y": period_return(closes, 756),
         }
 
     async def get_news(self, ticker: str) -> list[dict]:

@@ -2,13 +2,121 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import asyncio
+
+import numpy as np
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func
 
-from dashboard.deps import get_db
+from dashboard.deps import get_db, get_rf_fetcher
+from dashboard.dependencies import get_yfinance_dep
 from db.models import TradeORM
 
 router = APIRouter(tags=["stats"])
+
+
+class ReturnsStatsResponse(BaseModel):
+    ticker: str
+    period: str
+    trading_days: int
+    total_return: float
+    annualized_return: float
+    annualized_volatility: float
+    sharpe: float
+    max_drawdown: float
+    mean_daily_pct: float
+    std_dev_daily_pct: float
+    skewness: float
+    excess_kurtosis: float
+    var_95_pct: float
+    cvar_95_pct: float
+
+
+@router.get("/stats/returns/{ticker}", response_model=ReturnsStatsResponse)
+async def get_returns_stats(
+    ticker: str,
+    period: str = Query(default="1y"),
+    start: str = Query(default=""),
+    end: str = Query(default=""),
+    yf=Depends(get_yfinance_dep),
+):
+    """Compute return and distribution statistics for an asset.
+
+    Replaces client-side JS computation in QuantitativeTab and
+    ReturnsHistogram with canonical server-side stats.
+    """
+    ticker = ticker.upper()
+
+    if start and end:
+        history = await yf.get_history(ticker, start=start, end=end)
+    else:
+        history = await yf.get_history(ticker, period=period)
+
+    if not history or len(history) < 2:
+        return ReturnsStatsResponse(
+            ticker=ticker, period=period, trading_days=0,
+            total_return=0, annualized_return=0, annualized_volatility=0,
+            sharpe=0, max_drawdown=0, mean_daily_pct=0,
+            std_dev_daily_pct=0, skewness=0, excess_kurtosis=0,
+            var_95_pct=0, cvar_95_pct=0,
+        )
+
+    # Get risk-free rate
+    info = await yf.get_info(ticker)
+    currency = info.get("currency", "USD")
+    rf_fetcher = get_rf_fetcher()
+
+    dates = [h["date"] for h in history if h["close"] > 0]
+    rf_daily = np.float64(0.0)
+    if rf_fetcher and dates:
+        rf_full = await rf_fetcher.get_daily_rates(currency, dates)
+        rf_daily = rf_full[1:]  # align to returns (n-1)
+
+    def _compute():
+        from stats.core import compute_full_stats
+
+        closes = np.array(
+            [h["close"] for h in history if h["close"] > 0]
+        )
+        if len(closes) < 2:
+            return None
+
+        stats = compute_full_stats(closes, rf_daily)
+        total_ret = (
+            (closes[-1] - closes[0]) / closes[0] * 100
+            if closes[0] > 0 else 0.0
+        )
+
+        return ReturnsStatsResponse(
+            ticker=ticker,
+            period=f"{start} to {end}" if start and end else period,
+            trading_days=stats.returns.trading_days,
+            total_return=round(total_ret, 2),
+            annualized_return=round(stats.returns.annualized_return, 2),
+            annualized_volatility=round(
+                stats.returns.annualized_volatility, 2,
+            ),
+            sharpe=round(stats.risk_adjusted.sharpe, 2),
+            max_drawdown=round(stats.drawdown.max_drawdown_pct, 2),
+            mean_daily_pct=round(stats.distribution.mean, 3),
+            std_dev_daily_pct=round(stats.distribution.std_dev, 3),
+            skewness=round(stats.distribution.skewness, 3),
+            excess_kurtosis=round(stats.distribution.excess_kurtosis, 3),
+            var_95_pct=round(stats.var.var_95, 3),
+            cvar_95_pct=round(stats.var.cvar_95, 3),
+        )
+
+    result = await asyncio.to_thread(_compute)
+    if result is None:
+        return ReturnsStatsResponse(
+            ticker=ticker, period=period, trading_days=0,
+            total_return=0, annualized_return=0, annualized_volatility=0,
+            sharpe=0, max_drawdown=0, mean_daily_pct=0,
+            std_dev_daily_pct=0, skewness=0, excess_kurtosis=0,
+            var_95_pct=0, cvar_95_pct=0,
+        )
+    return result
 
 
 @router.get("/stats")

@@ -34,6 +34,7 @@ async def app():
     )
     db = Database(settings.database_url)
     await db.init()
+    await db.create_tables()
     event_bus = EventBus()
     app = create_app(settings, db, event_bus)
     yield app
@@ -136,6 +137,7 @@ class TestRateLimitMiddleware:
         )
         db = Database(settings.database_url)
         await db.init()
+        await db.create_tables()
 
         from dashboard.app import create_app as _create
         from dashboard.middleware import RateLimitMiddleware

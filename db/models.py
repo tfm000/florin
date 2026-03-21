@@ -9,7 +9,7 @@ Conversion helpers are provided on each model.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -22,15 +22,14 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-import json
 
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
-    pass
 
 
 def generate_id() -> str:
+    """Generate a 16-character hex ID for use as a primary key."""
     return uuid4().hex[:16]
 
 
@@ -292,4 +291,20 @@ class NewsStoryORM(Base):
     importance: Mapped[int] = mapped_column(Integer, default=5)
     url: Mapped[str] = mapped_column(String(500))
     source_name: Mapped[str] = mapped_column(String(200))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Risk-Free Rates (G10 central bank overnight benchmarks)
+# =============================================================================
+
+class RiskFreeRateORM(Base):
+    __tablename__ = "risk_free_rates"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    currency: Mapped[str] = mapped_column(String(3), index=True)      # USD, GBP, etc.
+    benchmark: Mapped[str] = mapped_column(String(20))                 # SOFR, SONIA, etc.
+    date: Mapped[str] = mapped_column(String(10), index=True)          # YYYY-MM-DD
+    rate: Mapped[float] = mapped_column(Float)                         # Annual % (e.g. 4.5)
+    source: Mapped[str] = mapped_column(String(100))                   # API source name
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

@@ -41,7 +41,12 @@ class Database:
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
 
     async def init(self) -> None:
-        """Create engine, session factory, and tables."""
+        """Create engine and session factory.
+
+        Does NOT create tables — schema is managed exclusively by Alembic.
+        Run ``alembic upgrade head`` (or call :meth:`run_migrations`) to
+        apply pending migrations.
+        """
         logger.info("Initialising database: %s", self._url)
 
         self._engine = create_async_engine(
@@ -58,11 +63,35 @@ class Database:
             expire_on_commit=False,
         )
 
-        # Create all tables
+        logger.info("Database engine initialised")
+
+    async def create_tables(self) -> None:
+        """Create all tables from ORM metadata.
+
+        For **tests only** — production code should use :meth:`run_migrations`
+        so that Alembic tracks schema history.
+        """
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        logger.info("Database initialised successfully")
+    async def run_migrations(self) -> None:
+        """Run pending Alembic migrations (``upgrade head``).
+
+        Called during application startup so the schema is always up
+        to date without requiring a separate ``alembic`` CLI step.
+        """
+        from alembic.config import Config
+        from alembic import command
+
+        def _run(connection):
+            cfg = Config("alembic.ini")
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, "head")
+
+        async with self._engine.begin() as conn:
+            await conn.run_sync(_run)
+
+        logger.info("Database migrations applied")
 
     async def close(self) -> None:
         """Dispose of the engine and all connections."""

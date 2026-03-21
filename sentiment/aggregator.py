@@ -85,6 +85,23 @@ class SentimentAggregator:
 
         return sentiment
 
+    async def fetch_filtered(
+        self, ticker: str, company_name: str = "", source_names: list[str] | None = None,
+    ) -> SentimentData:
+        """Fetch sentiment from a named subset of sources."""
+        if source_names is None:
+            return await self.fetch(ticker, company_name)
+        filtered = [s for s in self._sources if s.name in source_names]
+        if not filtered:
+            return SentimentData(
+                ticker=ticker,
+                sources_queried=0,
+                sources_succeeded=0,
+                data_quality="insufficient",
+            )
+        temp = SentimentAggregator(filtered)
+        return await temp.fetch(ticker, company_name)
+
     async def health_check(self) -> dict[str, bool]:
         """Check health of all sources."""
         results = {}
