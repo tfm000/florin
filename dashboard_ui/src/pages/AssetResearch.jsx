@@ -17,6 +17,11 @@ export default function AssetResearch() {
   const { ticker } = useParams()
   const { data: info, loading } = useApi(`/research/asset/${ticker}`)
   const { data: news } = useApi(`/research/news?ticker=${ticker}`)
+  const exchangeCode = info?.exchange || ''
+  const { data: marketStatus } = useApi(
+    `/market/status/${exchangeCode || '_'}`,
+    { autoFetch: !!exchangeCode }
+  )
   const { data: ivData } = useApi(`/research/iv-spread?ticker=${ticker}`)
   const [analysis, setAnalysis] = useState(null)
   const [analysing, setAnalysing] = useState(false)
@@ -175,8 +180,21 @@ export default function AssetResearch() {
             <Link to="/research" className="text-gray-400 hover:text-white text-sm">&larr; Research</Link>
           </div>
           <h1 className="text-3xl font-bold text-white font-mono mt-1">{ticker}</h1>
-          <p className="text-gray-400">
-            {info.name} &middot; {info.exchange} &middot; {info.sector}
+          <p className="text-gray-400 flex items-center gap-1.5">
+            {info.name} &middot; {info.exchange}
+            {marketStatus && (
+              <span className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded ${
+                marketStatus.is_open
+                  ? 'bg-green-900/40 text-green-400'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                  marketStatus.is_open ? 'bg-green-400' : 'bg-gray-500'
+                }`} />
+                {marketStatus.is_open ? 'Open' : 'Closed'}
+              </span>
+            )}
+            &middot; {info.sector}
           </p>
           {info.current_price && (
             <p className="text-2xl font-mono text-white mt-1">${info.current_price.toFixed(2)}</p>
