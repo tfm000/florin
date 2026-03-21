@@ -358,6 +358,43 @@ async def get_macro_summary(
     return MacroSummary(indicators=indicators)
 
 
+# =============================================================================
+# Holders
+# =============================================================================
+
+class HolderEntry(BaseModel):
+    holder: str
+    shares: int = 0
+    value: float = 0
+    pct_held: float = 0
+    pct_change: float = 0
+    date_reported: str = ""
+
+
+class MajorHolderBreakdown(BaseModel):
+    insiders_pct: float = 0
+    institutions_pct: float = 0
+    institutions_float_pct: float = 0
+    institutions_count: int = 0
+
+
+class HoldersResponse(BaseModel):
+    ticker: str
+    major: MajorHolderBreakdown | None = None
+    institutional: list[HolderEntry] = []
+    mutual_fund: list[HolderEntry] = []
+
+
+@router.get("/research/holders/{ticker}", response_model=HoldersResponse)
+async def get_holders(
+    ticker: str,
+    yf=Depends(get_yfinance_dep),
+):
+    """Top institutional and mutual fund holders for a ticker."""
+    data = await yf.get_holders(ticker.upper())
+    return HoldersResponse(ticker=ticker.upper(), **data)
+
+
 @router.get("/research/iv-spread", response_model=PutCallIVResponse)
 async def get_put_call_iv_spread(
     ticker: str = Query(default="SPY", description="Equity ticker (default SPY)"),
