@@ -12,6 +12,7 @@ import RegimeOverlay from '../components/RegimeOverlay'
 import PayoffDiagram from '../components/PayoffDiagram'
 import NewsCard from '../components/NewsCard'
 import ShortInterestChart from '../components/ShortInterestChart'
+import TopHolders from '../components/TopHolders'
 
 export default function AssetResearch() {
   const { ticker } = useParams()
@@ -201,6 +202,9 @@ export default function AssetResearch() {
           )}
         </div>
         <div className="flex gap-2">
+          <Link to={`/insiders?ticker=${ticker}`} className="px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 text-white">
+            Insiders
+          </Link>
           <button onClick={handleWatch} className="px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 text-white">
             Watch
           </button>
@@ -281,6 +285,11 @@ export default function AssetResearch() {
       {/* Short Interest */}
       {showReturns && (
         <ShortInterestChart ticker={ticker} />
+      )}
+
+      {/* Top Holders */}
+      {showReturns && (
+        <TopHolders ticker={ticker} />
       )}
 
       {/* Regime Detection */}

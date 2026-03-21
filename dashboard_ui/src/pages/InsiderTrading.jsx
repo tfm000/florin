@@ -1,10 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import ExportButton from '../components/ExportButton'
 
 export default function InsiderTrading() {
-  const [input, setInput] = useState('')
-  const [ticker, setTicker] = useState('')
+  const [searchParams] = useSearchParams()
+  const initialTicker = (searchParams.get('ticker') || '').toUpperCase()
+  const [input, setInput] = useState(initialTicker)
+  const [ticker, setTicker] = useState(initialTicker)
 
   const { data, loading, error } = useApi(
     ticker ? `/insiders/${encodeURIComponent(ticker)}` : null,

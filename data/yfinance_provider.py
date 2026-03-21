@@ -342,6 +342,68 @@ class YFinanceProvider:
 
         return await asyncio.to_thread(_screen)
 
+    async def get_holders(self, ticker: str) -> dict:
+        """Top institutional and mutual fund holders for a ticker."""
+        cache_key = f"holders:{ticker}"
+        cached = _get_cached(cache_key, INFO_TTL)
+        if cached is not None:
+            return cached
+
+        def _get() -> dict:
+            result: dict = {"major": None, "institutional": [], "mutual_fund": []}
+            try:
+                t = yf.Ticker(ticker)
+
+                # Major holders breakdown
+                mh = t.major_holders
+                if mh is not None and not mh.empty:
+                    # Index-based access: keys are row labels, "Value" is the column
+                    def _mh_val(key, default=0):
+                        try:
+                            return float(mh.loc[key, "Value"])
+                        except (KeyError, TypeError):
+                            return default
+                    result["major"] = {
+                        "insiders_pct": round(_mh_val("insidersPercentHeld") * 100, 2),
+                        "institutions_pct": round(_mh_val("institutionsPercentHeld") * 100, 2),
+                        "institutions_float_pct": round(_mh_val("institutionsFloatPercentHeld") * 100, 2),
+                        "institutions_count": int(_mh_val("institutionsCount")),
+                    }
+
+                # Top institutional holders
+                ih = t.institutional_holders
+                if ih is not None and not ih.empty:
+                    for _, row in ih.head(15).iterrows():
+                        result["institutional"].append({
+                            "holder": str(row.get("Holder", "")),
+                            "shares": int(row.get("Shares", 0)),
+                            "value": float(row.get("Value", 0)),
+                            "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
+                            "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
+                            "date_reported": str(row.get("Date Reported", ""))[:10],
+                        })
+
+                # Top mutual fund holders
+                mfh = t.mutualfund_holders
+                if mfh is not None and not mfh.empty:
+                    for _, row in mfh.head(10).iterrows():
+                        result["mutual_fund"].append({
+                            "holder": str(row.get("Holder", "")),
+                            "shares": int(row.get("Shares", 0)),
+                            "value": float(row.get("Value", 0)),
+                            "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
+                            "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
+                            "date_reported": str(row.get("Date Reported", ""))[:10],
+                        })
+
+            except Exception:
+                logger.exception("Failed to get holders for %s", ticker)
+            return result
+
+        result = await asyncio.to_thread(_get)
+        _set_cached(cache_key, result)
+        return result
+
     async def get_yield_curve(self, region: str = "US") -> dict:
         """Treasury yields for curve construction.
 

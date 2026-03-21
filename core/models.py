@@ -182,9 +182,11 @@ class SECFiling(BaseModel):
     url: str = ""
     # For Form 4 (insider trades)
     insider_name: str = ""
-    transaction_type: str = ""  # "Purchase" | "Sale" | "Grant"
+    insider_title: str = ""  # "CEO", "Director", "10% Owner", etc.
+    transaction_type: str = ""  # "Purchase" | "Sale" | "Grant" | "Exercise"
     shares: float = 0.0
     price_per_share: float = 0.0
+    post_transaction_shares: float = 0.0  # Holdings after transaction
 
 
 class NewsArticle(BaseModel):
@@ -241,6 +243,23 @@ class SentimentData(BaseModel):
         lines.append(f"SEC: {len(self.sec_filings)} recent filings, "
                       f"{self.insider_buy_count} insider buys, "
                       f"{self.insider_sell_count} insider sells")
+        # Show insider transaction details (top 5 by shares)
+        insider_filings = [f for f in self.sec_filings if f.insider_name and f.transaction_type]
+        insider_filings.sort(key=lambda f: f.shares, reverse=True)
+        for f in insider_filings[:5]:
+            detail = f"  Insider: {f.insider_name}"
+            if f.insider_title:
+                detail += f" ({f.insider_title})"
+            detail += f" — {f.transaction_type}"
+            if f.shares > 0:
+                detail += f" {f.shares:,.0f} shares"
+                if f.price_per_share > 0:
+                    detail += f" @ ${f.price_per_share:.2f}"
+            lines.append(detail)
+        # Show non-Form-4 filings
+        other_filings = [f for f in self.sec_filings if f.form_type != "4"]
+        for f in other_filings[:3]:
+            lines.append(f"  [{f.form_type}] {f.filed_date.strftime('%Y-%m-%d')} — {f.description}")
 
         lines.append(f"News: {len(self.news_articles)} articles")
         if self.news_articles:

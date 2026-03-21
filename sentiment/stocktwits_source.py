@@ -85,6 +85,10 @@ class StockTwitsSource(SentimentSource):
                 logger.warning("StockTwits rate limited")
                 return []
 
+            if resp.status_code == 403:
+                logger.warning("StockTwits API blocked (403 Forbidden) — API may require auth now")
+                return []
+
             resp.raise_for_status()
             data = resp.json()
 
