@@ -8,6 +8,7 @@ import MetricsGrid from '../components/MetricsGrid'
 import SectorHeatMap from '../components/SectorHeatMap'
 import CorrelationMatrix from '../components/CorrelationMatrix'
 import MarketBreadth from '../components/MarketBreadth'
+import MarketHours from '../components/MarketHours'
 
 export default function Research() {
   const navigate = useNavigate()
@@ -53,6 +54,9 @@ export default function Research() {
         <h1 className="text-2xl font-bold text-white">Research</h1>
         <SearchBar onSelect={handleSelect} placeholder="Search any asset..." />
       </div>
+
+      {/* Market Hours */}
+      <MarketHours />
 
       {/* Market Overview — categorised sections */}
       {macro?.indicators && Object.entries(categories).map(([cat, keys]) => {
