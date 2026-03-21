@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import numpy as np
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete

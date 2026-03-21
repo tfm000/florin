@@ -250,3 +250,62 @@ class TestComposite:
         # Sharpe should differ from rf=0
         fs_zero = compute_full_stats(prices, rf_daily=0.0)
         assert fs.risk_adjusted.sharpe != fs_zero.risk_adjusted.sharpe
+
+
+# ── Parametric (Student-t) ──────────────────────────────────────────
+
+class TestParametric:
+    """Tests for stats.parametric.fit_student_t."""
+
+    def test_fit_returns_none_with_too_few_points(self):
+        from stats.parametric import fit_student_t
+
+        log_rets = np.random.normal(0.0005, 0.02, 5)
+        result = fit_student_t(log_rets)
+        assert result is None
+
+    def test_fit_returns_parametric_stats(self):
+        from stats.parametric import fit_student_t, ParametricStats
+
+        np.random.seed(42)
+        log_rets = np.random.normal(0.0005, 0.02, 200)
+        result = fit_student_t(log_rets)
+        if result is None:
+            pytest.skip("copulax not installed")
+        assert isinstance(result, ParametricStats)
+        # Annualised vol should be non-negative
+        assert result.annualized_volatility >= 0
+        # VaR at 95% should be negative (a loss)
+        assert result.var.var_95 < 0
+        # CVaR should be at least as extreme as VaR
+        assert result.var.cvar_95 <= result.var.var_95
+
+    def test_fit_with_scalar_rf(self):
+        from stats.parametric import fit_student_t
+
+        np.random.seed(42)
+        log_rets = np.random.normal(0.0005, 0.02, 200)
+        result = fit_student_t(log_rets, rf_daily=0.0002)
+        if result is None:
+            pytest.skip("copulax not installed")
+        # Sharpe with positive rf should differ from rf=0 case
+        result_zero = fit_student_t(log_rets, rf_daily=0.0)
+        assert result_zero is not None
+        assert result.sharpe != result_zero.sharpe
+
+    def test_fit_with_array_rf(self):
+        from stats.parametric import fit_student_t
+
+        np.random.seed(42)
+        log_rets = np.random.normal(0.0005, 0.02, 200)
+        rf_array = np.full(200, 0.0002)
+        result = fit_student_t(log_rets, rf_daily=rf_array)
+        if result is None:
+            pytest.skip("copulax not installed")
+        # Should produce the same result as scalar rf=0.0002
+        result_scalar = fit_student_t(log_rets, rf_daily=0.0002)
+        assert result_scalar is not None
+        # Use relative tolerance since MC sampling introduces floating-point noise
+        np.testing.assert_allclose(
+            result.sharpe, result_scalar.sharpe, rtol=1e-6,
+        )
