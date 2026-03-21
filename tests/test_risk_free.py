@@ -286,23 +286,17 @@ class TestFetcherIntegration:
 
     @pytest.mark.asyncio
     async def test_tona_jpy(self, fetcher):
-        """Bank of Japan TONA — REST API, ACT/365.
-        May fail if BoJ API is unavailable; should return empty, not crash."""
+        """JPY TONA — BIS SDMX API (mirrors BoJ data), ACT/365."""
         obs = await fetcher._fetch_tona(self.START, self.END)
-        if obs:
-            self._validate_observations(obs, "JPY", "TONA")
+        self._validate_observations(obs, "JPY", "TONA", min_count=3)
 
     # -- Quirky APIs -------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_sonia_gbp_handles_html_response(self, fetcher):
-        """BoE SONIA — may return HTML instead of CSV.
-        Must return empty list, not crash on HTML parsing."""
+    async def test_sonia_gbp(self, fetcher):
+        """GBP SONIA — BoE IADB CSV endpoint, ACT/365."""
         obs = await fetcher._fetch_sonia(self.START, self.END)
-        # If BoE returns CSV, validate it. If it returns HTML, should be empty.
-        if obs:
-            self._validate_observations(obs, "GBP", "SONIA", min_count=1)
-        # Either way, no crash.
+        self._validate_observations(obs, "GBP", "SONIA", min_count=3)
 
     @pytest.mark.asyncio
     async def test_rba_aud_static_csv(self, fetcher):
@@ -313,13 +307,10 @@ class TestFetcherIntegration:
             self._validate_observations(obs, "AUD", "CASH_RATE")
 
     @pytest.mark.asyncio
-    async def test_ocr_nzd_excel_download(self, fetcher):
-        """RBNZ OCR — Excel file download, ACT/365.
-        RBNZ may block with 403; should return empty via _dispatch_fetch."""
-        result = await fetcher._dispatch_fetch("NZD", self.START, self.END)
-        # Either parsed successfully or returned empty (403 handled gracefully)
-        if result:
-            self._validate_observations(result, "NZD", "OCR")
+    async def test_ocr_nzd(self, fetcher):
+        """NZD OCR — BIS SDMX API (mirrors RBNZ data), ACT/365."""
+        obs = await fetcher._fetch_ocr(self.START, self.END)
+        self._validate_observations(obs, "NZD", "OCR", min_count=3)
 
     # -- Dispatch-level tests ----------------------------------------------
 

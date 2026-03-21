@@ -177,16 +177,26 @@ class RiskFreeRateFetcher:
         today = date.today().isoformat()
         yesterday = (date.today() - timedelta(days=5)).isoformat()  # cover weekends
 
+        # Collect all observations first, then store in a single DB transaction
+        # to avoid SQLite "database is locked" errors from concurrent writes.
+        all_observations: list[RateObservation] = []
         for currency in BENCHMARKS:
             if self._last_fetch.get(currency) == today:
                 continue
             try:
                 observations = await self._dispatch_fetch(currency, yesterday, today)
                 if observations:
-                    await self._store(observations)
-                self._last_fetch[currency] = today
+                    all_observations.extend(observations)
+                    self._last_fetch[currency] = today
+                else:
+                    # Don't mark as fetched — allows retry later when data
+                    # becomes available (e.g. SNB publishes SARON with a lag).
+                    logger.debug("No observations returned for %s", currency)
             except Exception:
                 logger.exception("refresh_today failed for %s", currency)
+
+        if all_observations:
+            await self._store(all_observations)
 
     async def get_daily_rates(
         self, currency: str, dates: list[str]
@@ -388,7 +398,7 @@ class RiskFreeRateFetcher:
         fmt_start = d_start.strftime("%d/%b/%Y")
         fmt_end = d_end.strftime("%d/%b/%Y")
         url = (
-            "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
+            "https://www.bankofengland.co.uk/boeapps/iadb/fromshowcolumns.asp"
             f"?csv.x=yes&SeriesCodes=IUDSOIA&UsingCodes=Y"
             f"&Datefrom={fmt_start}&Dateto={fmt_end}&CSVF=TN&VPD=Y"
         )
@@ -399,7 +409,7 @@ class RiskFreeRateFetcher:
             ),
             "Accept": "text/csv, text/plain, */*",
         }
-        resp = await self._client.get(url, headers=headers)
+        resp = await self._client.get(url, headers=headers, follow_redirects=True)
         resp.raise_for_status()
 
         # BoE may return HTML on error — check content looks like CSV
@@ -449,38 +459,31 @@ class RiskFreeRateFetcher:
         return observations
 
     async def _fetch_tona(self, start: str, end: str) -> list[RateObservation]:
-        """JPY TONA (uncollateralised overnight call rate) from the BoJ."""
-        try:
-            return await self._fetch_tona_api(start, end)
-        except Exception:
-            logger.debug("BoJ REST API failed for TONA")
-            return []
+        """JPY TONA from the BIS central bank policy rates API.
 
-    async def _fetch_tona_api(self, start: str, end: str) -> list[RateObservation]:
-        """BoJ REST API (launched Feb 2026)."""
+        The BoJ stat-search.boj.or.jp site is a CGI form requiring session
+        state — it cannot be queried as a REST API. The BIS mirrors the same
+        BoJ data daily via their SDMX API.
+        """
         url = (
-            "https://www.stat-search.boj.or.jp/api/getDataCode"
-            f"?code=FM01'STRDCLUCON&from={start.replace('-', '')}"
-            f"&to={end.replace('-', '')}&format=json"
+            "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.JP"
+            f"?startPeriod={start}&endPeriod={end}&format=csv"
         )
         resp = await self._client.get(url)
         resp.raise_for_status()
-        data = resp.json()
 
         observations = []
-        for item in data.get("data", []):
+        reader = csv.DictReader(io.StringIO(resp.text))
+        for row in reader:
             try:
-                raw_date = str(item.get("date", ""))
-                if len(raw_date) == 8:
-                    d = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-                else:
-                    d = raw_date
-                val = item.get("value")
-                if val is not None:
-                    observations.append(RateObservation(
-                        currency="JPY", benchmark="TONA",
-                        date=d, rate=float(val), source="Bank of Japan API",
-                    ))
+                d = row.get("TIME_PERIOD", "").strip()
+                val = row.get("OBS_VALUE", "").strip()
+                if not d or not val or val == "NaN":
+                    continue
+                observations.append(RateObservation(
+                    currency="JPY", benchmark="TONA",
+                    date=d, rate=float(val), source="BIS (BoJ TONA)",
+                ))
             except (ValueError, KeyError):
                 continue
         return observations
@@ -640,74 +643,32 @@ class RiskFreeRateFetcher:
         return observations
 
     async def _fetch_ocr(self, start: str, end: str) -> list[RateObservation]:
-        """NZD OCR from the RBNZ (Excel download).
+        """NZD OCR from the BIS central bank policy rates API.
 
-        Falls back to empty if openpyxl is not available.
+        The RBNZ website blocks non-browser requests (HTTP 403), so we
+        use the BIS SDMX API which mirrors the same RBNZ data daily.
         """
         url = (
-            "https://www.rbnz.govt.nz/-/media/project/sites/rbnz/files"
-            "/statistics/series/b/b2/hb2-daily-close.xlsx"
+            "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.NZ"
+            f"?startPeriod={start}&endPeriod={end}&format=csv"
         )
-        try:
-            import openpyxl
-        except ImportError:
-            logger.warning("openpyxl not installed — cannot fetch RBNZ OCR data")
-            return []
-
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; PennyStockSentinel/1.0; "
-                "+https://github.com/penny-stock-sentinel)"
-            ),
-            "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, */*",
-        }
-        resp = await self._client.get(url, headers=headers)
+        resp = await self._client.get(url)
         resp.raise_for_status()
 
         observations = []
-        wb = openpyxl.load_workbook(io.BytesIO(resp.content), read_only=True, data_only=True)
-        ws = wb.active
-
-        # Find the OCR column
-        ocr_col = None
-        header_row = None
-        for row in ws.iter_rows(max_row=10, values_only=False):
-            for cell in row:
-                val = str(cell.value or "").lower()
-                if "official cash rate" in val or "ocr" in val:
-                    ocr_col = cell.column - 1
-                    header_row = cell.row
-                    break
-            if ocr_col is not None:
-                break
-
-        if ocr_col is None or header_row is None:
-            wb.close()
-            return []
-
-        for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        reader = csv.DictReader(io.StringIO(resp.text))
+        for row in reader:
             try:
-                raw_date = row[0]
-                if isinstance(raw_date, datetime):
-                    d = raw_date.strftime("%Y-%m-%d")
-                elif isinstance(raw_date, str):
-                    d = raw_date[:10]
-                else:
+                d = row.get("TIME_PERIOD", "").strip()
+                val = row.get("OBS_VALUE", "").strip()
+                if not d or not val or val == "NaN":
                     continue
-
-                if d < start or d > end:
-                    continue
-
-                val = row[ocr_col]
-                if val is not None:
-                    observations.append(RateObservation(
-                        currency="NZD", benchmark="OCR",
-                        date=d, rate=float(val), source="RBNZ B2 Table",
-                    ))
-            except (ValueError, IndexError, TypeError):
+                observations.append(RateObservation(
+                    currency="NZD", benchmark="OCR",
+                    date=d, rate=float(val), source="BIS (RBNZ OCR)",
+                ))
+            except (ValueError, KeyError):
                 continue
-
-        wb.close()
         return observations
 
 

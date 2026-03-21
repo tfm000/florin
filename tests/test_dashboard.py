@@ -1,5 +1,8 @@
 """Tests for the dashboard FastAPI routes."""
 
+import json
+from datetime import UTC, datetime
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -8,6 +11,7 @@ from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
 from db.database import Database
+from db.models import ReportORM, TradeORM, UniverseStockORM
 
 
 @pytest.fixture
@@ -49,6 +53,40 @@ async def readonly_app():
     app = create_app(settings, db, event_bus, broker)
     yield app
     await db.close()
+
+
+@pytest.fixture
+async def broker_app():
+    """Create a test app with a PaperBroker and fixed price getter."""
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        t212_api_key="test_key",
+        t212_api_secret="test_secret",
+    )
+    db = Database(settings.database_url)
+    await db.init()
+    await db.create_tables()
+    event_bus = EventBus()
+
+    from broker.paper_broker import PaperBroker
+    broker = PaperBroker(initial_cash=10_000.0, currency="USD")
+    await broker.connect()
+    # Fixed price getter for deterministic tests
+    prices = {"AAPL": 150.0, "TSLA": 200.0, "MSFT": 300.0}
+    broker.set_price_getter(lambda t: prices.get(t))
+
+    app = create_app(settings, db, event_bus, broker)
+    yield app, db
+    await db.close()
+
+
+@pytest.fixture
+async def broker_client(broker_app):
+    """AsyncClient backed by a PaperBroker with known prices."""
+    app, db = broker_app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c, db
 
 
 @pytest.fixture
@@ -278,3 +316,583 @@ class TestHealthRoutes:
         resp = await client.post("/api/terminate")
         assert resp.status_code == 200
         assert resp.json()["status"] == "shutting_down"
+
+
+# =========================================================================
+# Deep tests — validate response data, not just status codes
+# =========================================================================
+
+
+class TestAccountDeep:
+    """Validate account summary response fields with a live PaperBroker."""
+
+    @pytest.mark.asyncio
+    async def test_account_initial_state(self, broker_client):
+        client, _ = broker_client
+        resp = await client.get("/api/account")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["currency"] == "USD"
+        assert data["cash_available"] == 10_000.0
+        assert data["invested_value"] == 0.0
+        assert data["total_value"] == 10_000.0
+        assert data["unrealised_pnl"] == 0.0
+        assert data["realised_pnl"] == 0.0
+        assert "updated_at" in data
+
+    @pytest.mark.asyncio
+    async def test_account_after_buy(self, broker_client):
+        """Buying reduces cash and increases invested_value."""
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 10})
+        resp = await client.get("/api/account")
+        data = resp.json()
+        # 10 shares @ $150 = $1500
+        assert data["cash_available"] == pytest.approx(10_000.0 - 1500.0)
+        assert data["invested_value"] == pytest.approx(1500.0)
+        assert data["total_value"] == pytest.approx(10_000.0)  # no price change
+
+    @pytest.mark.asyncio
+    async def test_account_after_round_trip(self, broker_client):
+        """Buy then sell records realised P&L."""
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 5})
+        await client.post("/api/orders/sell", json={"ticker": "AAPL", "quantity": 5})
+        resp = await client.get("/api/account")
+        data = resp.json()
+        # Bought and sold at same price ($150) → P&L = 0
+        assert data["realised_pnl"] == pytest.approx(0.0)
+        assert data["cash_available"] == pytest.approx(10_000.0)
+        assert data["invested_value"] == pytest.approx(0.0)
+
+
+class TestOrdersDeep:
+    """Validate order placement, fill data, and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_buy_market_response_fields(self, broker_client):
+        client, _ = broker_client
+        resp = await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 5})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["ticker"] == "AAPL"
+        assert data["side"] == "BUY"
+        assert data["filled_quantity"] == 5.0
+        assert data["filled_price"] == 150.0
+        assert data["status"] == "FILLED"
+        assert data["order_id"]  # non-empty
+
+    @pytest.mark.asyncio
+    async def test_sell_market_response_fields(self, broker_client):
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "TSLA", "quantity": 3})
+        resp = await client.post("/api/orders/sell", json={"ticker": "TSLA", "quantity": 3})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["ticker"] == "TSLA"
+        assert data["side"] == "SELL"
+        assert data["filled_quantity"] == 3.0
+        assert data["filled_price"] == 200.0
+        assert data["status"] == "FILLED"
+
+    @pytest.mark.asyncio
+    async def test_buy_insufficient_cash(self, broker_client):
+        """Buying more than cash allows returns 400 with error message."""
+        client, _ = broker_client
+        # 100 shares @ $300 = $30,000 > $10,000 cash
+        resp = await client.post("/api/orders/buy", json={"ticker": "MSFT", "quantity": 100})
+        assert resp.status_code == 400
+        assert "insufficient cash" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_sell_insufficient_position(self, broker_client):
+        """Selling shares you don't own returns 400."""
+        client, _ = broker_client
+        resp = await client.post("/api/orders/sell", json={"ticker": "AAPL", "quantity": 10})
+        assert resp.status_code == 400
+        assert "insufficient position" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_buy_no_price_available(self, broker_client):
+        """Buying a ticker with no price returns 400."""
+        client, _ = broker_client
+        resp = await client.post("/api/orders/buy", json={"ticker": "UNKNOWN", "quantity": 1})
+        assert resp.status_code == 400
+        assert "no price" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_limit_order_goes_pending(self, broker_client):
+        client, _ = broker_client
+        resp = await client.post("/api/orders/buy", json={
+            "ticker": "AAPL", "quantity": 5, "limit_price": 140.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["status"] == "SUBMITTED"
+        # Should appear in pending orders
+        pending = await client.get("/api/orders/pending")
+        assert len(pending.json()) == 1
+        assert pending.json()[0]["ticker"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_cancel_order(self, broker_client):
+        client, _ = broker_client
+        resp = await client.post("/api/orders/buy", json={
+            "ticker": "AAPL", "quantity": 5, "limit_price": 140.0,
+        })
+        order_id = resp.json()["order_id"]
+        cancel_resp = await client.delete(f"/api/orders/{order_id}")
+        assert cancel_resp.status_code == 200
+        assert cancel_resp.json()["cancelled"] is True
+        assert cancel_resp.json()["order_id"] == order_id
+        # Pending should be empty now
+        pending = await client.get("/api/orders/pending")
+        assert pending.json() == []
+
+    @pytest.mark.asyncio
+    async def test_cancel_nonexistent_order(self, broker_client):
+        client, _ = broker_client
+        resp = await client.delete("/api/orders/doesnotexist")
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_stoploss_order(self, broker_client):
+        client, _ = broker_client
+        # Need a position first for the stop to make sense (stop is a sell)
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 10})
+        resp = await client.post("/api/orders/stoploss", json={
+            "ticker": "AAPL", "quantity": 10, "stop_price": 130.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["status"] == "SUBMITTED"
+
+    @pytest.mark.asyncio
+    async def test_value_based_buy(self, broker_client):
+        """Buy by target_value instead of quantity."""
+        client, _ = broker_client
+        resp = await client.post("/api/orders/buy", json={
+            "ticker": "AAPL", "target_value": 750.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        # $750 / $150 = 5 shares
+        assert data["filled_quantity"] == pytest.approx(5.0)
+        assert data["filled_price"] == 150.0
+
+
+class TestPositionsDeep:
+    """Validate position response fields after trading."""
+
+    @pytest.mark.asyncio
+    async def test_positions_empty(self, broker_client):
+        client, _ = broker_client
+        resp = await client.get("/api/positions")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_position_after_buy(self, broker_client):
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 10})
+        resp = await client.get("/api/positions")
+        assert resp.status_code == 200
+        positions = resp.json()
+        assert len(positions) == 1
+        pos = positions[0]
+        assert pos["ticker"] == "AAPL"
+        assert pos["quantity"] == 10.0
+        assert pos["avg_price"] == 150.0
+        assert pos["current_price"] == 150.0
+        assert pos["market_value"] == pytest.approx(1500.0)
+        assert pos["unrealised_pnl"] == pytest.approx(0.0)
+        assert pos["unrealised_pnl_pct"] == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_position_by_ticker(self, broker_client):
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "TSLA", "quantity": 2})
+        resp = await client.get("/api/positions/TSLA")
+        assert resp.status_code == 200
+        pos = resp.json()
+        assert pos["ticker"] == "TSLA"
+        assert pos["quantity"] == 2.0
+        assert pos["avg_price"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_position_not_found(self, broker_client):
+        client, _ = broker_client
+        resp = await client.get("/api/positions/NOPE")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_position_removed_after_full_sell(self, broker_client):
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 5})
+        await client.post("/api/orders/sell", json={"ticker": "AAPL", "quantity": 5})
+        resp = await client.get("/api/positions")
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_multiple_positions(self, broker_client):
+        client, _ = broker_client
+        await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 5})
+        await client.post("/api/orders/buy", json={"ticker": "TSLA", "quantity": 3})
+        resp = await client.get("/api/positions")
+        positions = resp.json()
+        assert len(positions) == 2
+        tickers = {p["ticker"] for p in positions}
+        assert tickers == {"AAPL", "TSLA"}
+
+
+class TestTradesDeep:
+    """Validate trade history with seeded DB data."""
+
+    @pytest.fixture
+    async def seeded_client(self, app):
+        """Seed the DB with trade records and return a client."""
+        from dashboard.deps import get_db
+        db = get_db()
+        async with db.session() as session:
+            session.add(TradeORM(
+                id="trade_win_01", ticker="AAPL", side="BUY",
+                order_type="MARKET", quantity=10, price=100.0,
+                total_value=1000.0, status="FILLED",
+                executed_at=datetime(2025, 1, 10, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="trade_win_02", ticker="AAPL", side="SELL",
+                order_type="MARKET", quantity=10, price=120.0,
+                total_value=1200.0, status="FILLED",
+                is_closing_trade=True, realised_pnl=200.0,
+                realised_pnl_pct=20.0,
+                executed_at=datetime(2025, 1, 15, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="trade_loss_01", ticker="TSLA", side="BUY",
+                order_type="MARKET", quantity=5, price=200.0,
+                total_value=1000.0, status="FILLED",
+                executed_at=datetime(2025, 1, 20, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="trade_loss_02", ticker="TSLA", side="SELL",
+                order_type="MARKET", quantity=5, price=180.0,
+                total_value=900.0, status="FILLED",
+                is_closing_trade=True, realised_pnl=-100.0,
+                realised_pnl_pct=-10.0,
+                executed_at=datetime(2025, 1, 25, tzinfo=UTC),
+            ))
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_trades_response_fields(self, seeded_client):
+        resp = await seeded_client.get("/api/trades")
+        assert resp.status_code == 200
+        trades = resp.json()
+        assert len(trades) == 4
+        # Most recent first (trade_loss_02)
+        t = trades[0]
+        assert t["id"] == "trade_loss_02"
+        assert t["ticker"] == "TSLA"
+        assert t["side"] == "SELL"
+        assert t["order_type"] == "MARKET"
+        assert t["quantity"] == 5.0
+        assert t["price"] == 180.0
+        assert t["total_value"] == 900.0
+        assert t["status"] == "FILLED"
+        assert t["is_closing_trade"] is True
+        assert t["realised_pnl"] == -100.0
+        assert t["realised_pnl_pct"] == -10.0
+        assert "executed_at" in t
+
+    @pytest.mark.asyncio
+    async def test_trades_filter_by_ticker(self, seeded_client):
+        resp = await seeded_client.get("/api/trades?ticker=AAPL")
+        trades = resp.json()
+        assert len(trades) == 2
+        assert all(t["ticker"] == "AAPL" for t in trades)
+
+    @pytest.mark.asyncio
+    async def test_trades_filter_by_side(self, seeded_client):
+        resp = await seeded_client.get("/api/trades?side=SELL")
+        trades = resp.json()
+        assert len(trades) == 2
+        assert all(t["side"] == "SELL" for t in trades)
+
+    @pytest.mark.asyncio
+    async def test_trades_pagination(self, seeded_client):
+        resp = await seeded_client.get("/api/trades?limit=2&offset=0")
+        assert len(resp.json()) == 2
+        resp2 = await seeded_client.get("/api/trades?limit=2&offset=2")
+        assert len(resp2.json()) == 2
+        # No overlap
+        ids_page1 = {t["id"] for t in resp.json()}
+        ids_page2 = {t["id"] for t in resp2.json()}
+        assert ids_page1.isdisjoint(ids_page2)
+
+
+class TestReportsDeep:
+    """Validate report listing and detail endpoints with seeded data."""
+
+    @pytest.fixture
+    async def seeded_client(self, app):
+        from dashboard.deps import get_db
+        db = get_db()
+        report_data = {"analysis": "test analysis content", "signals": ["bullish"]}
+        async with db.session() as session:
+            session.add(ReportORM(
+                id="rpt_001", ticker="AAPL", mode="single",
+                alert_price=2.50, alert_change_pct=15.0, alert_volume=500_000,
+                final_recommendation="BUY", final_score=7.5, final_confidence=0.85,
+                fraud_risk_level="LOW", fraud_risk_score=1.2,
+                fraud_flags=json.dumps(["low_float"]),
+                reddit_mentions=42, stocktwits_bullish=10, stocktwits_bearish=3,
+                insider_buys=2, insider_sells=0, news_count=5,
+                report_json=json.dumps(report_data),
+                user_action="PENDING",
+                generated_at=datetime(2025, 2, 1, tzinfo=UTC),
+            ))
+            session.add(ReportORM(
+                id="rpt_002", ticker="TSLA", mode="consensus",
+                alert_price=180.0, alert_change_pct=-5.0, alert_volume=1_000_000,
+                final_recommendation="AVOID", final_score=3.0, final_confidence=0.70,
+                fraud_risk_level="MEDIUM", fraud_risk_score=5.5,
+                fraud_flags=json.dumps([]),
+                reddit_mentions=100, stocktwits_bullish=20, stocktwits_bearish=30,
+                insider_buys=0, insider_sells=3, news_count=12,
+                report_json=json.dumps({}),
+                user_action="DENY",
+                generated_at=datetime(2025, 2, 5, tzinfo=UTC),
+            ))
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_reports_list_fields(self, seeded_client):
+        resp = await seeded_client.get("/api/reports")
+        assert resp.status_code == 200
+        reports = resp.json()
+        assert len(reports) == 2
+        # Most recent first
+        r = reports[0]
+        assert r["id"] == "rpt_002"
+        assert r["ticker"] == "TSLA"
+        assert r["mode"] == "consensus"
+        assert r["alert_price"] == 180.0
+        assert r["alert_change_pct"] == -5.0
+        assert r["final_recommendation"] == "AVOID"
+        assert r["final_score"] == 3.0
+        assert r["final_confidence"] == 0.70
+        assert r["fraud_risk_level"] == "MEDIUM"
+        assert r["fraud_risk_score"] == 5.5
+        assert r["fraud_flags"] == []
+        assert r["reddit_mentions"] == 100
+        assert r["stocktwits_bullish"] == 20
+        assert r["stocktwits_bearish"] == 30
+        assert r["insider_buys"] == 0
+        assert r["insider_sells"] == 3
+        assert r["news_count"] == 12
+        assert r["user_action"] == "DENY"
+        assert "generated_at" in r
+
+    @pytest.mark.asyncio
+    async def test_reports_filter_by_ticker(self, seeded_client):
+        resp = await seeded_client.get("/api/reports?ticker=AAPL")
+        reports = resp.json()
+        assert len(reports) == 1
+        assert reports[0]["ticker"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_reports_filter_by_recommendation(self, seeded_client):
+        resp = await seeded_client.get("/api/reports?recommendation=BUY")
+        reports = resp.json()
+        assert len(reports) == 1
+        assert reports[0]["final_recommendation"] == "BUY"
+
+    @pytest.mark.asyncio
+    async def test_report_detail_includes_report_data(self, seeded_client):
+        resp = await seeded_client.get("/api/reports/rpt_001")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "rpt_001"
+        assert data["ticker"] == "AAPL"
+        assert data["fraud_flags"] == ["low_float"]
+        # Detail endpoint includes the full report_data
+        assert "report_data" in data
+        assert data["report_data"]["analysis"] == "test analysis content"
+        assert data["report_data"]["signals"] == ["bullish"]
+
+    @pytest.mark.asyncio
+    async def test_report_detail_not_found(self, seeded_client):
+        resp = await seeded_client.get("/api/reports/nonexistent")
+        assert resp.status_code == 404
+
+
+class TestUniverseDeep:
+    """Validate universe listing with seeded stocks and filtering."""
+
+    @pytest.fixture
+    async def seeded_client(self, app):
+        from dashboard.deps import get_db
+        db = get_db()
+        async with db.session() as session:
+            session.add(UniverseStockORM(
+                ticker="PENNY", name="Penny Corp", exchange="NASDAQ",
+                t212_ticker="PENNY_US", sector="Technology", industry="Software",
+                market_cap=50_000_000, avg_volume=200_000,
+                last_price=2.50, in_universe=True,
+                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
+            ))
+            session.add(UniverseStockORM(
+                ticker="CHEAP", name="Cheap Inc", exchange="NYSE",
+                t212_ticker="CHEAP_US", sector="Healthcare", industry="Biotech",
+                market_cap=20_000_000, avg_volume=500_000,
+                last_price=0.80, in_universe=True,
+                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
+            ))
+            session.add(UniverseStockORM(
+                ticker="EXPNSV", name="Expensive Ltd", exchange="NASDAQ",
+                t212_ticker="EXPNSV_US", sector="Finance", industry="Banking",
+                market_cap=500_000_000, avg_volume=1_000_000,
+                last_price=25.00, in_universe=False,
+                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
+            ))
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_universe_response_fields(self, seeded_client):
+        resp = await seeded_client.get("/api/universe")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2  # only in_universe=True
+        items = data["items"]
+        assert len(items) == 2
+        # Sorted by ticker by default
+        p = items[0]
+        assert p["ticker"] == "CHEAP"
+        assert p["name"] == "Cheap Inc"
+        assert p["exchange"] == "NYSE"
+        assert p["sector"] == "Healthcare"
+        assert p["industry"] == "Biotech"
+        assert p["market_cap"] == 20_000_000
+        assert p["avg_volume"] == 500_000
+        assert p["last_price"] == 0.80
+        assert p["in_universe"] is True
+        assert p["is_monitored"] is False
+        assert "updated_at" in p
+
+    @pytest.mark.asyncio
+    async def test_universe_include_not_in_universe(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?in_universe=false")
+        data = resp.json()
+        assert data["total"] == 3  # all stocks
+
+    @pytest.mark.asyncio
+    async def test_universe_filter_by_exchange(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?exchange=NYSE")
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["ticker"] == "CHEAP"
+
+    @pytest.mark.asyncio
+    async def test_universe_filter_by_price(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?min_price=1.0&max_price=5.0")
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["ticker"] == "PENNY"
+
+    @pytest.mark.asyncio
+    async def test_universe_filter_by_market_cap(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?min_market_cap=30000000")
+        items = resp.json()["items"]
+        assert len(items) == 1
+        assert items[0]["ticker"] == "PENNY"
+
+    @pytest.mark.asyncio
+    async def test_universe_pagination(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?limit=1&offset=0")
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["has_more"] is True
+        resp2 = await seeded_client.get("/api/universe?limit=1&offset=1")
+        assert len(resp2.json()["items"]) == 1
+        assert resp2.json()["has_more"] is False
+
+    @pytest.mark.asyncio
+    async def test_universe_sort_by_last_price(self, seeded_client):
+        resp = await seeded_client.get("/api/universe?sort_by=last_price")
+        items = resp.json()["items"]
+        assert items[0]["ticker"] == "PENNY"  # $2.50 > $0.80 (desc)
+
+
+class TestStatsDeep:
+    """Validate trading stats computation with seeded trade data."""
+
+    @pytest.fixture
+    async def seeded_client(self, app):
+        from dashboard.deps import get_db
+        db = get_db()
+        async with db.session() as session:
+            # 2 buy trades + 2 closing sell trades (1 win, 1 loss)
+            session.add(TradeORM(
+                id="s_buy_1", ticker="AAPL", side="BUY",
+                quantity=10, price=100.0, total_value=1000.0,
+                status="FILLED",
+                executed_at=datetime(2025, 1, 5, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="s_sell_1", ticker="AAPL", side="SELL",
+                quantity=10, price=120.0, total_value=1200.0,
+                status="FILLED", is_closing_trade=True,
+                realised_pnl=200.0, realised_pnl_pct=20.0,
+                executed_at=datetime(2025, 1, 10, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="s_buy_2", ticker="TSLA", side="BUY",
+                quantity=5, price=200.0, total_value=1000.0,
+                status="FILLED",
+                executed_at=datetime(2025, 1, 15, tzinfo=UTC),
+            ))
+            session.add(TradeORM(
+                id="s_sell_2", ticker="TSLA", side="SELL",
+                quantity=5, price=180.0, total_value=900.0,
+                status="FILLED", is_closing_trade=True,
+                realised_pnl=-100.0, realised_pnl_pct=-10.0,
+                executed_at=datetime(2025, 1, 20, tzinfo=UTC),
+            ))
+            await session.commit()
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_stats_computation(self, seeded_client):
+        resp = await seeded_client.get("/api/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_trades"] == 4
+        assert data["round_trip_trades"] == 2
+        assert data["winning_trades"] == 1
+        assert data["losing_trades"] == 1
+        assert data["win_rate"] == 50.0
+        assert data["total_pnl"] == 100.0  # 200 - 100
+        assert data["avg_pnl_per_trade"] == 50.0  # 100 / 2
+        assert data["best_trade_pnl"] == 200.0
+        assert data["worst_trade_pnl"] == -100.0
