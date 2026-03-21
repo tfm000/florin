@@ -13,6 +13,14 @@ import Reports from './pages/Reports'
 import TradeHistory from './pages/TradeHistory'
 import Account from './pages/Account'
 import Stats from './pages/Stats'
+import Calendar from './pages/Calendar'
+import Screener from './pages/Screener'
+import Filings13F from './pages/Filings13F'
+import MonitorAsset from './pages/MonitorAsset'
+import DataDownload from './pages/DataDownload'
+import MarketNews from './pages/MarketNews'
+import Portfolio from './pages/Portfolio'
+import InsiderTrading from './pages/InsiderTrading'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard' },
@@ -20,10 +28,17 @@ const NAV_ITEMS = [
   { path: '/watchlist', label: 'Watchlist' },
   { path: '/monitor', label: 'Live Monitor' },
   { path: '/penny-stocks', label: 'Penny Stocks' },
+  { path: '/screener', label: 'Screener' },
+  { path: '/13f', label: '13F' },
+  { path: '/insiders', label: 'Insiders' },
+  { path: '/news', label: 'News' },
+  { path: '/calendar', label: 'Calendar' },
   { path: '/reports', label: 'Reports' },
   { path: '/trades', label: 'Trades' },
   { path: '/account', label: 'Account' },
   { path: '/stats', label: 'Stats' },
+  { path: '/portfolio', label: 'Portfolio' },
+  { path: '/data', label: 'Data' },
   { path: '/settings', label: 'Settings' },
 ]
 
@@ -97,12 +112,20 @@ export default function App() {
             <Route path="/research/:ticker" element={<AssetResearch />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/monitor" element={<LiveMonitor />} />
+            <Route path="/monitor/:ticker" element={<MonitorAsset />} />
             <Route path="/penny-stocks" element={<Universe />} />
+            <Route path="/screener" element={<Screener />} />
+            <Route path="/13f" element={<Filings13F />} />
+            <Route path="/insiders" element={<InsiderTrading />} />
+            <Route path="/news" element={<MarketNews />} />
+            <Route path="/calendar" element={<Calendar />} />
             <Route path="/universe" element={<Navigate to="/penny-stocks" replace />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/trades" element={<TradeHistory />} />
             <Route path="/account" element={<Account />} />
             <Route path="/stats" element={<Stats />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/data" element={<DataDownload />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

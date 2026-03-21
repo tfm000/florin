@@ -6,12 +6,18 @@ import PeriodSelector from '../components/PeriodSelector'
 import CumulativeReturnChart from '../components/CumulativeReturnChart'
 import ReturnsHistogram from '../components/ReturnsHistogram'
 import SearchBar from '../components/SearchBar'
+import GreeksTable from '../components/GreeksTable'
+import RiskMetrics from '../components/RiskMetrics'
+import RegimeOverlay from '../components/RegimeOverlay'
+import PayoffDiagram from '../components/PayoffDiagram'
 import NewsCard from '../components/NewsCard'
+import ShortInterestChart from '../components/ShortInterestChart'
 
 export default function AssetResearch() {
   const { ticker } = useParams()
   const { data: info, loading } = useApi(`/research/asset/${ticker}`)
   const { data: news } = useApi(`/research/news?ticker=${ticker}`)
+  const { data: ivData } = useApi(`/research/iv-spread?ticker=${ticker}`)
   const [analysis, setAnalysis] = useState(null)
   const [analysing, setAnalysing] = useState(false)
   const [watchStatus, setWatchStatus] = useState(null)
@@ -24,6 +30,19 @@ export default function AssetResearch() {
 
   // Comparison overlays
   const [compareTickers, setCompareTickers] = useState([])
+
+  // Shared regime settings (controlled by RegimeOverlay, consumed by all charts)
+  const [regimeNRegimes, setRegimeNRegimes] = useState(2)
+  const [regimeSource, setRegimeSource] = useState('')
+
+  // Single regime data fetch shared across all charts
+  const regimeSourceParam = regimeSource ? `&source=${regimeSource}` : ''
+  const regimeRangeParam = customStart && customEnd
+    ? `&start=${customStart}&end=${customEnd}`
+    : `&period=${period}`
+  const { data: regimeData, loading: regimeLoading } = useApi(
+    `/regime/${ticker}?n_regimes=${regimeNRegimes}${regimeSourceParam}${regimeRangeParam}`
+  )
 
   const handlePeriodChange = (p) => {
     setPeriod(p)
@@ -221,6 +240,7 @@ export default function AssetResearch() {
         customStart={customStart}
         customEnd={customEnd}
         compareTickers={compareTickers}
+        regimeData={regimeData}
       />
 
       {/* Returns histogram with overlays */}
@@ -231,7 +251,43 @@ export default function AssetResearch() {
           customStart={customStart}
           customEnd={customEnd}
           compareTickers={compareTickers}
+          regimeData={regimeData}
         />
+      )}
+
+      {/* Risk Metrics */}
+      {showReturns && (
+        <RiskMetrics ticker={ticker} period={period} customStart={customStart} customEnd={customEnd} />
+      )}
+
+      {/* Short Interest */}
+      {showReturns && (
+        <ShortInterestChart ticker={ticker} />
+      )}
+
+      {/* Regime Detection */}
+      {showReturns && (
+        <RegimeOverlay
+          ticker={ticker}
+          regimeData={regimeData}
+          loading={regimeLoading}
+          nRegimes={regimeNRegimes}
+          source={regimeSource}
+          onNRegimesChange={setRegimeNRegimes}
+          onSourceChange={setRegimeSource}
+        />
+      )}
+
+      {/* Options Greeks + Payoff */}
+      {ivData && ivData.skew?.length > 0 && (
+        <>
+          <GreeksTable
+            skew={ivData.skew}
+            spot={ivData.spot}
+            expiry={ivData.skew_expiry}
+          />
+          <PayoffDiagram spot={ivData.spot} />
+        </>
       )}
 
       {/* LLM Analysis */}

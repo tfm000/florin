@@ -68,6 +68,8 @@ def create_app(
     from dashboard.routes import (
         positions, universe, reports, trades, account, orders,
         stats, health, settings, research, watchlist, monitor,
+        calendar, screener, correlation, risk, filings_13f, portfolio,
+        short_interest, breadth, news_feed, regime, alerts, insiders,
     )
 
     app.include_router(health.router, prefix="/api")
@@ -82,6 +84,18 @@ def create_app(
     app.include_router(orders.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
+    app.include_router(calendar.router, prefix="/api")
+    app.include_router(screener.router, prefix="/api")
+    app.include_router(correlation.router, prefix="/api")
+    app.include_router(risk.router, prefix="/api")
+    app.include_router(filings_13f.router, prefix="/api")
+    app.include_router(portfolio.router, prefix="/api")
+    app.include_router(short_interest.router, prefix="/api")
+    app.include_router(breadth.router, prefix="/api")
+    app.include_router(news_feed.router, prefix="/api")
+    app.include_router(regime.router, prefix="/api")
+    app.include_router(alerts.router, prefix="/api")
+    app.include_router(insiders.router, prefix="/api")
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint

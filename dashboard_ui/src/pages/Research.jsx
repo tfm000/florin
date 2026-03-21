@@ -5,27 +5,47 @@ import NewsCard from '../components/NewsCard'
 import YieldCurveChart from '../components/YieldCurveChart'
 import PutCallIVChart from '../components/PutCallIVChart'
 import MetricsGrid from '../components/MetricsGrid'
+import SectorHeatMap from '../components/SectorHeatMap'
+import CorrelationMatrix from '../components/CorrelationMatrix'
+import MarketBreadth from '../components/MarketBreadth'
 
 export default function Research() {
   const navigate = useNavigate()
-  const { data: news, loading: newsLoading } = useApi('/research/news')
+  const { data: news, loading: newsLoading } = useApi('/research/news', { interval: 300000 }) // 5 min
   const { data: rates } = useApi('/research/policy-rates')
-  const { data: macro } = useApi('/research/macro')
+  const { data: macro } = useApi('/research/macro', { interval: 60000 }) // 60 sec auto-refresh
 
   const handleSelect = (item) => {
     navigate(`/research/${item.ticker}`)
   }
 
-  const macroMetrics = macro?.indicators
-    ? Object.entries(macro.indicators).map(([label, v]) => ({
-        label,
-        value: v.price,
-        format: label.includes('Yield') || label === 'VIX' ? 'number' : 'dollar',
-        color: v.change_pct >= 0 ? 'text-green-400' : 'text-red-400',
-        ticker: v.ticker,
-        changePct: v.change_pct,
-      }))
-    : []
+  // Categorize macro indicators
+  const categories = {
+    'Indices': ['VIX', 'DXY', 'S&P 500', 'NASDAQ', 'Dow Jones', 'Russell 2000'],
+    'Commodities': ['Crude Oil', 'Gold', 'Silver', 'Nat Gas'],
+    'Fixed Income': ['10Y Yield'],
+    'Crypto': ['Bitcoin', 'Ethereum', 'Solana'],
+    'FX': ['EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD'],
+  }
+
+  const buildMetrics = (keys) => {
+    if (!macro?.indicators) return []
+    return keys
+      .filter(k => macro.indicators[k])
+      .map(label => {
+        const v = macro.indicators[label]
+        const isFx = label.includes('/')
+        const isYield = label.includes('Yield') || label === 'VIX'
+        return {
+          label,
+          value: v.price,
+          format: isYield ? 'number' : isFx ? 'number' : 'dollar',
+          color: v.change_pct >= 0 ? 'text-green-400' : 'text-red-400',
+          ticker: v.ticker,
+          changePct: v.change_pct,
+        }
+      })
+  }
 
   return (
     <div className="space-y-6">
@@ -34,13 +54,17 @@ export default function Research() {
         <SearchBar onSelect={handleSelect} placeholder="Search any asset..." />
       </div>
 
-      {/* Macro Dashboard */}
-      {macroMetrics.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-300 mb-3">Market Overview</h2>
-          <MetricsGrid metrics={macroMetrics} />
-        </div>
-      )}
+      {/* Market Overview — categorised sections */}
+      {macro?.indicators && Object.entries(categories).map(([cat, keys]) => {
+        const metrics = buildMetrics(keys)
+        if (metrics.length === 0) return null
+        return (
+          <div key={cat}>
+            <h2 className="text-lg font-semibold text-gray-300 mb-3">{cat}</h2>
+            <MetricsGrid metrics={metrics} />
+          </div>
+        )
+      })}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* News Feed */}
@@ -62,6 +86,15 @@ export default function Research() {
           <YieldCurveChart />
         </div>
       </div>
+
+      {/* Market Breadth */}
+      <MarketBreadth />
+
+      {/* Sector Heat Map */}
+      <SectorHeatMap />
+
+      {/* Correlation Matrix */}
+      <CorrelationMatrix />
 
       {/* Put-Call IV Spread */}
       <PutCallIVChart />

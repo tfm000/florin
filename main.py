@@ -191,6 +191,13 @@ class Sentinel:
             dashboard_serve(dashboard_app, self.settings), name="dashboard"
         ))
 
+        # Market breadth scanner (hourly during market hours)
+        from scanner.breadth_scanner import breadth_scan_loop
+        services.append(asyncio.create_task(
+            breadth_scan_loop(self.db, yfinance_provider, data_provider),
+            name="breadth-scanner",
+        ))
+
         # WebSocket event bridge
         from dashboard.ws import event_bridge
         from dashboard.deps import get_ws_manager
@@ -271,9 +278,14 @@ class Sentinel:
             NewsSource(self.settings),
         ]
 
-        # Reddit requires API credentials
+        # Reddit: use OAuth (PRAW) if credentials available, else public .json fallback
         if self.settings.reddit_client_id:
             sources.append(RedditSource(self.settings))
+            logger.info("Reddit: using OAuth (PRAW)")
+        else:
+            from sentiment.reddit_json_source import RedditJsonSource
+            sources.append(RedditJsonSource())
+            logger.info("Reddit: using public .json fallback (no API key)")
 
         return SentimentAggregator(sources)
 

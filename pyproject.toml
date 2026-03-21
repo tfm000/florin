@@ -46,6 +46,14 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
 
+    # Statistical modelling
+    "copulax>=2.0.0",
+    "statsmodels>=0.14",
+
+    # News scraping
+    "beautifulsoup4>=4.12",
+    "lxml>=4.9",
+
     # Utilities
     "structlog>=24.1",
     "rich>=13.7",

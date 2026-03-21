@@ -85,7 +85,7 @@ export default function LiveMonitor() {
                 return (
                   <tr
                     key={item.ticker}
-                    onClick={() => navigate(`/research/${item.ticker}`)}
+                    onClick={() => navigate(`/monitor/${item.ticker}`)}
                     className="hover:bg-gray-800/50 cursor-pointer"
                   >
                     <td className="px-3 py-2">

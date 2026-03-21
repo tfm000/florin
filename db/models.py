@@ -205,3 +205,91 @@ class MonitoredAssetORM(Base):
     asset_type: Mapped[str] = mapped_column(String(20), default="equity")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Model Portfolios
+# =============================================================================
+
+class PortfolioORM(Base):
+    __tablename__ = "portfolios"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class PortfolioHoldingORM(Base):
+    __tablename__ = "portfolio_holdings"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    ticker: Mapped[str] = mapped_column(String(20))
+    weight: Mapped[float] = mapped_column(Float, default=0.0)  # 0-100
+
+
+# =============================================================================
+# Market Breadth Snapshots
+# =============================================================================
+
+class BreadthSnapshotORM(Base):
+    __tablename__ = "breadth_snapshots"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD
+    hour: Mapped[int] = mapped_column(Integer, default=0)  # 0-23
+    advancing: Mapped[int] = mapped_column(Integer, default=0)
+    declining: Mapped[int] = mapped_column(Integer, default=0)
+    unchanged: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    ad_ratio: Mapped[float] = mapped_column(Float, default=0.0)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Price Alerts
+# =============================================================================
+
+class PriceAlertORM(Base):
+    __tablename__ = "price_alerts"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    direction: Mapped[str] = mapped_column(String(10))  # "above" or "below"
+    target_price: Mapped[float] = mapped_column(Float)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    triggered: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    triggered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# =============================================================================
+# News Sources
+# =============================================================================
+
+class NewsSourceORM(Base):
+    __tablename__ = "news_sources"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    homepage: Mapped[str] = mapped_column(String(500))
+    feeds: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of RSS URLs
+    group: Mapped[str] = mapped_column(String(50), default="")  # e.g. "Finance", "Tech"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# News Stories
+# =============================================================================
+
+class NewsStoryORM(Base):
+    __tablename__ = "news_stories"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    headline: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    importance: Mapped[int] = mapped_column(Integer, default=5)
+    url: Mapped[str] = mapped_column(String(500))
+    source_name: Mapped[str] = mapped_column(String(200))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
