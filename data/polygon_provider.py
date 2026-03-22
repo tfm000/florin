@@ -20,6 +20,7 @@ import httpx
 
 from config.settings import Settings
 from core.models import BarData, StockInfo, StockQuote
+from core.rate_limiter import AsyncRateLimiter
 from data.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class PolygonProvider(MarketDataProvider):
     def __init__(self, settings: Settings) -> None:
         self._api_key = settings.polygon_api_key
         self._http: httpx.AsyncClient | None = None
+        self._limiter = AsyncRateLimiter(5, 60, name="Polygon")
 
     async def connect(self) -> None:
         self._http = httpx.AsyncClient(
@@ -62,6 +64,7 @@ class PolygonProvider(MarketDataProvider):
 
         for ticker in tickers:
             try:
+                await self._limiter.acquire()
                 resp = await self._http.get(
                     f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}",
                     params={"apiKey": self._api_key},
@@ -95,6 +98,7 @@ class PolygonProvider(MarketDataProvider):
         result: dict[str, StockQuote] = {}
 
         try:
+            await self._limiter.acquire()
             resp = await self._http.get(
                 "/v2/snapshot/locale/us/markets/stocks/tickers",
                 params={"apiKey": self._api_key},
@@ -149,6 +153,7 @@ class PolygonProvider(MarketDataProvider):
         tf_type, multiplier = tf_map.get(timeframe, ("minute", 1))
 
         try:
+            await self._limiter.acquire()
             resp = await self._http.get(
                 f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{tf_type}"
                 f"/2024-01-01/{datetime.now(UTC).strftime('%Y-%m-%d')}",

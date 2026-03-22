@@ -2,15 +2,12 @@
 Production middleware for the Sentinel Terminal dashboard.
 
 - RequestIdMiddleware: injects X-Request-ID header for request tracing
-- RateLimitMiddleware: sliding-window per-IP rate limiting
 - sentinel_exception_handler: renders SentinelError as structured ErrorResponse
 """
 
 from __future__ import annotations
 
 import logging
-import time
-from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -43,61 +40,6 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
-
-
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """
-    Simple sliding-window rate limiter per client IP.
-
-    Defaults: 100 requests per 60 seconds.
-    Exempt paths: /api/health, /api/health/live, /api/health/ready, /ws
-    """
-
-    def __init__(
-        self,
-        app: object,
-        max_requests: int = 100,
-        window_seconds: int = 60,
-    ) -> None:
-        super().__init__(app)
-        self._max_requests = max_requests
-        self._window_seconds = window_seconds
-        # IP → list of request timestamps
-        self._requests: dict[str, list[float]] = defaultdict(list)
-
-    _EXEMPT_PREFIXES = ("/api/health", "/ws", "/api/docs", "/openapi.json")
-
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint,
-    ) -> Response:
-        path = request.url.path
-        if any(path.startswith(p) for p in self._EXEMPT_PREFIXES):
-            return await call_next(request)
-
-        client_ip = request.client.host if request.client else "unknown"
-        now = time.monotonic()
-        cutoff = now - self._window_seconds
-
-        # Prune old entries
-        timestamps = self._requests[client_ip]
-        self._requests[client_ip] = [t for t in timestamps if t > cutoff]
-
-        if len(self._requests[client_ip]) >= self._max_requests:
-            logger.warning("Rate limit exceeded for %s on %s", client_ip, path)
-            error = ErrorResponse(
-                error="RATE_LIMIT_EXCEEDED",
-                message=f"Too many requests. Limit: {self._max_requests} per {self._window_seconds}s",
-                request_id=getattr(request.state, "request_id", ""),
-                timestamp=datetime.now(UTC),
-            )
-            return JSONResponse(
-                status_code=429,
-                content=error.model_dump(mode="json"),
-                headers={"Retry-After": str(self._window_seconds)},
-            )
-
-        self._requests[client_ip].append(now)
-        return await call_next(request)
 
 
 async def sentinel_exception_handler(request: Request, exc: SentinelError) -> JSONResponse:

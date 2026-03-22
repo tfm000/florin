@@ -1,15 +1,22 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useApi } from '../hooks/useApi'
+import { useState, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useApi, apiPost, apiPut } from '../hooks/useApi'
 import ExportButton from '../components/ExportButton'
 
 export default function Filings13F() {
   const navigate = useNavigate()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCik, setSelectedCik] = useState('')
-  const [selectedFilerName, setSelectedFilerName] = useState('')
-  const [selectedAccession, setSelectedAccession] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // URL-synced state (survives browser back)
+  const searchTerm = searchParams.get('q') || ''
+  const selectedCik = searchParams.get('cik') || ''
+  const selectedFilerName = searchParams.get('filer') || ''
+  const selectedAccession = searchParams.get('accession') || ''
+
+  // Ephemeral typing state (initialized from URL)
+  const [searchQuery, setSearchQuery] = useState(searchTerm)
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState('')
 
   const { data: filers, loading: searchLoading } = useApi(
     searchTerm ? `/13f/search?q=${encodeURIComponent(searchTerm)}` : null,
@@ -23,22 +30,64 @@ export default function Filings13F() {
     selectedAccession ? `/13f/holdings?cik=${selectedCik}&accession=${selectedAccession}` : null,
     { autoFetch: !!selectedAccession }
   )
+  const { data: portfolios, refetch: refetchPortfolios } = useApi('/portfolios')
+
+  // Derive the filing date from the filings list
+  const filingDate = useMemo(() => {
+    if (!filings || !selectedAccession) return ''
+    const f = filings.find(f => f.accession === selectedAccession)
+    return f?.date || ''
+  }, [filings, selectedAccession])
+
+  // Check if this filing has already been saved as a portfolio
+  const portfolioName = selectedFilerName && filingDate
+    ? `${selectedFilerName} - ${filingDate}` : ''
+  const existingPortfolio = useMemo(() => {
+    if (!portfolios || !portfolioName) return null
+    return portfolios.find(p => p.name === portfolioName)
+  }, [portfolios, portfolioName])
 
   const handleSearch = (e) => {
     e.preventDefault()
-    setSearchTerm(searchQuery)
-    setSelectedCik('')
-    setSelectedAccession('')
+    setSearchParams({ q: searchQuery })
   }
 
   const selectFiler = (filer) => {
-    setSelectedCik(filer.cik)
-    setSelectedFilerName(filer.name)
-    setSelectedAccession('')
+    setSearchParams({ q: searchTerm, cik: filer.cik, filer: filer.name })
   }
 
   const selectFiling = (filing) => {
-    setSelectedAccession(filing.accession)
+    setSearchParams({
+      q: searchTerm, cik: selectedCik, filer: selectedFilerName,
+      accession: filing.accession,
+    })
+  }
+
+  const saveAsPortfolio = async () => {
+    if (!holdings || !portfolioName) return
+    setSaving(true)
+    setSaveMsg('')
+    try {
+      const mapped = holdings
+        .filter(h => h.ticker)
+        .map(h => ({ ticker: h.ticker, weight: h.weight }))
+      if (mapped.length === 0) {
+        setSaveMsg('No tickers mapped — cannot save')
+        setSaving(false)
+        return
+      }
+      const portfolio = await apiPost('/portfolios', { name: portfolioName, group: '13F' })
+      await apiPut(`/portfolios/${portfolio.id}/holdings`, mapped)
+      setSaveMsg('Saved!')
+      refetchPortfolios()
+    } catch (e) {
+      if (e.message.includes('already exists')) {
+        setSaveMsg('Portfolio already exists')
+      } else {
+        setSaveMsg(`Error: ${e.message}`)
+      }
+    }
+    setSaving(false)
   }
 
   function formatValue(val) {
@@ -117,7 +166,7 @@ export default function Filings13F() {
               <p className="text-gray-400">Top 5:</p>
               {holdings.slice(0, 5).map((h, i) => (
                 <div key={i} className="flex justify-between text-xs">
-                  <span className="text-white font-mono">{h.ticker || h.cusip}</span>
+                  <span className="text-white font-mono">{h.ticker || h.name || h.cusip}</span>
                   <span className="text-gray-400">{h.weight.toFixed(1)}%</span>
                 </div>
               ))}
@@ -133,7 +182,24 @@ export default function Filings13F() {
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-white font-semibold">Holdings ({holdings.length})</h2>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {existingPortfolio ? (
+                <button
+                  onClick={() => navigate('/portfolio')}
+                  className="px-2 py-1 text-xs bg-emerald-700 text-white hover:bg-emerald-600 rounded"
+                >
+                  View Portfolio
+                </button>
+              ) : (
+                <button
+                  onClick={saveAsPortfolio}
+                  disabled={saving}
+                  className="px-2 py-1 text-xs bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-gray-600 rounded"
+                >
+                  {saving ? 'Saving...' : 'Save as Portfolio'}
+                </button>
+              )}
+              {saveMsg && <span className="text-xs text-gray-400">{saveMsg}</span>}
               <a
                 href={`/api/13f/holdings/download?cik=${selectedCik}&accession=${selectedAccession}`}
                 className="px-2 py-1 text-xs bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded"
@@ -162,7 +228,7 @@ export default function Filings13F() {
                     onClick={() => h.ticker && navigate(`/research/${h.ticker}`)}
                     className={`hover:bg-gray-700/30 ${h.ticker ? 'cursor-pointer' : ''}`}>
                     <td className="px-2 py-1 font-mono text-white font-semibold">
-                      {h.ticker || <span className="text-gray-500">?</span>}
+                      {h.ticker || <span className="text-gray-500">{h.name || h.cusip}</span>}
                     </td>
                     <td className="px-2 py-1 text-gray-300 truncate max-w-40">{h.name}</td>
                     <td className="px-2 py-1 text-gray-500 font-mono">{h.cusip}</td>

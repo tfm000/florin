@@ -269,7 +269,7 @@ export default function PutCallIVChart({ initialTicker = 'SPY' }) {
             <BarChart data={termStructure}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis dataKey="expiry" tick={{ fill: '#9CA3AF', fontSize: 10 }}
-                tickFormatter={v => v.slice(5)} interval={0} angle={-45} textAnchor="end" height={50} />
+                tickFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { month: 'short', year: 'numeric' }) }} interval={0} angle={-45} textAnchor="end" height={50} />
               <YAxis tick={{ fill: '#9CA3AF', fontSize: 11 }} tickFormatter={v => `${v}pp`} domain={['auto', 'auto']}
                 label={{ value: 'IV Spread (pp)', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 10, dx: -5 }}
               />

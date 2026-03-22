@@ -9,6 +9,7 @@ export function useApi(path, options = {}) {
   const { autoFetch = true, interval = null } = options
 
   const fetchData = useCallback(async () => {
+    if (!path) { setLoading(false); setData(null); return }
     try {
       setLoading(true)
       const res = await fetch(`${API_BASE}${path}`)
@@ -27,7 +28,7 @@ export function useApi(path, options = {}) {
 
   useEffect(() => {
     if (autoFetch) fetchData()
-  }, [autoFetch, fetchData])
+  }, [path, autoFetch, fetchData])
 
   useEffect(() => {
     if (!interval || !autoFetch) return

@@ -145,6 +145,11 @@ class Sentinel:
         from stats.risk_free import RiskFreeRateFetcher
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
+
+        # Load persisted CUSIP→ticker mappings for 13F filings
+        from data.sec_13f_provider import load_cusip_cache
+        await load_cusip_cache(self.db)
+
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
 
         # --- Build service list ---

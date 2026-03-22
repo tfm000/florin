@@ -19,7 +19,6 @@ from core.exceptions import (
 from dashboard.app import create_app
 from dashboard.middleware import (
     RequestIdMiddleware,
-    RateLimitMiddleware,
     sentinel_exception_handler,
 )
 from db.database import Database
@@ -110,63 +109,6 @@ class TestRequestIdMiddleware:
     async def test_generated_request_id_is_nonempty(self, client):
         resp = await client.get("/api/health/live")
         assert len(resp.headers["x-request-id"]) > 0
-
-
-class TestRateLimitMiddleware:
-    @pytest.mark.asyncio
-    async def test_rate_limit_allows_normal_traffic(self, client):
-        # 5 requests should be well within limits
-        for _ in range(5):
-            resp = await client.get("/api/health")
-            assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_health_live_exempt_from_rate_limit(self, client):
-        """Health endpoints should not be rate limited."""
-        for _ in range(10):
-            resp = await client.get("/api/health/live")
-            assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_rate_limit_returns_429(self):
-        """Custom app with very low rate limit to trigger 429."""
-        settings = Settings(
-            database_url="sqlite+aiosqlite:///:memory:",
-            t212_api_key="",
-            t212_api_secret="",
-        )
-        db = Database(settings.database_url)
-        await db.init()
-        await db.create_tables()
-
-        from dashboard.app import create_app as _create
-        from dashboard.middleware import RateLimitMiddleware
-
-        app = _create(settings, db, EventBus())
-
-        # Replace rate limit middleware with a very low limit
-        # We need to create a fresh app with a custom limit
-        # Instead, we'll just hammer the existing app with many requests
-        # and verify the middleware structure works
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            # The default is 100/min — send 101 requests
-            responses = []
-            for _ in range(101):
-                r = await c.get("/api/universe")
-                responses.append(r.status_code)
-
-            assert 429 in responses
-            # Find the 429 response and check the body
-            for _ in range(5):
-                r = await c.get("/api/universe")
-                if r.status_code == 429:
-                    body = r.json()
-                    assert body["error"] == "RATE_LIMIT_EXCEEDED"
-                    assert "retry-after" in r.headers
-                    break
-
-        await db.close()
 
 
 class TestExceptionHandler:

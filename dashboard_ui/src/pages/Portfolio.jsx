@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import SearchBar from '../components/SearchBar'
 import ExportButton from '../components/ExportButton'
@@ -83,13 +83,29 @@ export default function Portfolio() {
             <button onClick={handleCreate} className="px-3 py-1 bg-indigo-600 text-white text-sm rounded">Create</button>
           </div>
           <div className="space-y-2">
-            {(portfolios || []).map(p => (
+            {/* Ungrouped portfolios first */}
+            {(portfolios || []).filter(p => !p.group).map(p => (
               <div key={p.id} onClick={() => { setSelectedId(p.id); setEditHoldings(null) }}
                 className={`p-2 rounded cursor-pointer text-sm ${
                   selectedId === p.id ? 'bg-indigo-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'
                 }`}>
                 <p className="font-medium">{p.name}</p>
                 <p className="text-xs opacity-70">{p.holdings?.length || 0} holdings</p>
+              </div>
+            ))}
+            {/* Grouped portfolios */}
+            {[...new Set((portfolios || []).filter(p => p.group).map(p => p.group))].map(group => (
+              <div key={group}>
+                <p className="text-xs text-gray-500 uppercase font-semibold mt-3 mb-1">{group}</p>
+                {(portfolios || []).filter(p => p.group === group).map(p => (
+                  <div key={p.id} onClick={() => { setSelectedId(p.id); setEditHoldings(null) }}
+                    className={`p-2 rounded cursor-pointer text-sm ${
+                      selectedId === p.id ? 'bg-indigo-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'
+                    }`}>
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-xs opacity-70">{p.holdings?.length || 0} holdings</p>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

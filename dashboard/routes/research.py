@@ -329,7 +329,7 @@ async def analyse_asset(
     else:
         sentiment = SentimentData(ticker=ticker)
 
-    fraud_risk = FraudRiskScore()
+    fraud_risk = FraudRiskScore(ticker=ticker)
 
     try:
         analysis = await analyser.analyse(alert, sentiment, fraud_risk)

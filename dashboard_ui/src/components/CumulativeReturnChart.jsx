@@ -73,9 +73,8 @@ export default function CumulativeReturnChart({
     const baseFirst = history[0].close
 
     return history.map((h, i) => {
-      const d = new Date(h.date)
       const dateKey = h.date.slice(0, 10)
-      const row = { date: `${d.getMonth() + 1}/${d.getDate()}` }
+      const row = { date: dateKey }
 
       // Attach regime info if available
       if (regimeMap[dateKey] != null) {
@@ -99,6 +98,7 @@ export default function CumulativeReturnChart({
         // Candle body range for Bar chart (open-close range)
         row.candleBody = [Math.min(h.open, h.close), Math.max(h.open, h.close)]
         row.candleUp = h.close >= h.open
+        row.volume = h.volume
         // Add indicator overlay values
         for (const key of activeIndicators) {
           const def = INDICATOR_DEFS[key]
@@ -130,8 +130,7 @@ export default function CumulativeReturnChart({
       if (!vals) continue
 
       result[key] = history.map((h, i) => {
-        const d = new Date(h.date)
-        const row = { date: `${d.getMonth() + 1}/${d.getDate()}` }
+        const row = { date: h.date.slice(0, 10) }
         if (key === 'macd') {
           row.macd = vals.macdLine?.[i]
           row.signal = vals.signalLine?.[i]
@@ -269,7 +268,8 @@ export default function CumulativeReturnChart({
               />
             )}
             <YAxis yAxisId="regime" domain={[0, 1]} hide />
-            <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 11 }} interval={xInterval} />
+            <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 11 }} interval={xInterval}
+              tickFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { month: 'short', year: 'numeric' }) }} />
             <YAxis
               tick={{ fill: '#9CA3AF', fontSize: 11 }}
               domain={yDomain}
@@ -279,12 +279,14 @@ export default function CumulativeReturnChart({
             <Tooltip
               contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
               labelStyle={{ color: '#fff' }}
+              labelFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) }}
               content={!hasCompare && chartType === 'candle' ? ({ active, payload, label }) => {
                 if (!active || !payload?.[0]) return null
                 const d = payload[0].payload
+                const fmtLabel = (() => { const dt = new Date(label + 'T00:00:00'); return dt.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) })()
                 return (
                   <div style={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-                    <p style={{ color: '#fff', marginBottom: 4 }}>{label}</p>
+                    <p style={{ color: '#fff', marginBottom: 4 }}>{fmtLabel}</p>
                     <p style={{ color: '#9CA3AF', margin: 0 }}>O: {formatY(d.open)}</p>
                     <p style={{ color: '#9CA3AF', margin: 0 }}>H: {formatY(d.high)}</p>
                     <p style={{ color: '#9CA3AF', margin: 0 }}>L: {formatY(d.low)}</p>
@@ -367,6 +369,39 @@ export default function CumulativeReturnChart({
                   stroke={def.color} strokeWidth={1.5} dot={false} legendType="none" />
               )
             })}
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
+
+      {/* Volume chart */}
+      {!loading && !hasCompare && chartData.length > 0 && (
+        <ResponsiveContainer width="100%" height={80}>
+          <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+            <XAxis dataKey="date" tick={false} />
+            <YAxis
+              tick={{ fill: '#9CA3AF', fontSize: 9 }}
+              width={45}
+              tickFormatter={v => {
+                if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+                if (v >= 1e6) return `${(v / 1e6).toFixed(0)}M`
+                if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`
+                return v
+              }}
+              label={{ value: 'Volume', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 9, dx: -5 }}
+            />
+            <Tooltip
+              contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, fontSize: 11 }}
+              labelStyle={{ color: '#fff' }}
+              labelFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) }}
+              formatter={v => [v.toLocaleString(), 'Volume']}
+            />
+            <Bar dataKey="volume" fill="#6366F1" opacity={0.6} isAnimationActive={false}
+              shape={({ x, y, width, height, payload }) => (
+                <rect x={x} y={y} width={width} height={height}
+                  fill={payload.candleUp ? '#22C55E' : '#EF4444'} fillOpacity={0.5} />
+              )}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       )}

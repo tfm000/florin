@@ -80,6 +80,37 @@ class TestRiskRate:
         assert data["rate"] == 0.0
         assert data["source"] == "unavailable"
 
+    @pytest.mark.asyncio
+    async def test_risk_rate_with_fetcher(self, client):
+        """When rf_fetcher is configured, returns the actual rate and source."""
+        mock_fetcher = AsyncMock()
+        mock_fetcher.get_current_rate.return_value = (0.0532, "Federal Reserve (SOFR)")
+        set_state("rf_fetcher", mock_fetcher)
+
+        resp = await client.get("/api/risk/rate?currency=USD")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["currency"] == "USD"
+        assert data["rate"] == 0.0532
+        assert data["source"] == "Federal Reserve (SOFR)"
+
+        # Restore
+        set_state("rf_fetcher", None)
+
+    @pytest.mark.asyncio
+    async def test_risk_rate_currency_uppercased(self, client):
+        """Currency param is uppercased in response."""
+        resp = await client.get("/api/risk/rate?currency=gbp")
+        assert resp.status_code == 200
+        assert resp.json()["currency"] == "GBP"
+
+    @pytest.mark.asyncio
+    async def test_risk_rate_default_currency(self, client):
+        """Default currency is USD when param omitted."""
+        resp = await client.get("/api/risk/rate")
+        assert resp.status_code == 200
+        assert resp.json()["currency"] == "USD"
+
 
 class TestRiskMetrics:
     @pytest.mark.asyncio
@@ -135,3 +166,43 @@ class TestRiskMetrics:
         assert "2024-01-01" in data["period"]
         assert "2024-06-01" in data["period"]
         assert data["trading_days"] > 0
+
+    @pytest.mark.asyncio
+    async def test_risk_metrics_var_values_negative(self, client):
+        """VaR and CVaR values should be negative (losses)."""
+        resp = await client.get("/api/risk/AAPL?period=1y")
+        data = resp.json()
+        hist = data["historical"]
+        assert hist["var_95"] < 0
+        assert hist["var_99"] < 0
+        assert hist["cvar_95"] < 0
+        assert hist["cvar_99"] < 0
+        # 99% VaR should be more extreme than 95%
+        assert hist["var_99"] <= hist["var_95"]
+        assert hist["cvar_99"] <= hist["cvar_95"]
+
+    @pytest.mark.asyncio
+    async def test_risk_metrics_parametric_present(self, client):
+        """With 60 days of data, parametric Student-t model should be computed."""
+        resp = await client.get("/api/risk/AAPL?period=1y")
+        data = resp.json()
+        assert data["parametric"] is not None
+        assert data["parametric"]["var_95"] < 0
+        assert data["parametric_return"] is not None
+        assert data["parametric_vol"] is not None
+        assert data["parametric_sharpe"] is not None
+        assert data["parametric_sortino"] is not None
+
+    @pytest.mark.asyncio
+    async def test_risk_metrics_with_rf_fetcher(self, client):
+        """Risk metrics should use the risk-free rate when fetcher is available."""
+        mock_fetcher = AsyncMock()
+        mock_fetcher.get_current_rate.return_value = (0.05, "Fed SOFR")
+        mock_fetcher.get_daily_rates.return_value = np.full(60, 0.05 / 252)
+        set_state("rf_fetcher", mock_fetcher)
+
+        resp = await client.get("/api/risk/AAPL?period=1y")
+        data = resp.json()
+        assert data["risk_free_rate"] == 0.05
+
+        set_state("rf_fetcher", None)

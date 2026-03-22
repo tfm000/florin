@@ -140,6 +140,58 @@ class TestInsiders:
 _13F_MODULE = "data.sec_13f_provider"
 
 
+class TestCusipCachePersistence:
+    @pytest.mark.asyncio
+    async def test_load_and_persist_cusip_cache(self, app):
+        """CUSIP mappings can be persisted to DB and reloaded."""
+        from dashboard.deps import get_db
+        from data.sec_13f_provider import (
+            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+        )
+        db = get_db()
+
+        # Clear in-memory cache
+        _cusip_cache.clear()
+
+        # Persist some mappings
+        import data.sec_13f_provider as provider
+        provider._db_ref = db
+        await _persist_cusip_mappings({"037833100": "AAPL", "594918104": "MSFT"})
+
+        # Clear cache again
+        _cusip_cache.clear()
+        assert "037833100" not in _cusip_cache
+
+        # Reload from DB
+        await load_cusip_cache(db)
+        assert _cusip_cache["037833100"] == "AAPL"
+        assert _cusip_cache["594918104"] == "MSFT"
+
+    @pytest.mark.asyncio
+    async def test_persist_updates_existing_mapping(self, app):
+        """Persisting a CUSIP that already exists updates the ticker."""
+        from dashboard.deps import get_db
+        from data.sec_13f_provider import (
+            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+        )
+        db = get_db()
+
+        import data.sec_13f_provider as provider
+        provider._db_ref = db
+
+        # First mapping
+        await _persist_cusip_mappings({"TESTCUSIP": "OLD"})
+        _cusip_cache.clear()
+        await load_cusip_cache(db)
+        assert _cusip_cache["TESTCUSIP"] == "OLD"
+
+        # Update mapping (ticker changed)
+        await _persist_cusip_mappings({"TESTCUSIP": "NEW"})
+        _cusip_cache.clear()
+        await load_cusip_cache(db)
+        assert _cusip_cache["TESTCUSIP"] == "NEW"
+
+
 class TestSearch13FFilers:
     @pytest.mark.asyncio
     @patch(f"{_13F_MODULE}.search_filers", new_callable=AsyncMock)
@@ -202,6 +254,45 @@ class TestGet13FHoldings:
         # Weights should sum to 100
         total_weight = sum(h["weight"] for h in data)
         assert abs(total_weight - 100.0) < 0.1
+
+    @pytest.mark.asyncio
+    @patch(f"{_13F_MODULE}.map_cusips_to_tickers", new_callable=AsyncMock)
+    @patch(f"{_13F_MODULE}.get_holdings", new_callable=AsyncMock)
+    async def test_holdings_cache_prevents_refetch(self, mock_holdings, mock_cusip_map, client):
+        """Second request for same filing should use cache, not re-call provider."""
+        from dashboard.routes.filings_13f import _resolved_cache
+        # Clear cache for clean test
+        _resolved_cache.clear()
+
+        mock_holdings.return_value = [
+            {"cusip": "037833100", "name": "APPLE INC", "title": "COM", "shares": 100, "value": 1000},
+        ]
+        mock_cusip_map.return_value = {"037833100": "AAPL"}
+
+        # First call — hits provider
+        resp1 = await client.get("/api/13f/holdings?cik=999&accession=cached_test")
+        assert resp1.status_code == 200
+        assert mock_holdings.call_count == 1
+
+        # Second call — should use cache
+        resp2 = await client.get("/api/13f/holdings?cik=999&accession=cached_test")
+        assert resp2.status_code == 200
+        assert mock_holdings.call_count == 1  # NOT called again
+        assert resp2.json() == resp1.json()
+
+        _resolved_cache.clear()
+
+    @pytest.mark.asyncio
+    @patch(f"{_13F_MODULE}.map_cusips_to_tickers", new_callable=AsyncMock)
+    @patch(f"{_13F_MODULE}.get_holdings", new_callable=AsyncMock)
+    async def test_holdings_empty_returns_empty(self, mock_holdings, mock_cusip_map, client):
+        """Empty holdings from provider returns empty list without calling CUSIP mapper."""
+        mock_holdings.return_value = []
+
+        resp = await client.get("/api/13f/holdings?cik=999&accession=empty_test")
+        assert resp.status_code == 200
+        assert resp.json() == []
+        mock_cusip_map.assert_not_called()
 
     @pytest.mark.asyncio
     @patch(f"{_13F_MODULE}.map_cusips_to_tickers", new_callable=AsyncMock)

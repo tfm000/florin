@@ -31,7 +31,7 @@ async def get_short_interest(ticker: str, yf=Depends(get_yfinance_dep)):
     return ShortInterestResponse(
         ticker=ticker,
         short_percent_of_float=info.get("short_interest"),
-        shares_short=info.get("shares_outstanding"),  # yfinance field names vary
-        short_ratio=None,
+        shares_short=info.get("shares_short"),
+        short_ratio=info.get("short_ratio"),
         shares_outstanding=info.get("shares_outstanding"),
     )

@@ -18,6 +18,7 @@ import httpx
 
 from config.constants import STOCKTWITS_API_BASE
 from core.models import StockTwitsMessage
+from core.rate_limiter import AsyncRateLimiter
 from sentiment.base import SentimentSource
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class StockTwitsSource(SentimentSource):
 
     def __init__(self) -> None:
         self._http: httpx.AsyncClient | None = None
+        self._limiter = AsyncRateLimiter(200, 3600, name="StockTwits")
 
     @property
     def name(self) -> str:
@@ -74,6 +76,7 @@ class StockTwitsSource(SentimentSource):
         """Fetch the message stream for a single ticker."""
         url = f"{STOCKTWITS_API_BASE}/streams/symbol/{ticker}.json"
 
+        await self._limiter.acquire()
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url)
 

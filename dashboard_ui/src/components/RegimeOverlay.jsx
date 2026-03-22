@@ -19,7 +19,7 @@ export default function RegimeOverlay({
 
   // Build chart data — show regime as colored bars over time
   const chartData = regimes.map(r => ({
-    date: r.date.slice(5), // MM-DD
+    date: new Date(r.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', year: 'numeric' }),
     regime: r.regime,
     probability: r.probability,
   }))
