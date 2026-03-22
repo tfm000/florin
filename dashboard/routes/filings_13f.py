@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["13f"])
 
+# In-memory cache for resolved holdings (13F filings are immutable)
+_resolved_cache: dict[str, list] = {}
+
 
 class FilerResult(BaseModel):
     cik: str
@@ -63,15 +66,19 @@ async def get_13f_holdings(
     accession: str = Query(...),
 ):
     """Get parsed holdings from a specific 13F filing with CUSIP→ticker mapping."""
+    cache_key = f"{cik}:{accession}"
+    if cache_key in _resolved_cache:
+        return _resolved_cache[cache_key]
+
     from data.sec_13f_provider import get_holdings, map_cusips_to_tickers
 
     holdings = await get_holdings(cik, accession)
     if not holdings:
         return []
 
-    # Map CUSIPs to tickers
+    # Map CUSIPs to tickers (uses name matching, FIGI, and OpenFIGI)
     cusips = [h.get("cusip", "") for h in holdings if h.get("cusip")]
-    ticker_map = await map_cusips_to_tickers(cusips)
+    ticker_map = await map_cusips_to_tickers(cusips, holdings=holdings)
 
     # Calculate weights
     total_value = sum(h.get("value", 0) for h in holdings)
@@ -92,6 +99,8 @@ async def get_13f_holdings(
 
     # Sort by value descending
     results.sort(key=lambda r: r.value, reverse=True)
+
+    _resolved_cache[cache_key] = results
     return results
 
 

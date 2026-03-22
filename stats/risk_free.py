@@ -19,6 +19,7 @@ import asyncio
 import csv
 import io
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -173,9 +174,17 @@ class RiskFreeRateFetcher:
             logger.exception("Failed to fetch %s rates", currency)
 
     async def refresh_today(self) -> None:
-        """Fetch today's rate for all G10 currencies. Idempotent per day."""
+        """Fetch today's rate for all G10 currencies. Idempotent per day.
+
+        On startup, checks the DB first — if a currency already has a rate
+        for today (or the most recent business day), it skips the HTTP fetch.
+        """
         today = date.today().isoformat()
         yesterday = (date.today() - timedelta(days=5)).isoformat()  # cover weekends
+
+        # Hydrate _last_fetch from DB so we don't re-fetch on every restart
+        if not self._last_fetch:
+            await self._hydrate_last_fetch(yesterday, today)
 
         # Collect all observations first, then store in a single DB transaction
         # to avoid SQLite "database is locked" errors from concurrent writes.
@@ -197,6 +206,32 @@ class RiskFreeRateFetcher:
 
         if all_observations:
             await self._store(all_observations)
+
+    async def _hydrate_last_fetch(self, start: str, today: str) -> None:
+        """Populate _last_fetch from DB so restarts don't re-fetch.
+
+        For each currency, if we already have a rate fetched within the
+        last 24 hours (by fetched_at timestamp), skip the HTTP request.
+        """
+        from db.models import RiskFreeRateORM
+
+        cutoff = datetime.now() - timedelta(hours=24)
+        async with self._db.session() as session:
+            for currency in BENCHMARKS:
+                result = await session.execute(
+                    select(RiskFreeRateORM.date)
+                    .where(RiskFreeRateORM.currency == currency)
+                    .where(RiskFreeRateORM.fetched_at >= cutoff)
+                    .order_by(RiskFreeRateORM.fetched_at.desc())
+                    .limit(1)
+                )
+                row = result.first()
+                if row:
+                    self._last_fetch[currency] = today
+                    logger.debug(
+                        "%s: rate for %s fetched within 24h, skipping",
+                        currency, row[0],
+                    )
 
     async def get_daily_rates(
         self, currency: str, dates: list[str]
@@ -459,34 +494,118 @@ class RiskFreeRateFetcher:
         return observations
 
     async def _fetch_tona(self, start: str, end: str) -> list[RateObservation]:
-        """JPY TONA from the BIS central bank policy rates API.
+        """JPY TONA (uncollateralised overnight call rate average) from BoJ.
 
-        The BoJ stat-search.boj.or.jp site is a CGI form requiring session
-        state — it cannot be queried as a REST API. The BIS mirrors the same
-        BoJ data daily via their SDMX API.
+        Two formats depending on era:
+        - Oct 2025+: XLSX files on www.boj.or.jp (cell C10 = average rate)
+        - Pre-Oct 2025: HTML files on www3.boj.or.jp ([Avg.] X.XXX%)
+
+        Files only exist for business days — weekends/holidays return 404.
         """
-        url = (
-            "https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/D.JP"
-            f"?startPeriod={start}&endPeriod={end}&format=csv"
-        )
-        resp = await self._client.get(url)
-        resp.raise_for_status()
-
+        d_start = date.fromisoformat(start)
+        d_end = date.fromisoformat(end)
+        # Oct 3, 2025 = first day of the new XLSX format
+        xlsx_cutover = date(2025, 10, 3)
         observations = []
-        reader = csv.DictReader(io.StringIO(resp.text))
-        for row in reader:
-            try:
-                d = row.get("TIME_PERIOD", "").strip()
-                val = row.get("OBS_VALUE", "").strip()
-                if not d or not val or val == "NaN":
-                    continue
-                observations.append(RateObservation(
-                    currency="JPY", benchmark="TONA",
-                    date=d, rate=float(val), source="BIS (BoJ TONA)",
-                ))
-            except (ValueError, KeyError):
+
+        current = d_start
+        while current <= d_end:
+            if current.weekday() >= 5:
+                current += timedelta(days=1)
                 continue
+
+            d_str = current.isoformat()
+
+            if current >= xlsx_cutover:
+                obs = await self._fetch_tona_xlsx(current, d_str)
+            else:
+                obs = await self._fetch_tona_html(current, d_str)
+
+            if obs is not None:
+                observations.append(obs)
+
+            current += timedelta(days=1)
+
         return observations
+
+    async def _fetch_tona_xlsx(
+        self, dt: date, d_str: str,
+    ) -> RateObservation | None:
+        """Fetch TONA from the new XLSX format (Oct 2025+)."""
+        try:
+            import openpyxl
+        except ImportError:
+            logger.warning("openpyxl not installed — cannot fetch BoJ TONA data")
+            return None
+
+        ymd = dt.strftime("%Y%m%d")
+        yyyy = dt.strftime("%Y")
+        urls = [
+            (
+                f"https://www.boj.or.jp/en/statistics/market/short/mutan"
+                f"/d_release/md/{yyyy}/md{ymd}.xlsx"
+            ),
+            (
+                f"https://www.boj.or.jp/en/statistics/market/short/mutan"
+                f"/d_release/mp/mp{ymd}.xlsx"
+            ),
+        ]
+
+        for url in urls:
+            try:
+                await self._rate_limit()
+                resp = await self._client.get(url)
+                if resp.status_code == 404:
+                    continue
+                resp.raise_for_status()
+
+                wb = openpyxl.load_workbook(
+                    io.BytesIO(resp.content), read_only=True, data_only=True,
+                )
+                ws = wb.active
+                val = ws.cell(row=10, column=3).value
+                wb.close()
+
+                if val is not None:
+                    return RateObservation(
+                        currency="JPY", benchmark="TONA",
+                        date=d_str, rate=float(val),
+                        source="Bank of Japan",
+                    )
+            except Exception as e:
+                logger.debug("BoJ TONA XLSX fetch failed for %s: %s", d_str, e)
+                continue
+        return None
+
+    async def _fetch_tona_html(
+        self, dt: date, d_str: str,
+    ) -> RateObservation | None:
+        """Fetch TONA from the old HTML format (pre-Oct 2025).
+
+        URL: https://www3.boj.or.jp/market/en/stat/md{YYMMDD}.htm
+        Page contains: [Avg.] 0.227%
+        """
+        yymmdd = dt.strftime("%y%m%d")
+        url = f"https://www3.boj.or.jp/market/en/stat/md{yymmdd}.htm"
+
+        try:
+            await self._rate_limit()
+            resp = await self._client.get(url)
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+
+            # HTML wraps values in tags: <STRONG>[Avg.]</STRONG> <SPAN ...>0.227%</SPAN>
+            match = re.search(r"\[Avg\.\].*?([\d.]+)%", resp.text, re.DOTALL)
+            if match:
+                return RateObservation(
+                    currency="JPY", benchmark="TONA",
+                    date=d_str, rate=float(match.group(1)),
+                    source="Bank of Japan",
+                )
+        except Exception as e:
+            logger.debug("BoJ TONA HTML fetch failed for %s: %s", d_str, e)
+        return None
 
     async def _fetch_corra(self, start: str, end: str) -> list[RateObservation]:
         """CAD CORRA from the Bank of Canada Valet API."""

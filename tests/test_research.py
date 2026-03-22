@@ -214,6 +214,23 @@ class TestMacro:
         assert "VIX" in data["indicators"]
         assert data["indicators"]["VIX"]["price"] == 15.2
 
+    @pytest.mark.asyncio
+    async def test_macro_all_indicators_have_required_fields(self, client):
+        resp = await client.get("/api/research/macro")
+        indicators = resp.json()["indicators"]
+        for name, ind in indicators.items():
+            assert "price" in ind, f"{name} missing price"
+            assert "change_pct" in ind, f"{name} missing change_pct"
+            assert isinstance(ind["price"], (int, float))
+            assert isinstance(ind["change_pct"], (int, float))
+
+    @pytest.mark.asyncio
+    async def test_macro_sp500_values(self, client):
+        resp = await client.get("/api/research/macro")
+        sp = resp.json()["indicators"]["S&P 500"]
+        assert sp["price"] == 5150.0
+        assert sp["change_pct"] == 0.8
+
 
 class TestHolders:
     @pytest.mark.asyncio
@@ -275,6 +292,66 @@ class TestAnalyse:
         assert resp.status_code == 503
         data = resp.json()
         assert "detail" in data or "error" in data
+
+    @pytest.mark.asyncio
+    async def test_analyse_success_path(self, client):
+        """With a mock analyser, returns full LLMAnalysisResponse."""
+        from core.models import LLMAnalysis, Recommendation
+
+        mock_analyser = AsyncMock()
+        mock_analyser.provider_name = "test-provider"
+        mock_analyser.analyse.return_value = LLMAnalysis(
+            provider="test-provider",
+            model="test-model-v1",
+            sentiment_score=7.5,
+            confidence=0.85,
+            bullish_signals=["Strong revenue growth", "Expanding margins"],
+            bearish_signals=["High valuation"],
+            recommendation=Recommendation.BUY,
+            summary="Company shows strong fundamentals.",
+            key_factors=["Q4 earnings beat", "Market share gains"],
+            error=None,
+        )
+
+        set_state("analysers", {"test-provider": mock_analyser})
+        set_state("sentiment_aggregator", None)
+
+        resp = await client.post("/api/research/asset/AAPL/analyse?mode=all")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "AAPL"
+        assert data["provider"] == "test-provider"
+        assert data["model"] == "test-model-v1"
+        assert data["sentiment_score"] == 7.5
+        assert data["confidence"] == 0.85
+        assert data["recommendation"] == "BUY"
+        assert data["summary"] == "Company shows strong fundamentals."
+        assert len(data["bullish_signals"]) == 2
+        assert len(data["bearish_signals"]) == 1
+        assert len(data["key_factors"]) == 2
+        assert data["error"] is None
+
+        # Cleanup
+        set_state("analysers", {})
+
+    @pytest.mark.asyncio
+    async def test_analyse_llm_failure_returns_error_in_body(self, client):
+        """When the LLM call fails, error is returned in the response body (not 502)."""
+        mock_analyser = AsyncMock()
+        mock_analyser.provider_name = "broken-llm"
+        mock_analyser.analyse.side_effect = ConnectionError("LLM unreachable")
+
+        set_state("analysers", {"broken-llm": mock_analyser})
+        set_state("sentiment_aggregator", None)
+
+        resp = await client.post("/api/research/asset/AAPL/analyse")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ticker"] == "AAPL"
+        assert data["error"] is not None
+        assert "LLM connection failed" in data["error"]
+
+        set_state("analysers", {})
 
 
 class TestIVSpread:

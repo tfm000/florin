@@ -21,7 +21,6 @@ from db.database import Database
 from dashboard.deps import set_state
 from dashboard.middleware import (
     RequestIdMiddleware,
-    RateLimitMiddleware,
     sentinel_exception_handler,
 )
 from dashboard.ws import ConnectionManager
@@ -53,7 +52,7 @@ def create_app(
     # Exception handler for domain exceptions
     app.add_exception_handler(SentinelError, sentinel_exception_handler)
 
-    # Middleware (applied bottom-to-top: RequestId runs first, then RateLimit, then CORS)
+    # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -61,7 +60,6 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
     # Register API routes (import here to avoid circular imports)

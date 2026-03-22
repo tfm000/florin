@@ -235,6 +235,66 @@ class TestSettingsRoutes:
         assert resp.status_code == 200
         assert resp.json()["deleted"] == "log_level"
 
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_setting(self, client):
+        resp = await client.delete("/api/settings/totally_fake_key")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_restart_required_true(self, client):
+        """Updating a broker key should flag restart_required."""
+        resp = await client.put("/api/settings", json={
+            "settings": [{"key": "t212_api_key", "value": "new_key_value"}]
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["restart_required"] is True
+
+    @pytest.mark.asyncio
+    async def test_update_restart_required_false(self, client):
+        """Updating a scanner key should NOT flag restart_required."""
+        resp = await client.put("/api/settings", json={
+            "settings": [{"key": "scan_interval_seconds", "value": "120"}]
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["restart_required"] is False
+
+    @pytest.mark.asyncio
+    async def test_update_skips_masked_secret(self, client):
+        """If value contains mask chars (•), the key is skipped."""
+        resp = await client.put("/api/settings", json={
+            "settings": [{"key": "groq_api_key", "value": "abc••••hij"}]
+        })
+        assert resp.status_code == 200
+        # Key should NOT be in updated list since it was masked
+        assert "groq_api_key" not in resp.json()["updated"]
+
+    @pytest.mark.asyncio
+    async def test_update_invalid_key_skipped(self, client):
+        """Non-existent keys are silently skipped."""
+        resp = await client.put("/api/settings", json={
+            "settings": [{"key": "fake_setting_xyz", "value": "whatever"}]
+        })
+        assert resp.status_code == 200
+        assert resp.json()["updated"] == []
+
+    @pytest.mark.asyncio
+    async def test_settings_field_types(self, client):
+        """Number fields should have type='number', enum fields type='select'."""
+        resp = await client.get("/api/settings")
+        data = resp.json()
+        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
+        interval_field = next(f for f in scanner["fields"] if f["key"] == "scan_interval_seconds")
+        assert interval_field["type"] == "number"
+
+        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
+        mode_field = next(f for f in analysis["fields"] if f["key"] == "llm_mode")
+        assert mode_field["type"] == "select"
+        assert "single" in mode_field["choices"]
+        assert "consensus" in mode_field["choices"]
+
 
 class TestReadOnlyMode:
     @pytest.mark.asyncio
@@ -300,6 +360,59 @@ class TestHealthRoutes:
         finally:
             settings.alpaca_api_key = original_alpaca_key
             settings.alpaca_api_secret = original_alpaca_secret
+
+    @pytest.mark.asyncio
+    async def test_health_broker_object_structure(self, client):
+        """Health check broker field has connected, name, is_live."""
+        resp = await client.get("/api/health")
+        broker = resp.json()["broker"]
+        assert "connected" in broker
+        assert "name" in broker
+        assert "is_live" in broker
+        assert isinstance(broker["is_live"], bool)
+
+    @pytest.mark.asyncio
+    async def test_health_market_data_structure(self, client):
+        resp = await client.get("/api/health")
+        md = resp.json()["market_data"]
+        assert "alpaca_configured" in md
+        assert "alpaca_connected" in md
+        assert isinstance(md["alpaca_configured"], bool)
+
+    @pytest.mark.asyncio
+    async def test_health_universe_structure(self, client):
+        resp = await client.get("/api/health")
+        uni = resp.json()["universe"]
+        assert "ticker_count" in uni
+        assert "last_refresh" in uni
+        assert isinstance(uni["ticker_count"], int)
+
+    @pytest.mark.asyncio
+    async def test_health_scanner_structure(self, client):
+        resp = await client.get("/api/health")
+        scanner = resp.json()["scanner"]
+        assert "active" in scanner
+        assert isinstance(scanner["active"], bool)
+
+    @pytest.mark.asyncio
+    async def test_health_setup_checklist_structure(self, client):
+        resp = await client.get("/api/health")
+        checklist = resp.json()["setup_checklist"]
+        assert len(checklist) >= 1
+        item = checklist[0]
+        assert "key" in item
+        assert "label" in item
+        assert "description" in item
+        assert "configured" in item
+        assert isinstance(item["configured"], bool)
+
+    @pytest.mark.asyncio
+    async def test_health_trading_mode_field(self, client):
+        resp = await client.get("/api/health")
+        data = resp.json()
+        assert data["trading_mode"] in ("PAPER", "LIVE")
+        assert isinstance(data["paper_trading"], bool)
+        assert isinstance(data["telegram_configured"], bool)
 
     @pytest.mark.asyncio
     async def test_terminate_no_handler(self, client):

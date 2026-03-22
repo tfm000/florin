@@ -23,6 +23,7 @@ router = APIRouter(tags=["portfolio"])
 
 class PortfolioCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
+    group: str | None = None
 
 
 class HoldingUpdate(BaseModel):
@@ -33,6 +34,7 @@ class HoldingUpdate(BaseModel):
 class PortfolioResponse(BaseModel):
     id: str
     name: str
+    group: str | None = None
     holdings: list[dict] = []
     created_at: str = ""
 
@@ -61,7 +63,8 @@ async def list_portfolios(session=Depends(get_db_session)):
         )
         holdings = [{"ticker": h.ticker, "weight": h.weight} for h in holdings_result.scalars().all()]
         responses.append(PortfolioResponse(
-            id=p.id, name=p.name, holdings=holdings, created_at=str(p.created_at),
+            id=p.id, name=p.name, group=p.group,
+            holdings=holdings, created_at=str(p.created_at),
         ))
     return responses
 
@@ -72,11 +75,14 @@ async def create_portfolio(req: PortfolioCreate, session=Depends(get_db_session)
     if existing.scalar():
         raise ConflictError(f"Portfolio '{req.name}' already exists")
 
-    portfolio = PortfolioORM(name=req.name)
+    portfolio = PortfolioORM(name=req.name, group=req.group)
     session.add(portfolio)
     await session.commit()
     await session.refresh(portfolio)
-    return PortfolioResponse(id=portfolio.id, name=portfolio.name, created_at=str(portfolio.created_at))
+    return PortfolioResponse(
+        id=portfolio.id, name=portfolio.name, group=portfolio.group,
+        created_at=str(portfolio.created_at),
+    )
 
 
 @router.delete("/portfolios/{portfolio_id}")
@@ -174,13 +180,8 @@ async def get_portfolio_analytics(
         dd = max_drawdown_from_log_returns(port_returns)
         total_ret = (np.exp(np.sum(port_returns)) - 1) * 100
 
-        # VaR/CVaR on log returns, convert to simple return space
-        var_95 = (np.exp(np.percentile(port_returns, 5)) - 1) * 100
-        mask = port_returns <= np.percentile(port_returns, 5)
-        cvar_95 = (
-            (np.exp(np.mean(port_returns[mask])) - 1) * 100
-            if mask.any() else var_95
-        )
+        var_95 = historical_var(port_simple, confidence=0.95)
+        cvar_95 = historical_cvar(port_simple, confidence=0.95)
 
         return {
             "total_return": round(total_ret, 2),

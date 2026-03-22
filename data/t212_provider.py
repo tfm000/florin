@@ -18,6 +18,7 @@ import httpx
 from config.constants import SUPPORTED_EXCHANGES
 from config.settings import Settings
 from core.models import StockInfo
+from core.rate_limiter import AsyncRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class T212InstrumentProvider:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._http: httpx.AsyncClient | None = None
+        self._limiter = AsyncRateLimiter(1, 5, name="T212")
 
     async def connect(self) -> None:
         self._http = httpx.AsyncClient(
@@ -65,6 +67,7 @@ class T212InstrumentProvider:
             return []
 
         try:
+            await self._limiter.acquire()
             resp = await self._http.get("/equity/metadata/instruments")
             resp.raise_for_status()
             data = resp.json()

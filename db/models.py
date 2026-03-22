@@ -215,6 +215,7 @@ class PortfolioORM(Base):
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     name: Mapped[str] = mapped_column(String(200), unique=True)
+    group: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
@@ -308,3 +309,15 @@ class RiskFreeRateORM(Base):
     rate: Mapped[float] = mapped_column(Float)                         # Annual % (e.g. 4.5)
     source: Mapped[str] = mapped_column(String(100))                   # API source name
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# CUSIP → Ticker Mapping Cache
+# =============================================================================
+
+class CusipTickerORM(Base):
+    __tablename__ = "cusip_ticker_map"
+
+    cusip: Mapped[str] = mapped_column(String(12), primary_key=True)
+    ticker: Mapped[str] = mapped_column(String(20))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

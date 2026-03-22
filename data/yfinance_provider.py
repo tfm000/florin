@@ -93,6 +93,8 @@ class YFinanceProvider:
                     "pe_ratio": info.get("trailingPE"),
                     "forward_pe": info.get("forwardPE"),
                     "short_interest": info.get("shortPercentOfFloat"),
+                    "shares_short": info.get("sharesShort"),
+                    "short_ratio": info.get("shortRatio"),
                     "exchange": info.get("exchange", ""),
                     "shares_outstanding": info.get("sharesOutstanding"),
                     "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),

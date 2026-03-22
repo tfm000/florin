@@ -80,6 +80,32 @@ class TestPortfolioCRUD:
         assert data["holdings"] == []
 
     @pytest.mark.asyncio
+    async def test_create_portfolio_with_group(self, client):
+        resp = await client.post("/api/portfolios", json={"name": "13F Test", "group": "13F"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "13F Test"
+        assert data["group"] == "13F"
+
+    @pytest.mark.asyncio
+    async def test_create_portfolio_without_group(self, client):
+        resp = await client.post("/api/portfolios", json={"name": "No Group"})
+        assert resp.status_code == 201
+        assert resp.json()["group"] is None
+
+    @pytest.mark.asyncio
+    async def test_list_portfolios_includes_group(self, client):
+        await client.post("/api/portfolios", json={"name": "Ungrouped"})
+        await client.post("/api/portfolios", json={"name": "Grouped", "group": "13F"})
+        resp = await client.get("/api/portfolios")
+        data = resp.json()
+        assert len(data) == 2
+        grouped = next(p for p in data if p["name"] == "Grouped")
+        ungrouped = next(p for p in data if p["name"] == "Ungrouped")
+        assert grouped["group"] == "13F"
+        assert ungrouped["group"] is None
+
+    @pytest.mark.asyncio
     async def test_create_duplicate_name_returns_409(self, client):
         await client.post("/api/portfolios", json={"name": "Duplicate"})
         resp = await client.post("/api/portfolios", json={"name": "Duplicate"})
@@ -169,6 +195,68 @@ class TestPortfolioCRUD:
             assert "max_drawdown" in data
             assert "var_95" in data
             assert "cvar_95" in data
+        finally:
+            if original_np is None:
+                delattr(portfolio_mod, "np")
+            else:
+                portfolio_mod.np = original_np
+
+    @pytest.mark.asyncio
+    async def test_analytics_values_nonzero(self, client, app):
+        """With valid history, analytics values should be nonzero and reasonable."""
+        import numpy as np
+        import dashboard.routes.portfolio as portfolio_mod
+
+        original_np = getattr(portfolio_mod, "np", None)
+        portfolio_mod.np = np
+
+        try:
+            create_resp = await client.post(
+                "/api/portfolios", json={"name": "Values Test"}
+            )
+            pid = create_resp.json()["id"]
+            await client.put(f"/api/portfolios/{pid}/holdings", json=[
+                {"ticker": "AAPL", "weight": 100},
+            ])
+
+            from dashboard.deps import get_yfinance_provider
+            yf = get_yfinance_provider()
+            yf.get_history.side_effect = lambda t, **kw: _make_history(40, base_price=100.0)
+
+            resp = await client.get(f"/api/portfolios/{pid}/analytics?period=1y")
+            assert resp.status_code == 200
+            data = resp.json()
+            # With valid history, analytics should be computed (non-zero)
+            assert data["total_return"] != 0
+            assert data["annualized_vol"] > 0
+            assert data["sharpe"] != 0
+            assert data["max_drawdown"] >= 0
+            # VaR and CVaR should be computed (non-zero)
+            assert data["var_95"] != 0
+            assert data["cvar_95"] != 0
+            assert data["cvar_95"] <= data["var_95"]
+        finally:
+            if original_np is None:
+                delattr(portfolio_mod, "np")
+            else:
+                portfolio_mod.np = original_np
+
+    @pytest.mark.asyncio
+    async def test_analytics_nonexistent_portfolio(self, client, app):
+        """Analytics for a non-existent portfolio returns zeros."""
+        import numpy as np
+        import dashboard.routes.portfolio as portfolio_mod
+
+        original_np = getattr(portfolio_mod, "np", None)
+        portfolio_mod.np = np
+
+        try:
+            resp = await client.get("/api/portfolios/nonexistent_id/analytics?period=1y")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["portfolio_id"] == "nonexistent_id"
+            assert data["total_return"] == 0
+            assert data["sharpe"] == 0
         finally:
             if original_np is None:
                 delattr(portfolio_mod, "np")

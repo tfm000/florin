@@ -16,6 +16,7 @@ import httpx
 
 from config.settings import Settings
 from core.models import NewsArticle
+from core.rate_limiter import AsyncRateLimiter
 from sentiment.base import SentimentSource
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class NewsSource(SentimentSource):
     def __init__(self, settings: Settings) -> None:
         # Alpha Vantage key reuse — add to settings if needed
         self._av_key = ""  # Optional, not in settings yet
+        self._av_limiter = AsyncRateLimiter(5, 60, name="AlphaVantage")
 
     @property
     def name(self) -> str:
@@ -117,6 +119,7 @@ class NewsSource(SentimentSource):
     async def _fetch_av_news(self, ticker: str) -> list[NewsArticle]:
         """Fetch news from Alpha Vantage News Sentiment endpoint."""
         try:
+            await self._av_limiter.acquire()
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(
                     ALPHA_VANTAGE_URL,

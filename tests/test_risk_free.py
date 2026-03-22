@@ -286,9 +286,15 @@ class TestFetcherIntegration:
 
     @pytest.mark.asyncio
     async def test_tona_jpy(self, fetcher):
-        """JPY TONA — BIS SDMX API (mirrors BoJ data), ACT/365."""
+        """JPY TONA — BoJ XLSX daily files, ACT/365.
+        One file per business day; rate is the uncollateralised overnight
+        call rate average, distinct from the BoJ policy rate target."""
         obs = await fetcher._fetch_tona(self.START, self.END)
         self._validate_observations(obs, "JPY", "TONA", min_count=3)
+        # Verify we're getting the actual TONA, not the policy rate.
+        # In Jan 2025, policy rate was 0.25% but TONA traded around 0.22-0.23%.
+        for o in obs:
+            assert o.source == "Bank of Japan"
 
     # -- Quirky APIs -------------------------------------------------------
 

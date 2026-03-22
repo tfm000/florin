@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 const PRESETS = [
+  { key: '5d', label: '1W' },
   { key: '1mo', label: '1M' },
   { key: '3mo', label: '3M' },
   { key: '6mo', label: '6M' },

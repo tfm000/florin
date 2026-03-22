@@ -23,11 +23,77 @@ SEC_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data"
 OPENFIGI_URL = "https://api.openfigi.com/v3/mapping"
 USER_AGENT = "SentinelTerminal admin@example.com"
 
-# Cache: CUSIP → ticker
+# Cache: CUSIP → ticker (hydrated from DB on startup, updated by OpenFIGI)
 _cusip_cache: dict[str, str] = {}
+
+# SEC name → ticker lookup (loaded from company_tickers.json)
+_name_to_ticker: dict[str, str] = {}
+
+# DB reference for persisting new mappings (set by load_cusip_cache)
+_db_ref = None
 
 # Rate limiting for SEC (10 req/sec)
 _last_sec_request: float = 0.0
+
+
+async def load_cusip_cache(db) -> None:
+    """Hydrate the in-memory CUSIP cache from DB and load SEC name→ticker map."""
+    global _db_ref
+    _db_ref = db
+    from db.models import CusipTickerORM
+    from sqlalchemy import select
+
+    async with db.session() as session:
+        result = await session.execute(select(CusipTickerORM))
+        for row in result.scalars():
+            _cusip_cache[row.cusip] = row.ticker
+    logger.info("CUSIP cache loaded: %d mappings from DB", len(_cusip_cache))
+
+    # Load SEC company_tickers.json for name-based matching
+    await _load_sec_name_map()
+
+
+async def _load_sec_name_map() -> None:
+    """Load SEC company_tickers.json to build issuer name → ticker lookup."""
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, timeout=15.0,
+        ) as client:
+            resp = await client.get("https://www.sec.gov/files/company_tickers.json")
+            if resp.status_code == 200:
+                data = resp.json()
+                for entry in data.values():
+                    name = entry.get("title", "").upper().strip()
+                    ticker = entry.get("ticker", "")
+                    if name and ticker:
+                        _name_to_ticker[name] = ticker
+                logger.info("SEC name→ticker map loaded: %d entries", len(_name_to_ticker))
+    except Exception:
+        logger.exception("Failed to load SEC company_tickers.json")
+
+
+async def _persist_cusip_mappings(mappings: dict[str, str]) -> None:
+    """Persist new CUSIP→ticker mappings to the database."""
+    if not _db_ref or not mappings:
+        return
+    from datetime import datetime, UTC
+    from db.models import CusipTickerORM
+
+    try:
+        async with _db_ref.session() as session:
+            for cusip, ticker in mappings.items():
+                existing = await session.get(CusipTickerORM, cusip)
+                if existing:
+                    existing.ticker = ticker
+                    existing.updated_at = datetime.now(UTC)
+                else:
+                    session.add(CusipTickerORM(
+                        cusip=cusip, ticker=ticker,
+                        updated_at=datetime.now(UTC),
+                    ))
+            await session.commit()
+    except Exception:
+        logger.exception("Failed to persist CUSIP mappings")
 
 
 async def _sec_rate_limit():
@@ -39,7 +105,7 @@ async def _sec_rate_limit():
 
 
 async def search_filers(query: str) -> list[dict]:
-    """Search for institutional filers by name."""
+    """Search for institutional filers by name via EDGAR full-text search."""
     await _sec_rate_limit()
     try:
         async with httpx.AsyncClient(
@@ -47,53 +113,34 @@ async def search_filers(query: str) -> list[dict]:
         ) as client:
             resp = await client.get(
                 "https://efts.sec.gov/LATEST/search-index",
-                params={
-                    "q": f'"{query}" formType:"13F-HR"',
-                    "dateRange": "custom",
-                    "startdt": "2020-01-01",
-                    "forms": "13F-HR",
-                },
+                params={"q": query, "forms": "13F-HR"},
             )
             if resp.status_code != 200:
-                # Fallback: use EDGAR company search
-                resp = await client.get(
-                    "https://www.sec.gov/cgi-bin/browse-edgar",
-                    params={
-                        "company": query,
-                        "CIK": "",
-                        "type": "13F-HR",
-                        "dateb": "",
-                        "owner": "include",
-                        "count": 20,
-                        "search_text": "",
-                        "action": "getcompany",
-                        "output": "atom",
-                    },
-                )
+                return []
 
-            # Try full-text search API
-            resp2 = await client.get(
-                "https://efts.sec.gov/LATEST/search-index",
-                params={"q": query, "forms": "13F-HR", "dateRange": "custom",
-                        "startdt": "2023-01-01"},
-            )
-            if resp2.status_code == 200:
-                data = resp2.json()
-                hits = data.get("hits", {}).get("hits", [])
-                filers = []
-                seen_ciks = set()
-                for hit in hits[:20]:
-                    src = hit.get("_source", {})
-                    cik = src.get("entity_id", "")
-                    if cik in seen_ciks:
-                        continue
-                    seen_ciks.add(cik)
-                    filers.append({
-                        "cik": cik,
-                        "name": src.get("entity_name", ""),
-                        "filing_date": src.get("file_date", ""),
-                    })
-                return filers
+            data = resp.json()
+            hits = data.get("hits", {}).get("hits", [])
+            filers = []
+            seen_ciks = set()
+            for hit in hits:
+                src = hit.get("_source", {})
+                ciks = src.get("ciks", [])
+                names = src.get("display_names", [])
+                if not ciks:
+                    continue
+                cik = ciks[0].lstrip("0")
+                if cik in seen_ciks:
+                    continue
+                seen_ciks.add(cik)
+                # display_names format: "COMPANY NAME  (CIK 0001234567)"
+                raw_name = names[0] if names else ""
+                name = raw_name.split("(CIK")[0].strip() if "(CIK" in raw_name else raw_name
+                filers.append({
+                    "cik": cik,
+                    "name": name,
+                    "filing_date": src.get("file_date", ""),
+                })
+            return filers
 
     except Exception:
         logger.exception("13F filer search failed for %s", query)
@@ -156,17 +203,26 @@ async def get_holdings(cik: str, accession: str) -> list[dict]:
 
             index_data = index_resp.json()
             xml_file = None
-            for item in index_data.get("directory", {}).get("item", []):
-                name = item.get("name", "").lower()
-                if "infotable" in name and name.endswith(".xml"):
+            xml_items = [
+                item for item in index_data.get("directory", {}).get("item", [])
+                if item.get("name", "").lower().endswith(".xml")
+            ]
+            # Priority 1: filename contains "infotable"
+            for item in xml_items:
+                if "infotable" in item["name"].lower():
                     xml_file = item["name"]
                     break
-
+            # Priority 2: filename contains "13f"
             if not xml_file:
-                # Try common naming patterns
-                for item in index_data.get("directory", {}).get("item", []):
-                    name = item.get("name", "").lower()
-                    if name.endswith(".xml") and "13f" in name:
+                for item in xml_items:
+                    if "13f" in item["name"].lower():
+                        xml_file = item["name"]
+                        break
+            # Priority 3: any XML that isn't primary_doc or index
+            if not xml_file:
+                for item in xml_items:
+                    name_lower = item["name"].lower()
+                    if name_lower not in ("primary_doc.xml",) and "index" not in name_lower:
                         xml_file = item["name"]
                         break
 
@@ -204,9 +260,11 @@ def _parse_13f_xml(xml_text: str) -> list[dict]:
                         holding["title"] = child.text or ""
                     elif tag == "cusip":
                         holding["cusip"] = (child.text or "").strip()
+                    elif tag == "figi":
+                        holding["figi"] = (child.text or "").strip()
                     elif tag == "value":
                         try:
-                            holding["value"] = int(child.text or 0) * 1000  # in thousands
+                            holding["value"] = int(child.text or 0)
                         except (ValueError, TypeError):
                             holding["value"] = 0
                     elif tag == "sshPrnamt" or tag == "shrsOrPrnAmt":
@@ -227,36 +285,142 @@ def _parse_13f_xml(xml_text: str) -> list[dict]:
     return holdings
 
 
-async def map_cusips_to_tickers(cusips: list[str]) -> dict[str, str]:
-    """Map CUSIPs to ticker symbols via OpenFIGI API (free, no key needed)."""
-    unmapped = [c for c in cusips if c not in _cusip_cache]
-    if not unmapped:
-        return {c: _cusip_cache[c] for c in cusips if c in _cusip_cache}
+async def map_cusips_to_tickers(
+    cusips: list[str],
+    holdings: list[dict] | None = None,
+) -> dict[str, str]:
+    """Map CUSIPs to tickers using a multi-layer strategy.
 
-    # OpenFIGI accepts batch of up to 100
+    Layer 1: In-memory / DB cache (instant)
+    Layer 2: SEC company_tickers.json name matching (no rate limit)
+    Layer 3: OpenFIGI FIGI→ticker lookup for FIGIs found in XML
+    Layer 4: OpenFIGI CUSIP→ticker lookup (rate-limited fallback)
+    """
+    result: dict[str, str] = {}
+    still_unmapped: list[str] = []
+
+    # Build helpers from holdings data
+    cusip_to_name: dict[str, str] = {}
+    cusip_to_figi: dict[str, str] = {}
+    if holdings:
+        for h in holdings:
+            c = h.get("cusip", "")
+            if c:
+                cusip_to_name[c] = h.get("name", "").upper().strip()
+                if h.get("figi"):
+                    cusip_to_figi[c] = h["figi"]
+
+    # Layer 1: Cache lookup
+    for c in cusips:
+        if c in _cusip_cache:
+            result[c] = _cusip_cache[c]
+        else:
+            still_unmapped.append(c)
+
+    if not still_unmapped:
+        return result
+
+    # Layer 2: SEC name matching
+    new_mappings: dict[str, str] = {}
+    remaining: list[str] = []
+    for c in still_unmapped:
+        name = cusip_to_name.get(c, "")
+        ticker = _name_to_ticker.get(name, "")
+        if ticker:
+            result[c] = ticker
+            _cusip_cache[c] = ticker
+            new_mappings[c] = ticker
+        else:
+            remaining.append(c)
+
+    if new_mappings:
+        logger.info("SEC name match resolved %d CUSIPs", len(new_mappings))
+        await _persist_cusip_mappings(new_mappings)
+
+    if not remaining:
+        return result
+
+    # Layer 3: OpenFIGI with FIGIs from XML (more reliable than CUSIP lookup)
+    figi_batch = [(c, cusip_to_figi[c]) for c in remaining if c in cusip_to_figi]
+    non_figi = [c for c in remaining if c not in cusip_to_figi]
+
+    if figi_batch:
+        figi_mappings = await _openfigi_lookup(
+            [{"idType": "ID_BB_GLOBAL", "idValue": figi} for _, figi in figi_batch],
+            [c for c, _ in figi_batch],
+        )
+        result.update(figi_mappings)
+        non_figi_set = set(non_figi)
+        # Any FIGI lookups that failed go to CUSIP fallback
+        for c, _ in figi_batch:
+            if c not in figi_mappings:
+                non_figi_set.add(c)
+        non_figi = list(non_figi_set)
+
+    # Layer 4: OpenFIGI CUSIP fallback for anything still unmapped
+    if non_figi:
+        cusip_mappings = await _openfigi_lookup(
+            [{"idType": "ID_CUSIP", "idValue": c} for c in non_figi],
+            non_figi,
+        )
+        result.update(cusip_mappings)
+
+    # Fill empty strings for completely unmapped
+    for c in cusips:
+        if c not in result:
+            result[c] = ""
+
+    return result
+
+
+async def _openfigi_lookup(
+    jobs: list[dict], cusips: list[str],
+) -> dict[str, str]:
+    """Call OpenFIGI API in small batches and return CUSIP→ticker mappings."""
+    mapped: dict[str, str] = {}
+    new_db_mappings: dict[str, str] = {}
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            for i in range(0, len(unmapped), 100):
-                batch = unmapped[i:i + 100]
-                body = [{"idType": "ID_CUSIP", "idValue": c} for c in batch]
-                resp = await client.post(
-                    OPENFIGI_URL,
-                    json=body,
-                    headers={"Content-Type": "application/json"},
-                )
-                if resp.status_code == 200:
-                    results = resp.json()
-                    for j, result in enumerate(results):
-                        if isinstance(result, dict) and "data" in result:
-                            for item in result["data"]:
-                                ticker = item.get("ticker", "")
-                                if ticker:
-                                    _cusip_cache[batch[j]] = ticker
-                                    break
-                elif resp.status_code == 429:
-                    await asyncio.sleep(30)  # OpenFIGI rate limit
+            for i in range(0, len(jobs), 5):
+                batch_jobs = jobs[i:i + 5]
+                batch_cusips = cusips[i:i + 5]
+
+                for attempt in range(3):
+                    resp = await client.post(
+                        OPENFIGI_URL,
+                        json=batch_jobs,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    if resp.status_code == 200:
+                        results = resp.json()
+                        for j, res in enumerate(results):
+                            if isinstance(res, dict) and "data" in res:
+                                for item in res["data"]:
+                                    ticker = item.get("ticker", "")
+                                    if ticker:
+                                        c = batch_cusips[j]
+                                        mapped[c] = ticker
+                                        _cusip_cache[c] = ticker
+                                        new_db_mappings[c] = ticker
+                                        break
+                        break
+                    elif resp.status_code in (429, 413):
+                        logger.warning(
+                            "OpenFIGI %d, waiting 30s (attempt %d)",
+                            resp.status_code, attempt + 1,
+                        )
+                        await asyncio.sleep(30)
+                    else:
+                        logger.warning("OpenFIGI returned %d", resp.status_code)
+                        break
+
+                await asyncio.sleep(6)
 
     except Exception:
-        logger.exception("OpenFIGI CUSIP mapping failed")
+        logger.exception("OpenFIGI lookup failed")
 
-    return {c: _cusip_cache.get(c, "") for c in cusips}
+    if new_db_mappings:
+        await _persist_cusip_mappings(new_db_mappings)
+
+    return mapped

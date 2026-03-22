@@ -161,6 +161,52 @@ class TestMarketHours:
             assert "timezone" in m
 
 
+class TestMarketHoursDeep:
+    """Test market open/closed logic with frozen time."""
+
+    @pytest.mark.asyncio
+    async def test_crypto_always_open(self, client):
+        resp = await client.get("/api/market/hours")
+        markets = resp.json()["markets"]
+        crypto = next(m for m in markets if m["name"] == "Crypto")
+        assert crypto["is_open"] is True
+        assert crypto["opens"] == "24/7"
+        assert crypto["closes"] == "24/7"
+
+    @pytest.mark.asyncio
+    async def test_all_markets_present(self, client):
+        resp = await client.get("/api/market/hours")
+        names = {m["name"] for m in resp.json()["markets"]}
+        expected = {
+            "NYSE / NASDAQ", "London (LSE)", "Frankfurt (XETRA)",
+            "Tokyo (TSE)", "Hong Kong (HKEX)", "Shanghai (SSE)",
+            "Sydney (ASX)", "Toronto (TSX)", "Crypto", "Forex",
+        }
+        assert expected == names
+
+    @pytest.mark.asyncio
+    async def test_market_has_local_time(self, client):
+        resp = await client.get("/api/market/hours")
+        for m in resp.json()["markets"]:
+            assert m["local_time"]  # non-empty string like "14:30"
+            assert m["region"]  # non-empty region
+
+    @pytest.mark.asyncio
+    async def test_nyse_opens_closes_format(self, client):
+        resp = await client.get("/api/market/hours")
+        nyse = next(m for m in resp.json()["markets"] if m["name"] == "NYSE / NASDAQ")
+        assert nyse["opens"] == "9:30"
+        assert nyse["closes"] == "16:00"
+        assert nyse["timezone"] == "America/New_York"
+
+    @pytest.mark.asyncio
+    async def test_forex_hours_format(self, client):
+        resp = await client.get("/api/market/hours")
+        forex = next(m for m in resp.json()["markets"] if m["name"] == "Forex")
+        assert forex["opens"] == "Sun 5:00 PM ET"
+        assert forex["closes"] == "Fri 5:00 PM ET"
+
+
 class TestMarketStatus:
     @pytest.mark.asyncio
     async def test_market_status_known_exchange(self, client):
@@ -180,9 +226,45 @@ class TestMarketStatus:
         resp = await client.get("/api/market/status/ZZZZZ")
         assert resp.status_code == 200
         data = resp.json()
-        # The route defaults unknown exchanges to NYSE / NASDAQ
         assert data["market_name"] == "NYSE / NASDAQ"
         assert isinstance(data["is_open"], bool)
+
+    @pytest.mark.asyncio
+    async def test_market_status_crypto(self, client):
+        """CCC exchange maps to always-open Crypto."""
+        resp = await client.get("/api/market/status/CCC")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["market_name"] == "Crypto"
+        assert data["is_open"] is True
+        assert data["opens"] == "24/7"
+
+    @pytest.mark.asyncio
+    async def test_market_status_london(self, client):
+        """LSE maps to London."""
+        resp = await client.get("/api/market/status/LSE")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["market_name"] == "London (LSE)"
+        assert data["opens"] == "8:00"
+        assert data["closes"] == "16:30"
+
+    @pytest.mark.asyncio
+    async def test_market_status_tokyo(self, client):
+        """TYO maps to Tokyo."""
+        resp = await client.get("/api/market/status/TYO")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["market_name"] == "Tokyo (TSE)"
+        assert data["opens"] == "9:00"
+        assert data["closes"] == "15:00"
+
+    @pytest.mark.asyncio
+    async def test_market_status_case_insensitive(self, client):
+        """Exchange codes should be case-insensitive."""
+        resp = await client.get("/api/market/status/nms")
+        assert resp.status_code == 200
+        assert resp.json()["market_name"] == "NYSE / NASDAQ"
 
 
 # =============================================================================
