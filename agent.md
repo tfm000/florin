@@ -1,8 +1,8 @@
-# Agent Guidelines — Bloomberg Terminal Clone
+# Agent Guidelines — Florin Terminal
 
 ## Project Overview
 
-This is a **production-grade Bloomberg terminal clone**. Every contribution must meet the standard of software that handles real financial data, serves real users, and cannot afford silent failures or numerical inaccuracies.
+This is a **production-grade financial terminal (Florin)**. Every contribution must meet the standard of software that handles real financial data, serves real users, and cannot afford silent failures or numerical inaccuracies.
 
 ---
 

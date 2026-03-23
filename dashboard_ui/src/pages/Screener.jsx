@@ -32,6 +32,8 @@ const REGIONS = [
   { value: 'mx', label: 'Mexico' },
   { value: 'tw', label: 'Taiwan' },
   { value: 'nz', label: 'New Zealand' },
+  { value: 'be', label: 'Belgium' },
+  { value: 'pt', label: 'Portugal' },
 ]
 
 const EXCHANGES = [
@@ -57,6 +59,22 @@ const EXCHANGES = [
   { value: 'ASX', label: 'ASX', region: 'au' },
   { value: 'NSI', label: 'NSE India', region: 'in' },
   { value: 'BSE', label: 'BSE India', region: 'in' },
+  { value: 'PAR', label: 'Euronext Paris', region: 'fr' },
+  { value: 'AMS', label: 'Euronext Amsterdam', region: 'nl' },
+  { value: 'BRU', label: 'Euronext Brussels', region: 'be' },
+  { value: 'LIS', label: 'Euronext Lisbon', region: 'pt' },
+  { value: 'MIL', label: 'Borsa Italiana', region: 'it' },
+  { value: 'MAD', label: 'BME Madrid', region: 'es' },
+  { value: 'STO', label: 'Nasdaq Stockholm', region: 'se' },
+  { value: 'EBS', label: 'SIX Swiss', region: 'ch' },
+  { value: 'SES', label: 'SGX', region: 'sg' },
+  { value: 'KSC', label: 'KOSPI', region: 'kr' },
+  { value: 'KOE', label: 'KOSDAQ', region: 'kr' },
+  { value: 'SAO', label: 'B3 (Bovespa)', region: 'br' },
+  { value: 'MEX', label: 'BMV Mexico', region: 'mx' },
+  { value: 'TAI', label: 'TWSE', region: 'tw' },
+  { value: 'TWO', label: 'TPEx', region: 'tw' },
+  { value: 'NZE', label: 'NZX', region: 'nz' },
 ]
 
 const ASSET_TYPES = [
@@ -247,9 +265,11 @@ export default function Screener() {
     }
   }
 
-  // Filter exchanges by selected regions
-  const selectedRegions = new Set(filters.region ? filters.region.split(',').filter(Boolean) : ['us'])
-  const availableExchanges = EXCHANGES.filter(e => selectedRegions.has(e.region))
+  // Filter exchanges by selected regions (empty region = show all exchanges)
+  const selectedRegions = new Set(filters.region ? filters.region.split(',').filter(Boolean) : [])
+  const availableExchanges = selectedRegions.size === 0
+    ? EXCHANGES
+    : EXCHANGES.filter(e => selectedRegions.has(e.region))
 
   function formatMcap(val) {
     if (!val) return '\u2014'

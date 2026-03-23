@@ -1,16 +1,43 @@
-# React + Vite
+# Florin Terminal — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite 8 + TailwindCSS 4 single-page application for the Florin Terminal dashboard.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+# Install dependencies
+npm install
 
-## React Compiler
+# Start dev server with hot reload (proxies API to http://localhost:8000)
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Dev server runs at `http://localhost:5173`.
 
-## Expanding the ESLint configuration
+## Production Build
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+# Build and copy to dashboard/static/ for FastAPI to serve
+npm run build
+```
+
+The build output is served by FastAPI at `http://localhost:8000`.
+
+## Stack
+
+- **React 19** with React Router 7 (SPA routing)
+- **Vite 8** (build tooling)
+- **TailwindCSS 4** (utility-first CSS)
+- **Recharts** (charting library)
+- **Colorblind-safe palette** via `useChartColors()` context hook
+
+## Project Structure
+
+```
+src/
+├── App.jsx              # Root routes and navigation
+├── pages/               # Route-level page components
+├── components/          # Reusable UI components
+├── hooks/               # Custom hooks (useApi, useChartColors, etc.)
+└── utils/               # Shared utilities (colors, formatting)
+```

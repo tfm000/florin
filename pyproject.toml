@@ -106,6 +106,7 @@ include = [
     "telegram_bot*",
     "dashboard*",
     "db*",
+    "stats*",
     "tests*",
 ]
 exclude = ["dashboard_ui*"]
