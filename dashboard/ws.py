@@ -49,6 +49,7 @@ class ConnectionManager:
             try:
                 await ws.send_text(message)
             except Exception:
+                logger.debug("WebSocket send failed, marking connection as stale")
                 stale.append(ws)
 
         for ws in stale:

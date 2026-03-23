@@ -53,10 +53,16 @@ def create_app(
     app.add_exception_handler(SentinelError, sentinel_exception_handler)
 
     # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
+    # In production the frontend is served from the same origin, so CORS
+    # is only needed for the Vite dev server.  Allow any origin when the
+    # dashboard itself is binding to 0.0.0.0 (common in Docker/prod).
+    cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+    if settings.is_production:
+        cors_origins = ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:3000"],
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=not settings.is_production,  # Disable credentials with wildcard
         allow_methods=["*"],
         allow_headers=["*"],
     )
