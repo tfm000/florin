@@ -5,7 +5,8 @@ import NewsCard from '../components/NewsCard'
 import YieldCurveChart from '../components/YieldCurveChart'
 import PutCallIVChart from '../components/PutCallIVChart'
 import MetricsGrid from '../components/MetricsGrid'
-import SectorHeatMap from '../components/SectorHeatMap'
+import SectorPerformanceChart from '../components/SectorPerformanceChart'
+import PresetCorrelationMatrix from '../components/PresetCorrelationMatrix'
 import CorrelationMatrix from '../components/CorrelationMatrix'
 import MarketBreadth from '../components/MarketBreadth'
 import MarketHours from '../components/MarketHours'
@@ -94,10 +95,24 @@ export default function Research() {
       {/* Market Breadth */}
       <MarketBreadth />
 
-      {/* Sector Heat Map */}
-      <SectorHeatMap />
+      {/* Sector Performance */}
+      <SectorPerformanceChart />
 
-      {/* Correlation Matrix */}
+      {/* Preset Correlation Matrices */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <PresetCorrelationMatrix
+          title="Cross-Asset Correlation"
+          tickers={['SPY', '^FTSE', '^GDAXI', 'GC=F', 'CL=F', 'NG=F']}
+          labels={['S&P 500', 'FTSE 100', 'DAX', 'Gold', 'Oil', 'Nat Gas']}
+        />
+        <PresetCorrelationMatrix
+          title="S&P 500 Sector Correlation"
+          tickers={['XLK', 'XLV', 'XLF', 'XLY', 'XLP', 'XLE', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC']}
+          labels={['Tech', 'Health', 'Fin', 'Disc', 'Stpl', 'Energy', 'Ind', 'Mat', 'Util', 'RE', 'Comm']}
+        />
+      </div>
+
+      {/* User-driven Correlation Matrix */}
       <CorrelationMatrix />
 
       {/* Put-Call IV Spread */}
