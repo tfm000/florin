@@ -185,6 +185,81 @@ def format_trade_confirmation(
     ])
 
 
+def format_screener_alert_message(alert_data: dict) -> str:
+    """
+    Format a screener alert as a Telegram message.
+
+    Args:
+        alert_data: Dict from SCREENER_ALERT event containing:
+            screener_name, ticker, name, price, change_pct,
+            market_cap, volume, sector, exchange, filters_summary.
+    """
+    ticker = escape_md(alert_data.get("ticker", ""))
+    name = escape_md(alert_data.get("name", ""))
+    screener_name = escape_md(alert_data.get("screener_name", ""))
+    price = alert_data.get("price")
+    change_pct = alert_data.get("change_pct")
+    market_cap = alert_data.get("market_cap")
+    volume = alert_data.get("volume")
+    sector = alert_data.get("sector", "")
+    exchange = alert_data.get("exchange", "")
+    filters_summary = escape_md(alert_data.get("filters_summary", ""))
+
+    # Header
+    change_str = ""
+    if change_pct is not None:
+        emoji = "\U0001f4c8" if change_pct >= 0 else "\U0001f4c9"
+        change_str = f" {emoji} {escape_md(f'{change_pct:+.2f}%')}"
+
+    lines = [
+        f"\U0001f50d *Screener Alert: ${ticker}*{change_str}",
+        f"_{screener_name}_",
+        escape_md("\u2501" * 25),
+    ]
+
+    # Details
+    if name:
+        lines.append(f"\U0001f3f7 *Name:* {name}")
+    if price is not None:
+        lines.append(f"\U0001f4b5 *Price:* {escape_md(f'${price:.2f}')}")
+    if market_cap is not None:
+        lines.append(f"\U0001f3e6 *Mkt Cap:* {escape_md(_format_mcap(market_cap))}")
+    if volume is not None:
+        lines.append(f"\U0001f4ca *Volume:* {escape_md(_format_volume(volume))}")
+    if sector:
+        lines.append(f"\U0001f3ed *Sector:* {escape_md(sector)}")
+    if exchange:
+        lines.append(f"\U0001f3e2 *Exchange:* {escape_md(exchange)}")
+
+    # Filter summary
+    if filters_summary:
+        lines.append(f"\n\U0001f50e *Matched:* {filters_summary}")
+
+    return "\n".join(lines)
+
+
+def _format_mcap(val: float) -> str:
+    """Format market cap with T/B/M suffix."""
+    if val >= 1e12:
+        return f"${val / 1e12:.1f}T"
+    if val >= 1e9:
+        return f"${val / 1e9:.1f}B"
+    if val >= 1e6:
+        return f"${val / 1e6:.0f}M"
+    return f"${val:,.0f}"
+
+
+def _format_volume(val: int) -> str:
+    """Format volume with B/M/K suffix."""
+    if val >= 1e9:
+        return f"{val / 1e9:.1f}B"
+    if val >= 1e6:
+        return f"{val / 1e6:.1f}M"
+    if val >= 1e3:
+        return f"{val / 1e3:.0f}K"
+    return f"{val:,}"
+
+
 def _recommendation_emoji(rec: Recommendation) -> str:
     return {
         Recommendation.STRONG_BUY: "🚀",

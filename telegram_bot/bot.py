@@ -124,6 +124,44 @@ class SentinelBot:
             logger.exception("Failed to send Telegram alert")
             return None
 
+    async def send_screener_alert(self, message: str, ticker: str = "") -> int | None:
+        """
+        Send a screener alert message with BUY/PASS buttons.
+
+        Returns the message ID for later editing, or None on failure.
+        """
+        if not self._bot or not self._chat_id:
+            return None
+
+        try:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+            buttons = []
+            if ticker:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text="📈 BUY",
+                        callback_data=f"screener_buy:{ticker}",
+                    ),
+                    InlineKeyboardButton(
+                        text="⏭ PASS",
+                        callback_data="screener_pass",
+                    ),
+                ])
+
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+
+            result = await self._bot.send_message(
+                chat_id=self._chat_id,
+                text=message,
+                reply_markup=keyboard,
+            )
+            return result.message_id
+
+        except Exception:
+            logger.exception("Failed to send screener alert for %s", ticker)
+            return None
+
     async def send_message(self, text: str) -> int | None:
         """Send a plain message without buttons."""
         if not self._bot or not self._chat_id:

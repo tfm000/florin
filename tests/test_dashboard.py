@@ -11,7 +11,7 @@ from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
 from db.database import Database
-from db.models import ReportORM, TradeORM, UniverseStockORM
+from db.models import ReportORM, TradeORM
 
 
 @pytest.fixture
@@ -103,26 +103,6 @@ async def readonly_client(readonly_app):
     transport = ASGITransport(app=readonly_app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
-
-
-class TestUniverseRoutes:
-    @pytest.mark.asyncio
-    async def test_get_universe_empty(self, client):
-        resp = await client.get("/api/universe")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["items"] == []
-        assert data["total"] == 0
-        assert data["has_more"] is False
-
-    @pytest.mark.asyncio
-    async def test_get_scanner_settings(self, client):
-        resp = await client.get("/api/universe/settings")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "price_max" in data
-        assert "momentum_threshold" in data
-        assert "scan_interval_seconds" in data
 
 
 class TestReportRoutes:
@@ -382,19 +362,11 @@ class TestHealthRoutes:
         assert isinstance(md["alpaca_configured"], bool)
 
     @pytest.mark.asyncio
-    async def test_health_universe_structure(self, client):
+    async def test_health_screener_alerts_structure(self, client):
         resp = await client.get("/api/health")
-        uni = resp.json()["universe"]
-        assert "ticker_count" in uni
-        assert "last_refresh" in uni
-        assert isinstance(uni["ticker_count"], int)
-
-    @pytest.mark.asyncio
-    async def test_health_scanner_structure(self, client):
-        resp = await client.get("/api/health")
-        scanner = resp.json()["scanner"]
-        assert "active" in scanner
-        assert isinstance(scanner["active"], bool)
+        screener = resp.json()["screener_alerts"]
+        assert "active" in screener
+        assert isinstance(screener["active"], bool)
 
     @pytest.mark.asyncio
     async def test_health_setup_checklist_structure(self, client):
@@ -853,107 +825,6 @@ class TestReportsDeep:
     async def test_report_detail_not_found(self, seeded_client):
         resp = await seeded_client.get("/api/reports/nonexistent")
         assert resp.status_code == 404
-
-
-class TestUniverseDeep:
-    """Validate universe listing with seeded stocks and filtering."""
-
-    @pytest.fixture
-    async def seeded_client(self, app):
-        from dashboard.deps import get_db
-        db = get_db()
-        async with db.session() as session:
-            session.add(UniverseStockORM(
-                ticker="PENNY", name="Penny Corp", exchange="NASDAQ",
-                t212_ticker="PENNY_US", sector="Technology", industry="Software",
-                market_cap=50_000_000, avg_volume=200_000,
-                last_price=2.50, in_universe=True,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            session.add(UniverseStockORM(
-                ticker="CHEAP", name="Cheap Inc", exchange="NYSE",
-                t212_ticker="CHEAP_US", sector="Healthcare", industry="Biotech",
-                market_cap=20_000_000, avg_volume=500_000,
-                last_price=0.80, in_universe=True,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            session.add(UniverseStockORM(
-                ticker="EXPNSV", name="Expensive Ltd", exchange="NASDAQ",
-                t212_ticker="EXPNSV_US", sector="Finance", industry="Banking",
-                market_cap=500_000_000, avg_volume=1_000_000,
-                last_price=25.00, in_universe=False,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            await session.commit()
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            yield c
-
-    @pytest.mark.asyncio
-    async def test_universe_response_fields(self, seeded_client):
-        resp = await seeded_client.get("/api/universe")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 2  # only in_universe=True
-        items = data["items"]
-        assert len(items) == 2
-        # Sorted by ticker by default
-        p = items[0]
-        assert p["ticker"] == "CHEAP"
-        assert p["name"] == "Cheap Inc"
-        assert p["exchange"] == "NYSE"
-        assert p["sector"] == "Healthcare"
-        assert p["industry"] == "Biotech"
-        assert p["market_cap"] == 20_000_000
-        assert p["avg_volume"] == 500_000
-        assert p["last_price"] == 0.80
-        assert p["in_universe"] is True
-        assert p["is_monitored"] is False
-        assert "updated_at" in p
-
-    @pytest.mark.asyncio
-    async def test_universe_include_not_in_universe(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?in_universe=false")
-        data = resp.json()
-        assert data["total"] == 3  # all stocks
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_exchange(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?exchange=NYSE")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "CHEAP"
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_price(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?min_price=1.0&max_price=5.0")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "PENNY"
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_market_cap(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?min_market_cap=30000000")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "PENNY"
-
-    @pytest.mark.asyncio
-    async def test_universe_pagination(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?limit=1&offset=0")
-        data = resp.json()
-        assert len(data["items"]) == 1
-        assert data["has_more"] is True
-        resp2 = await seeded_client.get("/api/universe?limit=1&offset=1")
-        assert len(resp2.json()["items"]) == 1
-        assert resp2.json()["has_more"] is False
-
-    @pytest.mark.asyncio
-    async def test_universe_sort_by_last_price(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?sort_by=last_price")
-        items = resp.json()["items"]
-        assert items[0]["ticker"] == "PENNY"  # $2.50 > $0.80 (desc)
 
 
 class TestStatsDeep:

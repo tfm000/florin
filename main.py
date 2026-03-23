@@ -4,11 +4,12 @@ Sentinel Terminal — Main Entry Point
 Starts all services:
   1. Database initialisation
   2. Market data connection
-  3. Penny stock scanner
+  3. Screener alert service (periodic screener execution + alerts)
   4. Alert processing pipeline
   5. Position monitoring
   6. Telegram bot
   7. Web dashboard
+  8. Market breadth scanner
 
 All services run concurrently via asyncio.gather().
 """
@@ -47,8 +48,6 @@ class Sentinel:
             "Starting Sentinel Terminal",
             env=self.settings.app_env.value,
             llm_mode=self.settings.llm_mode.value,
-            price_range=f"${self.settings.scan_price_min:.2f}-${self.settings.scan_price_max:.2f}",
-            momentum_threshold=self.settings.scan_momentum_threshold,
             paper_trading=self.settings.paper_trading,
         )
 
@@ -95,15 +94,11 @@ class Sentinel:
         from data.yfinance_provider import YFinanceProvider
         yfinance_provider = YFinanceProvider()
 
-        # Universe manager
-        from scanner.universe import UniverseManager
-        universe = UniverseManager(self.settings, self.db, data_provider, yfinance_provider)
-
-        # Scanner
-        scanner = None
-        if data_provider:
-            from scanner.momentum_scanner import MomentumScanner
-            scanner = MomentumScanner(self.settings, data_provider, universe)
+        # Screener alert service (replaces old MomentumScanner + UniverseManager)
+        from scanner.screener_alert_service import ScreenerAlertService
+        screener_alert_svc = ScreenerAlertService(
+            self.db, self.event_bus, yfinance_provider,
+        )
 
         # Sentiment aggregator
         sentiment_agg = self._init_sentiment()
@@ -133,8 +128,7 @@ class Sentinel:
         from dashboard.app import create_app, serve as dashboard_serve
         from dashboard.deps import set_state
         set_state("shutdown_callback", self.shutdown)
-        set_state("universe", universe)
-        set_state("scanner", scanner)
+        set_state("screener_alert_service", screener_alert_svc)
         set_state("data_provider", data_provider)
         set_state("yfinance_provider", yfinance_provider)
         set_state("analysers", analysers)
@@ -158,22 +152,16 @@ class Sentinel:
         # Heartbeat
         services.append(asyncio.create_task(self._heartbeat(), name="heartbeat"))
 
-        # Universe refresh
-        services.append(asyncio.create_task(
-            self._universe_refresh_loop(universe), name="universe-refresh"
-        ))
-
         # Risk-free rate daily refresh
         services.append(asyncio.create_task(
             self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
         ))
 
-        # Scanner
-        if scanner:
-            services.append(asyncio.create_task(
-                scanner.run(self.event_bus), name="scanner"
-            ))
-            logger.info("Scanner started")
+        # Screener alert service (background, periodic screener execution)
+        services.append(asyncio.create_task(
+            screener_alert_svc.run(), name="screener-alerts"
+        ))
+        logger.info("Screener alert service started")
 
         # Alert pipeline
         services.append(asyncio.create_task(
@@ -195,10 +183,17 @@ class Sentinel:
                 telegram_bot.start_polling(), name="telegram-bot"
             ))
             # Alert listener — sends enriched alerts to Telegram with account context
-            from telegram_bot.handlers.alerts import alert_listener
+            from telegram_bot.handlers.alerts import alert_listener, screener_alert_listener
             services.append(asyncio.create_task(
                 alert_listener(self.event_bus, telegram_bot, broker, self.settings),
                 name="telegram-alerts",
+            ))
+            # Screener alert listener — sends screener alerts to Telegram
+            services.append(asyncio.create_task(
+                screener_alert_listener(
+                    self.event_bus, telegram_bot, broker, self.settings,
+                ),
+                name="telegram-screener-alerts",
             ))
 
         # Dashboard
@@ -343,17 +338,6 @@ class Sentinel:
                 subscribers=self.event_bus.subscriber_counts,
             )
             await asyncio.sleep(60)
-
-    async def _universe_refresh_loop(self, universe: Any) -> None:
-        """Refresh the penny stock universe periodically."""
-        while not self._shutdown_event.is_set():
-            try:
-                await universe.refresh()
-                logger.info("Universe refreshed", count=universe.size)
-            except Exception as e:
-                logger.error("Universe refresh failed: %s", e)
-            # Refresh daily
-            await asyncio.sleep(86_400)
 
     async def _rf_refresh_loop(self, rf_fetcher: Any) -> None:
         """Refresh G10 risk-free rates daily from central bank APIs."""

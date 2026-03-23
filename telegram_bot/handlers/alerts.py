@@ -1,8 +1,8 @@
 """
-Alert display handler.
+Alert display handlers.
 
-Listens for REPORT_READY events and sends formatted alerts to Telegram
-with account context (positions, balance, default order size).
+Listens for REPORT_READY and SCREENER_ALERT events and sends
+formatted alerts to Telegram with appropriate context.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any
 from config.settings import Settings
 from core.events import EventBus, EventType
 from core.models import AnalysisReport
-from telegram_bot.formatters import format_alert_message
+from telegram_bot.formatters import format_alert_message, format_screener_alert_message
 
 logger = logging.getLogger(__name__)
 
@@ -78,3 +78,32 @@ async def alert_listener(
             logger.info("Sent Telegram alert for %s", report.ticker)
         except Exception:
             logger.exception("Failed to send Telegram alert for %s", report.ticker)
+
+
+async def screener_alert_listener(
+    event_bus: EventBus,
+    bot: Any,
+    broker: Any = None,
+    settings: Settings | None = None,
+) -> None:
+    """
+    Background task that listens for SCREENER_ALERT events
+    and sends formatted screener alerts to Telegram.
+
+    Screener alerts include a BUY button if a broker is configured.
+    """
+    async for event in event_bus.subscribe(EventType.SCREENER_ALERT):
+        alert_data = event.data
+        if not isinstance(alert_data, dict):
+            continue
+
+        ticker = alert_data.get("ticker", "")
+        try:
+            message = format_screener_alert_message(alert_data)
+            await bot.send_screener_alert(message, ticker=ticker)
+            logger.info(
+                "Sent screener alert for %s (screener: %s)",
+                ticker, alert_data.get("screener_name", "?"),
+            )
+        except Exception:
+            logger.exception("Failed to send screener alert for %s", ticker)
