@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -136,7 +137,7 @@ class BarData(BaseModel):
 
 class AlertSignal(BaseModel):
     """Fired when scanner detects a qualifying move."""
-    id: str = Field(default_factory=lambda: "")
+    id: str = Field(default_factory=lambda: uuid4().hex[:16])
     ticker: str
     price: float
     change_pct: float

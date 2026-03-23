@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from config.settings import Settings
 from core.events import EventBus
@@ -101,10 +101,37 @@ def create_app(
     from dashboard.ws import websocket_endpoint
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
-    # Serve React build if it exists
+    # Serve React SPA — catch-all route for client-side routing.
+    # Must be registered AFTER all /api routes and /ws WebSocket.
     static_dir = Path(__file__).parent / "static"
-    if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+    @app.get("/{full_path:path}", response_model=None, include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Serve static files if they exist, otherwise return index.html for SPA routing."""
+        if not static_dir.exists():
+            return JSONResponse(
+                {"detail": "Frontend not built — run 'npm run build' in dashboard_ui/"},
+                status_code=404,
+            )
+        # Prevent path traversal
+        try:
+            file_path = (static_dir / full_path).resolve()
+            if not str(file_path).startswith(str(static_dir.resolve())):
+                return FileResponse(static_dir / "index.html")
+        except (ValueError, OSError):
+            return FileResponse(static_dir / "index.html")
+
+        if file_path.is_file():
+            return FileResponse(file_path)
+
+        index = static_dir / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+
+        return JSONResponse(
+            {"detail": "Frontend not built — run 'npm run build' in dashboard_ui/"},
+            status_code=404,
+        )
 
     logger.info("Dashboard app created")
     return app

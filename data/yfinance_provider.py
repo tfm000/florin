@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from functools import lru_cache
 from typing import Any
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 # During market hours: use short TTLs for fresh data.
 # When market is closed: cache until next market open (data won't change).
 _cache: dict[str, tuple[float, Any]] = {}
+_CACHE_MAX_SIZE = 5000  # Evict oldest entries when cache exceeds this size
 
 # TTLs used during market hours (seconds)
 INFO_TTL = 3600  # 1 hour (asset info — sector/PE/beta change slowly)
@@ -75,6 +77,11 @@ def _get_cached(key: str, ttl: float, market_aware: bool = True) -> Any | None:
 
 def _set_cached(key: str, val: Any) -> None:
     _cache[key] = (time.time(), val)
+    # Evict oldest entries if cache exceeds max size
+    if len(_cache) > _CACHE_MAX_SIZE:
+        sorted_keys = sorted(_cache, key=lambda k: _cache[k][0])
+        for k in sorted_keys[: len(_cache) - _CACHE_MAX_SIZE]:
+            del _cache[k]
 
 
 # Periods that can be served from cached 5y data (subset of 5 years)
@@ -321,7 +328,7 @@ class YFinanceProvider:
         records = []
         for idx, row in df.iterrows():
             close = row.get("Close")
-            if close is None or (hasattr(close, '__float__') and not close == close):
+            if close is None or (isinstance(close, float) and math.isnan(close)):
                 # Skip NaN rows (delisted periods)
                 continue
             records.append({

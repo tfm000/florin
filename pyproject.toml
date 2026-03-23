@@ -22,7 +22,6 @@ dependencies = [
 
     # Market Data
     "alpaca-py>=0.28",
-    "polygon-api-client>=1.14",
     "websockets>=12.0",
     "yfinance>=0.2.36",
 

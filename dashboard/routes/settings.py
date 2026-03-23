@@ -24,7 +24,7 @@ router = APIRouter(tags=["settings"])
 _SECRET_KEYS = frozenset({
     "t212_api_key", "t212_api_secret",
     "alpaca_api_key", "alpaca_api_secret",
-    "polygon_api_key", "openfigi_api_key",
+    "openfigi_api_key",
     "reddit_client_id", "reddit_client_secret",
     "groq_api_key", "gemini_api_key", "anthropic_api_key",
     "telegram_bot_token",
@@ -44,7 +44,7 @@ _SECTIONS = [
         "label": "Market Data",
         "keys": [
             "alpaca_api_key", "alpaca_api_secret", "alpaca_feed",
-            "polygon_api_key", "openfigi_api_key",
+            "openfigi_api_key",
         ],
     },
     {

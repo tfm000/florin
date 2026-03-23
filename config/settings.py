@@ -8,11 +8,14 @@ All settings are typed, validated, and documented. Access via:
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class AppEnv(str, Enum):
@@ -84,9 +87,6 @@ class Settings(BaseSettings):
     @property
     def alpaca_data_rest_url(self) -> str:
         return "https://data.alpaca.markets"
-
-    # --- Polygon ---
-    polygon_api_key: str = ""
 
     # --- OpenFIGI ---
     openfigi_api_key: str = ""
@@ -224,4 +224,6 @@ async def load_db_overrides(db: object) -> None:
                 else:
                     setattr(settings, key, value)
             except (ValueError, KeyError):
-                pass
+                logger.warning(
+                    "Failed to apply DB override for setting %s=%r", key, value
+                )

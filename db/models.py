@@ -16,9 +16,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -224,7 +227,9 @@ class PortfolioHoldingORM(Base):
     __tablename__ = "portfolio_holdings"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
-    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
     ticker: Mapped[str] = mapped_column(String(20))
     weight: Mapped[float] = mapped_column(Float, default=0.0)  # 0-100
 
@@ -235,6 +240,9 @@ class PortfolioHoldingORM(Base):
 
 class BreadthSnapshotORM(Base):
     __tablename__ = "breadth_snapshots"
+    __table_args__ = (
+        UniqueConstraint("date", "hour", name="uq_breadth_date_hour"),
+    )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD
@@ -293,7 +301,7 @@ class NewsStoryORM(Base):
     importance: Mapped[int] = mapped_column(Integer, default=5)
     url: Mapped[str] = mapped_column(String(500))
     source_name: Mapped[str] = mapped_column(String(200))
-    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), index=True)
 
 
 # =============================================================================
@@ -302,6 +310,9 @@ class NewsStoryORM(Base):
 
 class RiskFreeRateORM(Base):
     __tablename__ = "risk_free_rates"
+    __table_args__ = (
+        UniqueConstraint("currency", "date", name="uq_rfr_currency_date"),
+    )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     currency: Mapped[str] = mapped_column(String(3), index=True)      # USD, GBP, etc.
@@ -332,7 +343,9 @@ class PortfolioCacheMetaORM(Base):
     """One row per portfolio: cached analytics + aggregated fundamentals."""
     __tablename__ = "portfolio_cache_meta"
 
-    portfolio_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), primary_key=True
+    )
     start_date: Mapped[str] = mapped_column(String(10))   # YYYY-MM-DD
     end_date: Mapped[str] = mapped_column(String(10))     # YYYY-MM-DD
 
@@ -379,12 +392,13 @@ class PortfolioCacheReturnORM(Base):
     """Daily portfolio return time series (prorated and non-prorated variants)."""
     __tablename__ = "portfolio_cache_returns"
     __table_args__ = (
-        # Fast range queries: WHERE portfolio_id=? AND prorated=? AND date >= ?
-        {"sqlite_autoincrement": False},
+        Index("ix_cache_returns_lookup", "portfolio_id", "prorated", "date"),
     )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
-    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
     date: Mapped[str] = mapped_column(String(10))          # YYYY-MM-DD
     cumulative_return: Mapped[float] = mapped_column(Float)
     prorated: Mapped[bool] = mapped_column(Boolean, default=False)

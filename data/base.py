@@ -1,8 +1,7 @@
 """
 Abstract interface for market data providers.
 
-Implementations: AlpacaProvider, PolygonProvider
-All are interchangeable — swap by changing config.
+Implementations: AlpacaProvider
 """
 
 from __future__ import annotations

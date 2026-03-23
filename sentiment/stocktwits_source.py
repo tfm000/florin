@@ -35,7 +35,6 @@ class StockTwitsSource(SentimentSource):
     """
 
     def __init__(self) -> None:
-        self._http: httpx.AsyncClient | None = None
         self._limiter = AsyncRateLimiter(200, 3600, name="StockTwits")
 
     @property
