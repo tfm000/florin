@@ -51,6 +51,24 @@ class ScreenerResponse(BaseModel):
     results: list[ScreenerResult]
 
 
+def _quote_to_result(q: dict) -> ScreenerResult:
+    """Convert a yfinance screen quote dict to a ScreenerResult."""
+    return ScreenerResult(
+        ticker=q.get("symbol", ""),
+        name=q.get("shortName") or q.get("longName", ""),
+        exchange=q.get("exchange", ""),
+        sector=q.get("sector", ""),
+        industry=q.get("industry", ""),
+        market_cap=q.get("marketCap"),
+        price=q.get("regularMarketPrice"),
+        volume=q.get("regularMarketVolume"),
+        avg_volume=q.get("averageDailyVolume3Month"),
+        pe_ratio=q.get("trailingPE"),
+        dividend_yield=q.get("dividendYield"),
+        change_pct=q.get("regularMarketChangePercent"),
+    )
+
+
 async def run_screen(
     *,
     price_min: float = 0,
@@ -60,6 +78,7 @@ async def run_screen(
     pe_min: float = 0,
     pe_max: float = 0,
     dividend_yield_min: float = 0,
+    region: str = "us",
     sector: str = "",
     exchange: str = "",
     asset_type: str = "",
@@ -82,8 +101,9 @@ async def run_screen(
         pe_min: Minimum trailing P/E (0 = no minimum).
         pe_max: Maximum trailing P/E (0 = no limit).
         dividend_yield_min: Minimum dividend yield % (0 = no minimum).
+        region: Region code for market (default: 'us'). Supports: us, gb, de, jp, ca, hk, etc.
         sector: Filter by sector name (empty = all).
-        exchange: Comma-separated exchange codes (empty = all US).
+        exchange: Comma-separated exchange codes (empty = all for the region).
         asset_type: Filter by quoteType: EQUITY, ETF, INDEX, etc. (empty = all).
         sort_by: yfinance sort field name.
         sort_asc: Sort ascending if True.
@@ -98,8 +118,12 @@ async def run_screen(
         try:
             from yfinance import EquityQuery, screen
 
+            # Mutual funds use a separate FundQuery — handle separately
+            if asset_type == "MUTUALFUND":
+                return _screen_funds()
+
             operands = [
-                EquityQuery("eq", ["region", "us"]),
+                EquityQuery("eq", ["region", region or "us"]),
             ]
 
             if price_min > 0:
@@ -145,25 +169,36 @@ async def run_screen(
                     if qt.upper() != asset_type.upper():
                         continue
 
-                results.append(ScreenerResult(
-                    ticker=q.get("symbol", ""),
-                    name=q.get("shortName") or q.get("longName", ""),
-                    exchange=q.get("exchange", ""),
-                    sector=q.get("sector", ""),
-                    industry=q.get("industry", ""),
-                    market_cap=q.get("marketCap"),
-                    price=q.get("regularMarketPrice"),
-                    volume=q.get("regularMarketVolume"),
-                    avg_volume=q.get("averageDailyVolume3Month"),
-                    pe_ratio=q.get("trailingPE"),
-                    dividend_yield=q.get("dividendYield"),
-                    change_pct=q.get("regularMarketChangePercent"),
-                ))
+                results.append(_quote_to_result(q))
 
             return results
 
         except Exception:
             logger.exception("Screener query failed")
+            return []
+
+    def _screen_funds() -> list[ScreenerResult]:
+        """Screen mutual funds via yfinance's FundQuery."""
+        try:
+            from yfinance import FundQuery, screen
+
+            operands = [
+                FundQuery("eq", ["exchange", region or "us"]),
+                FundQuery("gt", ["initialinvestment", 0]),  # FundQuery AND requires 2+ operands
+            ]
+
+            if sector:
+                operands.append(FundQuery("eq", ["sector", sector]))
+
+            query = FundQuery("and", operands)
+            resp = screen(query, size=limit, offset=0,
+                          sortField=sort_by, sortAsc=sort_asc)
+
+            quotes = resp.get("quotes", []) if resp else []
+            return [_quote_to_result(q) for q in quotes]
+
+        except Exception:
+            logger.exception("Fund screener query failed")
             return []
 
     return await asyncio.to_thread(_screen)
@@ -260,6 +295,7 @@ def parse_filters_to_kwargs(filters: dict) -> dict:
         "pe_min": float(filters.get("pe_min") or 0),
         "pe_max": float(filters.get("pe_max") or 0),
         "dividend_yield_min": float(filters.get("dividend_yield_min") or 0),
+        "region": str(filters.get("region") or "us"),
         "sector": str(filters.get("sector") or ""),
         "exchange": str(filters.get("exchange") or ""),
         "asset_type": str(filters.get("asset_type") or ""),

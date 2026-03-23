@@ -44,8 +44,9 @@ async def screen_stocks(
     pe_max: float = Query(default=0, description="0 = no limit"),
     dividend_yield_min: float = Query(default=0, ge=0),
     sector: str = Query(default="", description="Filter by sector name"),
-    exchange: str = Query(default="", description="NMS, NGM, NCM, NYQ, ASE or comma-separated"),
-    asset_type: str = Query(default="", description="EQUITY, ETF, INDEX, COMMODITY, CRYPTOCURRENCY"),
+    region: str = Query(default="us", description="Region code: us, gb, de, jp, ca, hk, etc."),
+    exchange: str = Query(default="", description="Exchange codes: NMS, NYQ, PCX, LSE, etc."),
+    asset_type: str = Query(default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"),
     momentum_min: float | None = Query(default=None, description="Min return % for momentum filter"),
     momentum_max: float | None = Query(default=None, description="Max return % (None = no limit)"),
     momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
@@ -60,7 +61,7 @@ async def screen_stocks(
         market_cap_min=market_cap_min, market_cap_max=market_cap_max,
         pe_min=pe_min, pe_max=pe_max,
         dividend_yield_min=dividend_yield_min,
-        sector=sector, exchange=exchange, asset_type=asset_type,
+        region=region, sector=sector, exchange=exchange, asset_type=asset_type,
         sort_by=sort_by, sort_asc=sort_asc, limit=limit, yf=yf,
     )
 

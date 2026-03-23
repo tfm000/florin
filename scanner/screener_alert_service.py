@@ -286,6 +286,15 @@ class ScreenerAlertService:
 
         logger.info("Daily screener alert counters reset")
 
+    _ASSET_TYPE_LABELS = {
+        "EQUITY": "Stocks", "ETF": "ETFs", "MUTUALFUND": "Mutual Funds",
+        "INDEX": "Indices", "CRYPTOCURRENCY": "Crypto",
+    }
+    _EXCHANGE_LABELS = {
+        "NMS,NGM,NCM": "NASDAQ", "NYQ": "NYSE", "PCX": "NYSE Arca",
+        "ASE": "NYSE American", "BTS": "BATS", "PNK,OQB,OQX": "OTC",
+    }
+
     @staticmethod
     def _summarize_filters(filters: dict) -> str:
         """Create a human-readable summary of filter settings."""
@@ -297,9 +306,15 @@ class ScreenerAlertService:
         if filters.get("sector"):
             parts.append(filters["sector"])
         if filters.get("asset_type"):
-            parts.append(filters["asset_type"])
+            label = ScreenerAlertService._ASSET_TYPE_LABELS.get(
+                filters["asset_type"], filters["asset_type"],
+            )
+            parts.append(label)
         if filters.get("momentum_period"):
             parts.append(f"Momentum: {filters['momentum_period']}")
         if filters.get("exchange"):
-            parts.append(f"Exchange: {filters['exchange']}")
-        return " | ".join(parts) if parts else "All US equities"
+            label = ScreenerAlertService._EXCHANGE_LABELS.get(
+                filters["exchange"], filters["exchange"],
+            )
+            parts.append(label)
+        return " | ".join(parts) if parts else "All US assets"

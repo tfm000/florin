@@ -312,7 +312,7 @@ class TestScreenerAlertService:
     def test_summarize_filters(self):
         svc = ScreenerAlertService.__new__(ScreenerAlertService)
         assert "Technology" in svc._summarize_filters({"sector": "Technology"})
-        assert "All US equities" == svc._summarize_filters({})
+        assert "All US assets" == svc._summarize_filters({})
         summary = svc._summarize_filters({"price_min": 10, "price_max": 500})
         assert "$10" in summary
         assert "$500" in summary
