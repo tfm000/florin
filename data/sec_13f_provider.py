@@ -35,6 +35,13 @@ _db_ref = None
 # Rate limiting for SEC (10 req/sec)
 _last_sec_request: float = 0.0
 
+# Unauthenticated: serialize (25 req/min is tight)
+# Authenticated: allow up to 4 concurrent (25 req/6s is generous but not unlimited)
+_openfigi_lock = asyncio.Lock()
+_openfigi_semaphore = asyncio.Semaphore(4)
+# Lock to serialize DB writes (SQLite single-writer)
+_persist_lock = asyncio.Lock()
+
 
 async def load_cusip_cache(db) -> None:
     """Hydrate the in-memory CUSIP cache from DB and load SEC name→ticker map."""
@@ -73,27 +80,29 @@ async def _load_sec_name_map() -> None:
 
 
 async def _persist_cusip_mappings(mappings: dict[str, str]) -> None:
-    """Persist new CUSIP→ticker mappings to the database."""
+    """Persist new CUSIP→ticker mappings to the database using bulk upsert."""
     if not _db_ref or not mappings:
         return
     from datetime import datetime, UTC
     from db.models import CusipTickerORM
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-    try:
-        async with _db_ref.session() as session:
-            for cusip, ticker in mappings.items():
-                existing = await session.get(CusipTickerORM, cusip)
-                if existing:
-                    existing.ticker = ticker
-                    existing.updated_at = datetime.now(UTC)
-                else:
-                    session.add(CusipTickerORM(
-                        cusip=cusip, ticker=ticker,
-                        updated_at=datetime.now(UTC),
-                    ))
-            await session.commit()
-    except Exception:
-        logger.exception("Failed to persist CUSIP mappings")
+    async with _persist_lock:
+        try:
+            async with _db_ref.session() as session:
+                now = datetime.now(UTC)
+                stmt = sqlite_insert(CusipTickerORM).values([
+                    {"cusip": cusip, "ticker": ticker, "updated_at": now}
+                    for cusip, ticker in mappings.items()
+                ])
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["cusip"],
+                    set_={"ticker": stmt.excluded.ticker, "updated_at": stmt.excluded.updated_at},
+                )
+                await session.execute(stmt)
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to persist CUSIP mappings")
 
 
 async def _sec_rate_limit():
@@ -376,49 +385,94 @@ async def map_cusips_to_tickers(
 async def _openfigi_lookup(
     jobs: list[dict], cusips: list[str],
 ) -> dict[str, str]:
-    """Call OpenFIGI API in small batches and return CUSIP→ticker mappings."""
+    """Call OpenFIGI API in batches and return CUSIP→ticker mappings.
+
+    Adapts batch size and delay based on whether an OpenFIGI API key is
+    configured:
+      - Authenticated:   100 items/batch, 0.25s delay (25 req/6s)
+      - Unauthenticated: 10 items/batch,  2.5s delay  (25 req/min)
+    """
     mapped: dict[str, str] = {}
     new_db_mappings: dict[str, str] = {}
 
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for i in range(0, len(jobs), 5):
-                batch_jobs = jobs[i:i + 5]
-                batch_cusips = cusips[i:i + 5]
+    # Re-check cache to skip CUSIPs resolved by a concurrent request
+    filtered_jobs = []
+    filtered_cusips = []
+    for job, cusip in zip(jobs, cusips):
+        if cusip in _cusip_cache:
+            mapped[cusip] = _cusip_cache[cusip]
+        else:
+            filtered_jobs.append(job)
+            filtered_cusips.append(cusip)
 
-                for attempt in range(3):
-                    resp = await client.post(
-                        OPENFIGI_URL,
-                        json=batch_jobs,
-                        headers={"Content-Type": "application/json"},
-                    )
-                    if resp.status_code == 200:
-                        results = resp.json()
-                        for j, res in enumerate(results):
-                            if isinstance(res, dict) and "data" in res:
-                                for item in res["data"]:
-                                    ticker = item.get("ticker", "")
-                                    if ticker:
+    if not filtered_jobs:
+        return mapped
+
+    # Determine rate limits from API key
+    from config.settings import get_settings
+    api_key = get_settings().openfigi_api_key
+    if api_key:
+        batch_size = 100
+        batch_delay = 0.3   # ~20 req/6s, well under 25 req/6s limit
+    else:
+        batch_size = 10
+        batch_delay = 2.5   # ~24 req/min, under 25 req/min limit
+
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-OPENFIGI-APIKEY"] = api_key
+
+    async def _do_lookup():
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                for i in range(0, len(filtered_jobs), batch_size):
+                    batch_jobs = filtered_jobs[i:i + batch_size]
+                    batch_cusips = filtered_cusips[i:i + batch_size]
+
+                    for attempt in range(3):
+                        resp = await client.post(
+                            OPENFIGI_URL,
+                            json=batch_jobs,
+                            headers=headers,
+                        )
+                        if resp.status_code == 200:
+                            results = resp.json()
+                            for j, res in enumerate(results):
+                                if isinstance(res, dict) and "data" in res:
+                                    for item in res["data"]:
+                                        ticker = item.get("ticker", "")
+                                        if not ticker:
+                                            continue
                                         c = batch_cusips[j]
                                         mapped[c] = ticker
                                         _cusip_cache[c] = ticker
                                         new_db_mappings[c] = ticker
                                         break
-                        break
-                    elif resp.status_code in (429, 413):
-                        logger.warning(
-                            "OpenFIGI %d, waiting 30s (attempt %d)",
-                            resp.status_code, attempt + 1,
-                        )
-                        await asyncio.sleep(30)
-                    else:
-                        logger.warning("OpenFIGI returned %d", resp.status_code)
-                        break
+                            break
+                        elif resp.status_code in (429, 413):
+                            wait = 7 if api_key else 30
+                            logger.warning(
+                                "OpenFIGI %d, waiting %ds (attempt %d)",
+                                resp.status_code, wait, attempt + 1,
+                            )
+                            await asyncio.sleep(wait)
+                        else:
+                            logger.warning("OpenFIGI returned %d", resp.status_code)
+                            break
 
-                await asyncio.sleep(6)
+                    await asyncio.sleep(batch_delay)
 
-    except Exception:
-        logger.exception("OpenFIGI lookup failed")
+        except Exception:
+            logger.exception("OpenFIGI lookup failed")
+
+    # Unauthenticated: full lock (25 req/min is tight, serialize everything).
+    # Authenticated: semaphore allows up to 4 concurrent lookups with delay.
+    if api_key:
+        async with _openfigi_semaphore:
+            await _do_lookup()
+    else:
+        async with _openfigi_lock:
+            await _do_lookup()
 
     if new_db_mappings:
         await _persist_cusip_mappings(new_db_mappings)

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-
-const REGIME_COLORS = ['#22C55E', '#EF4444', '#F59E0B'] // regime 0 (low vol), 1 (high vol), 2
+import { useChartColors } from '../hooks/useChartColors'
 
 export default function RegimeOverlay({
   ticker,
@@ -12,6 +11,8 @@ export default function RegimeOverlay({
   onNRegimesChange,
   onSourceChange,
 }) {
+  const colors = useChartColors()
+  const REGIME_COLORS = colors.regime
   const [statsView, setStatsView] = useState('full') // 'full' | 'regime_0' | 'regime_1' | ...
 
   const regimes = regimeData?.regimes || []

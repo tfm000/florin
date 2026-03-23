@@ -67,3 +67,9 @@ export async function apiDelete(path) {
   if (!res.ok) throw new Error(data.detail || 'Request failed')
   return data
 }
+
+export async function apiFetch(path) {
+  const res = await fetch(`${API_BASE}${path}`)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}

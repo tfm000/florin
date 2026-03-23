@@ -12,6 +12,7 @@ const PALETTES = {
     positive: '#22C55E',    // green
     negative: '#EF4444',    // red
     series: ['#22C55E', '#6366F1', '#F59E0B', '#EF4444', '#EC4899'],
+    regime: ['#22C55E', '#EF4444', '#F59E0B'],  // low vol (green), high vol (red), mid (amber)
     putIv: '#EF4444',       // red
     callIv: '#22C55E',      // green
     compositeVol: '#8B5CF6', // purple
@@ -21,6 +22,7 @@ const PALETTES = {
     positive: '#2563EB',    // blue
     negative: '#EA580C',    // orange
     series: ['#2563EB', '#14B8A6', '#F59E0B', '#EA580C', '#EC4899'],
+    regime: ['#2563EB', '#EA580C', '#F59E0B'],  // low vol (blue), high vol (orange), mid (amber)
     putIv: '#EA580C',       // orange
     callIv: '#2563EB',      // blue
     compositeVol: '#14B8A6', // teal (distinct from blue)

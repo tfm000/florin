@@ -5,7 +5,6 @@ import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
 
 const NUM_BINS = 40
-const REGIME_COLORS = ['#22C55E', '#EF4444', '#F59E0B']
 
 function computeReturns(history) {
   if (!history || history.length < 2) return []
@@ -82,6 +81,7 @@ export default function ReturnsHistogram({
   regimeData = null,
 }) {
   const colors = useChartColors()
+  const REGIME_COLORS = colors.regime
   const [showRegimes, setShowRegimes] = useState(false)
 
   const queryStr = customStart && customEnd

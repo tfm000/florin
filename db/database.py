@@ -99,7 +99,10 @@ class Database:
         from alembic import command
 
         def _run(connection):
-            cfg = Config("alembic.ini")
+            import pathlib
+            # Resolve alembic.ini relative to the project root (parent of db/)
+            project_root = pathlib.Path(__file__).resolve().parent.parent
+            cfg = Config(str(project_root / "alembic.ini"))
             cfg.attributes["connection"] = connection
             command.upgrade(cfg, "head")
 

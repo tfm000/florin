@@ -10,17 +10,15 @@ import { INDICATOR_DEFS } from '../utils/indicators'
 
 const OVERLAY_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'overlay').map(([k]) => k)
 const SUBCHART_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'subchart').map(([k]) => k)
-const REGIME_COLORS = ['#22C55E', '#EF4444', '#F59E0B']
-
 export default function CumulativeReturnChart({
   ticker, period = '1y', customStart = '', customEnd = '', compareTickers = [],
   regimeData = null,
 }) {
   const colors = useChartColors()
+  const REGIME_COLORS = colors.regime
   const [activeIndicators, setActiveIndicators] = useState(new Set())
   const [chartType, setChartType] = useState('line') // 'line' | 'candle'
   const [showRegimes, setShowRegimes] = useState(false)
-
   const queryStr = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}&interval=1d`
     : `period=${period}&interval=1d`

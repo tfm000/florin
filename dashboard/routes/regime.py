@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import numpy as np
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from dashboard.dependencies import get_yfinance_dep
+from stats.regime import fit_markov_regimes
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,8 @@ async def detect_regimes(
     ticker = ticker.upper()
     source_ticker = source.upper() if source else ticker
 
-    # Always fit on max history for best regime estimation
+    # Single fetch — max history for regime fitting
+    from data.yfinance_provider import _period_cutoff
     full_history = await yf.get_history(source_ticker, period="max")
 
     if not full_history or len(full_history) < 30:
@@ -69,90 +72,30 @@ async def detect_regimes(
             regimes=[], stats=[],
         )
 
-    # Determine the display cutoff dates
+    # Compute display cutoff from period — no second fetch
     if start:
         display_start = start
         display_end = end
     else:
-        display_history = await yf.get_history(source_ticker, period=period)
-        display_start = display_history[0]["date"][:10] if display_history else ""
+        display_start = _period_cutoff(period) or ""
         display_end = ""
 
     def _compute():
-        import numpy as np
-        from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
-
         closes = [h["close"] for h in full_history if h["close"] > 0]
         dates = [h["date"] for h in full_history if h["close"] > 0]
 
         if len(closes) < 30:
             return None
 
-        # Daily log returns from FULL history
-        log_returns = np.array([
+        log_rets = np.array([
             np.log(closes[i] / closes[i - 1])
             for i in range(1, len(closes))
         ]) * 100  # Scale for numerical stability
 
-        return_dates = dates[1:]
-
-        try:
-            model = MarkovRegression(
-                log_returns, k_regimes=n_regimes, trend="c", switching_variance=True,
-            )
-            result = model.fit(maxiter=200, disp=False)
-
-            # Get smoothed regime probabilities
-            # Can be a DataFrame or numpy array depending on statsmodels version
-            smoothed = result.smoothed_marginal_probabilities
-            probs = smoothed.values if hasattr(smoothed, 'values') else np.array(smoothed)
-            regime_assignments = probs.argmax(axis=1)
-            regime_probs = probs.max(axis=1)
-
-            # Filter to display range only (model was fit on full history)
-            regimes = []
-            display_indices = []
-            for i in range(len(return_dates)):
-                date_str = return_dates[i][:10] if len(return_dates[i]) > 10 else return_dates[i]
-                if display_start and date_str < display_start:
-                    continue
-                if display_end and date_str > display_end:
-                    continue
-                display_indices.append(i)
-                regimes.append({
-                    "date": date_str,
-                    "regime": int(regime_assignments[i]),
-                    "probability": round(float(regime_probs[i]), 4),
-                })
-
-            # Compute per-regime stats from the FULL history
-            # (regime characteristics should reflect all available data, not just the display window)
-            stats = []
-            for r in range(n_regimes):
-                mask = regime_assignments == r
-                if mask.sum() == 0:
-                    continue
-                regime_rets = log_returns[mask] / 100  # Unscale
-                stats.append({
-                    "regime": r,
-                    "mean_return": round(float(np.mean(regime_rets)) * 252 * 100, 2),  # Annualized %
-                    "volatility": round(float(np.std(regime_rets)) * np.sqrt(252) * 100, 2),
-                    "count": int(mask.sum()),
-                })
-
-            # Sort regimes by volatility (low vol = regime 0)
-            stats.sort(key=lambda s: s["volatility"])
-            regime_map = {s["regime"]: i for i, s in enumerate(stats)}
-            for s in stats:
-                s["regime"] = regime_map[s["regime"]]
-            for r in regimes:
-                r["regime"] = regime_map.get(r["regime"], r["regime"])
-
-            return {"regimes": regimes, "stats": stats}
-
-        except Exception:
-            logger.exception("Markov regime switching failed for %s", source_ticker)
-            return None
+        return fit_markov_regimes(
+            log_rets, dates[1:], n_regimes,
+            display_start=display_start, display_end=display_end,
+        )
 
     result = await asyncio.to_thread(_compute)
     if result is None:

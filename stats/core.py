@@ -89,11 +89,21 @@ def log_returns(prices: np.ndarray) -> np.ndarray:
     """Log returns from a price series.
 
     Returns array of length ``len(prices) - 1`` in decimal form.
+    Guards against zero/negative prices that would produce inf/nan.
     """
     prices = np.asarray(prices, dtype=np.float64)
     if len(prices) < 2:
         return np.array([], dtype=np.float64)
-    return np.log(prices[1:] / prices[:-1])
+    prev = prices[:-1]
+    curr = prices[1:]
+    both_zero = (prev == 0) & (curr == 0)
+    valid = prev > 0
+    ratios = np.where(valid, curr / prev, np.nan)
+    with np.errstate(divide="ignore"):
+        result = np.log(ratios)
+    result[~np.isfinite(result)] = np.nan
+    result[both_zero] = 0.0
+    return result
 
 
 # ---------------------------------------------------------------------------

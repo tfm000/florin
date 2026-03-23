@@ -25,6 +25,7 @@ import MonitorAsset from './pages/MonitorAsset'
 import DataDownload from './pages/DataDownload'
 import MarketNews from './pages/MarketNews'
 import Portfolio from './pages/Portfolio'
+import PortfolioDetail from './pages/PortfolioDetail'
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard' },
@@ -134,6 +135,7 @@ export default function App() {
             <Route path="/account" element={<Account />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/portfolio/:portfolioId" element={<PortfolioDetail />} />
             <Route path="/data" element={<DataDownload />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

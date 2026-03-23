@@ -261,6 +261,119 @@ class AlpacaProvider(MarketDataProvider):
             logger.exception("Failed to fetch historical bars for %s", ticker)
             return []
 
+    async def get_intraday_bars(
+        self,
+        tickers: list[str],
+        timeframe: str = "5Min",
+        start: str = "",
+        end: str = "",
+    ) -> dict[str, list[dict]]:
+        """Fetch intraday bars for multiple tickers.
+
+        Args:
+            tickers: List of ticker symbols.
+            timeframe: Alpaca timeframe string (1Min, 5Min, 15Min, 30Min, 1Hour).
+            start: ISO datetime string for range start (defaults to today's open).
+            end: ISO datetime string for range end (defaults to now).
+
+        Returns:
+            Dict of ticker -> list of {timestamp, open, high, low, close, volume} dicts.
+        """
+        if not self._http:
+            raise RuntimeError("Alpaca provider not connected")
+
+        if not start:
+            from core.market_hours import US_EASTERN, MARKET_OPEN
+            from datetime import datetime as dt, date
+            today_open = dt.combine(date.today(), MARKET_OPEN, tzinfo=US_EASTERN)
+            start = today_open.isoformat()
+
+        result: dict[str, list[dict]] = {}
+        try:
+            # Alpaca multi-bar endpoint
+            resp = await self._http.get(
+                "/v2/stocks/bars",
+                params={
+                    "symbols": ",".join(tickers),
+                    "timeframe": timeframe,
+                    "start": start,
+                    **({"end": end} if end else {}),
+                    "feed": self._settings.alpaca_feed.value,
+                    "limit": 10000,
+                    "sort": "asc",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            for ticker, bars in data.get("bars", {}).items():
+                result[ticker] = [
+                    {
+                        "timestamp": bar["t"],
+                        "open": bar["o"],
+                        "high": bar["h"],
+                        "low": bar["l"],
+                        "close": bar["c"],
+                        "volume": bar["v"],
+                    }
+                    for bar in bars
+                ]
+
+        except Exception:
+            logger.exception("Failed to fetch intraday bars")
+
+        return result
+
+    async def get_intraday_quotes(
+        self,
+        ticker: str,
+        start: str = "",
+        end: str = "",
+        limit: int = 10000,
+    ) -> list[dict]:
+        """Fetch intraday bid/ask quotes for a single ticker.
+
+        Returns list of {timestamp, bid, ask, bid_size, ask_size} dicts.
+        """
+        if not self._http:
+            raise RuntimeError("Alpaca provider not connected")
+
+        if not start:
+            from core.market_hours import US_EASTERN, MARKET_OPEN
+            from datetime import datetime as dt, date
+            today_open = dt.combine(date.today(), MARKET_OPEN, tzinfo=US_EASTERN)
+            start = today_open.isoformat()
+
+        try:
+            resp = await self._http.get(
+                f"/v2/stocks/{ticker}/quotes",
+                params={
+                    "start": start,
+                    **({"end": end} if end else {}),
+                    "feed": self._settings.alpaca_feed.value,
+                    "limit": limit,
+                    "sort": "asc",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            return [
+                {
+                    "timestamp": q["t"],
+                    "bid": q.get("bp", 0),
+                    "ask": q.get("ap", 0),
+                    "bid_size": q.get("bs", 0),
+                    "ask_size": q.get("as", 0),
+                }
+                for q in data.get("quotes", [])
+                if q.get("bp", 0) > 0 or q.get("ap", 0) > 0
+            ]
+
+        except Exception:
+            logger.exception("Failed to fetch intraday quotes for %s", ticker)
+            return []
+
     async def get_instruments(self) -> list[StockInfo]:
         """
         Not applicable for Alpaca — use get_tradeable_assets() for universe discovery.

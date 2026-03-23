@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     # --- Polygon ---
     polygon_api_key: str = ""
 
+    # --- OpenFIGI ---
+    openfigi_api_key: str = ""
+
     # --- Reddit ---
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
