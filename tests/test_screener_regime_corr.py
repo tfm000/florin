@@ -16,17 +16,20 @@ from db.database import Database
 
 
 def _generate_history(days: int, start_price: float = 100.0, seed: int = 42) -> list[dict]:
-    """Generate synthetic OHLCV history with mild random-walk drift."""
+    """Generate synthetic OHLCV history ending today."""
+    from datetime import date, timedelta
     rng = np.random.default_rng(seed)
     history = []
     price = start_price
+    start = date.today() - timedelta(days=days - 1)
     for i in range(days):
         ret = rng.normal(0.0005, 0.015)
         price *= 1 + ret
         high = price * (1 + abs(rng.normal(0, 0.005)))
         low = price * (1 - abs(rng.normal(0, 0.005)))
+        d = start + timedelta(days=i)
         history.append({
-            "date": f"2024-{1 + i // 28:02d}-{1 + i % 28:02d}",
+            "date": d.isoformat(),
             "open": round(price * 0.999, 2),
             "high": round(high, 2),
             "low": round(low, 2),

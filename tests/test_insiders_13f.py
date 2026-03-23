@@ -192,6 +192,173 @@ class TestCusipCachePersistence:
         assert _cusip_cache["TESTCUSIP"] == "NEW"
 
 
+class TestParseXmlFigi:
+    """Test that FIGI tags are extracted from 13F XML when present."""
+
+    def test_parse_xml_with_figi(self):
+        from data.sec_13f_provider import _parse_13f_xml
+        xml = """<?xml version="1.0"?>
+        <informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
+          <infoTable>
+            <nameOfIssuer>APPLE INC</nameOfIssuer>
+            <titleOfClass>COM</titleOfClass>
+            <cusip>037833100</cusip>
+            <figi>BBG000B9XRY4</figi>
+            <value>150000000</value>
+            <shrsOrPrnAmt><sshPrnamt>905560</sshPrnamt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>
+          </infoTable>
+        </informationTable>"""
+        holdings = _parse_13f_xml(xml)
+        assert len(holdings) == 1
+        assert holdings[0]["cusip"] == "037833100"
+        assert holdings[0]["figi"] == "BBG000B9XRY4"
+        assert holdings[0]["name"] == "APPLE INC"
+        assert holdings[0]["shares"] == 905560
+        assert holdings[0]["value"] == 150000000
+
+    def test_parse_xml_without_figi(self):
+        from data.sec_13f_provider import _parse_13f_xml
+        xml = """<?xml version="1.0"?>
+        <informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
+          <infoTable>
+            <nameOfIssuer>TESLA INC</nameOfIssuer>
+            <titleOfClass>COM</titleOfClass>
+            <cusip>88160R101</cusip>
+            <value>50000000</value>
+            <shrsOrPrnAmt><sshPrnamt>200000</sshPrnamt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>
+          </infoTable>
+        </informationTable>"""
+        holdings = _parse_13f_xml(xml)
+        assert len(holdings) == 1
+        assert "figi" not in holdings[0]  # no figi tag in XML
+
+
+class TestSecNameMapping:
+    """Test SEC company_tickers.json name-based CUSIP mapping."""
+
+    @pytest.mark.asyncio
+    async def test_name_matching_resolves_cusips(self):
+        from data.sec_13f_provider import (
+            _cusip_cache, _name_to_ticker, map_cusips_to_tickers,
+        )
+        _cusip_cache.clear()
+        # Simulate loaded SEC name map
+        _name_to_ticker.clear()
+        _name_to_ticker["APPLE INC"] = "AAPL"
+        _name_to_ticker["MICROSOFT CORP"] = "MSFT"
+
+        holdings = [
+            {"cusip": "037833100", "name": "APPLE INC"},
+            {"cusip": "594918104", "name": "MICROSOFT CORP"},
+            {"cusip": "G1890L107", "name": "UNKNOWN FOREIGN CO"},
+        ]
+        cusips = [h["cusip"] for h in holdings]
+        result = await map_cusips_to_tickers(cusips, holdings=holdings)
+
+        assert result["037833100"] == "AAPL"
+        assert result["594918104"] == "MSFT"
+        # Foreign CUSIP not in name map, and OpenFIGI not called in unit test
+        assert result["G1890L107"] == ""
+
+        # Verify they got cached
+        assert _cusip_cache["037833100"] == "AAPL"
+        assert _cusip_cache["594918104"] == "MSFT"
+
+        _name_to_ticker.clear()
+        _cusip_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_name_matching(self):
+        from data.sec_13f_provider import _cusip_cache, map_cusips_to_tickers
+        _cusip_cache.clear()
+        _cusip_cache["CACHED123"] = "CACHED"
+
+        result = await map_cusips_to_tickers(["CACHED123"])
+        assert result["CACHED123"] == "CACHED"
+        _cusip_cache.clear()
+
+
+class TestOpenFIGICachePreFilter:
+    """Test that _openfigi_lookup skips CUSIPs already in cache."""
+
+    @pytest.mark.asyncio
+    async def test_cached_cusips_skip_api_call(self):
+        from data.sec_13f_provider import _cusip_cache, _openfigi_lookup
+        _cusip_cache.clear()
+        _cusip_cache["CACHED01"] = "AAPL"
+        _cusip_cache["CACHED02"] = "MSFT"
+
+        # All CUSIPs are cached — should return immediately without API call
+        jobs = [
+            {"idType": "ID_CUSIP", "idValue": "CACHED01"},
+            {"idType": "ID_CUSIP", "idValue": "CACHED02"},
+        ]
+        result = await _openfigi_lookup(jobs, ["CACHED01", "CACHED02"])
+        assert result["CACHED01"] == "AAPL"
+        assert result["CACHED02"] == "MSFT"
+
+        _cusip_cache.clear()
+
+
+class TestBulkCusipPersistence:
+    """Test that bulk upsert persists multiple CUSIP mappings in one operation."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_persist_multiple_mappings(self, app):
+        from dashboard.deps import get_db
+        from data.sec_13f_provider import (
+            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+        )
+        db = get_db()
+
+        import data.sec_13f_provider as provider
+        provider._db_ref = db
+        _cusip_cache.clear()
+
+        # Persist batch of mappings
+        mappings = {
+            "BULK001": "AAPL",
+            "BULK002": "MSFT",
+            "BULK003": "GOOG",
+        }
+        await _persist_cusip_mappings(mappings)
+
+        # Verify all were saved to DB
+        _cusip_cache.clear()
+        await load_cusip_cache(db)
+        assert _cusip_cache["BULK001"] == "AAPL"
+        assert _cusip_cache["BULK002"] == "MSFT"
+        assert _cusip_cache["BULK003"] == "GOOG"
+
+        _cusip_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_bulk_upsert_updates_existing(self, app):
+        from dashboard.deps import get_db
+        from data.sec_13f_provider import (
+            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+        )
+        db = get_db()
+
+        import data.sec_13f_provider as provider
+        provider._db_ref = db
+
+        # Initial persist
+        await _persist_cusip_mappings({"UPSERT01": "OLD_TICKER"})
+        _cusip_cache.clear()
+        await load_cusip_cache(db)
+        assert _cusip_cache["UPSERT01"] == "OLD_TICKER"
+
+        # Upsert with new ticker
+        await _persist_cusip_mappings({"UPSERT01": "NEW_TICKER", "UPSERT02": "MSFT"})
+        _cusip_cache.clear()
+        await load_cusip_cache(db)
+        assert _cusip_cache["UPSERT01"] == "NEW_TICKER"
+        assert _cusip_cache["UPSERT02"] == "MSFT"
+
+        _cusip_cache.clear()
+
+
 class TestSearch13FFilers:
     @pytest.mark.asyncio
     @patch(f"{_13F_MODULE}.search_filers", new_callable=AsyncMock)

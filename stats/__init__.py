@@ -30,6 +30,7 @@ from stats.core import (
     compute_full_stats,
 )
 from stats.parametric import ParametricStats, fit_student_t
+from stats.regime import fit_markov_regimes
 
 __all__ = [
     "ReturnStats",
@@ -56,4 +57,5 @@ __all__ = [
     "compute_risk_adjusted",
     "compute_full_stats",
     "fit_student_t",
+    "fit_markov_regimes",
 ]

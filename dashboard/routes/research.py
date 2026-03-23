@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from core.exceptions import ExternalServiceError, NotFoundError, ServiceUnavailableError
-from dashboard.dependencies import get_settings_dep, get_yfinance_dep
+from dashboard.dependencies import get_data_provider_dep, get_settings_dep, get_yfinance_dep
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,18 @@ class HistoryPoint(BaseModel):
     low: float
     close: float
     volume: int
+
+
+class QuotePoint(BaseModel):
+    """Price bar with optional bid/ask data."""
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    bid: float | None = None
+    ask: float | None = None
 
 
 class NewsItem(BaseModel):
@@ -253,6 +265,160 @@ async def get_asset_history(
     else:
         history = await yf.get_history(ticker.upper(), period=period, interval=interval)
     return [HistoryPoint(**h) for h in history]
+
+
+def _fill_bid_ask(points: list[dict]) -> list[dict]:
+    """Fill gaps in bid/ask data.
+
+    Strategy:
+    - If one of bid/ask is valid and the other is 0/None, infer from price and spread.
+    - If both are missing, forward-fill from the last valid spread.
+    """
+    last_spread: float | None = None
+
+    for pt in points:
+        bid = pt.get("bid") or 0
+        ask = pt.get("ask") or 0
+        close = pt.get("close", 0)
+
+        if bid > 0 and ask > 0:
+            last_spread = ask - bid
+            pt["bid"] = bid
+            pt["ask"] = ask
+        elif bid > 0 and ask <= 0 and close > 0:
+            # Infer ask from bid + last spread, or mirror around close
+            if last_spread is not None:
+                pt["ask"] = round(bid + last_spread, 4)
+            else:
+                pt["ask"] = round(close + (close - bid), 4)
+            pt["bid"] = bid
+        elif ask > 0 and bid <= 0 and close > 0:
+            if last_spread is not None:
+                pt["bid"] = round(ask - last_spread, 4)
+            else:
+                pt["bid"] = round(close - (ask - close), 4)
+            pt["ask"] = ask
+        elif close > 0 and last_spread is not None:
+            # Both missing — use close +/- half spread
+            half = last_spread / 2
+            pt["bid"] = round(close - half, 4)
+            pt["ask"] = round(close + half, 4)
+        else:
+            pt["bid"] = None
+            pt["ask"] = None
+
+    return points
+
+
+@router.get("/research/asset/{ticker}/quotes", response_model=list[QuotePoint])
+async def get_asset_quotes(
+    ticker: str,
+    period: str = Query(default="1y"),
+    interval: str = Query(default="1d"),
+    start: str = Query(default=""),
+    end: str = Query(default=""),
+    yf=Depends(get_yfinance_dep),
+):
+    """OHLCV + bid/ask data (interday via yfinance, current bid/ask snapshot)."""
+    tick = ticker.upper()
+    if start and end:
+        history = await yf.get_history(tick, start=start, end=end, interval=interval)
+    else:
+        history = await yf.get_history(tick, period=period, interval=interval)
+
+    if not history:
+        return []
+
+    # Get current bid/ask from yfinance info
+    info = await yf.get_info(tick)
+    current_bid = info.get("bid") or 0
+    current_ask = info.get("ask") or 0
+
+    # Build points — only the last bar gets the current bid/ask
+    points = []
+    for i, h in enumerate(history):
+        pt = {**h}
+        if i == len(history) - 1 and current_bid > 0 and current_ask > 0:
+            pt["bid"] = current_bid
+            pt["ask"] = current_ask
+        else:
+            pt["bid"] = None
+            pt["ask"] = None
+        points.append(pt)
+
+    return [QuotePoint(**p) for p in points]
+
+
+@router.get("/research/asset/{ticker}/quotes/intraday", response_model=list[QuotePoint])
+async def get_asset_intraday_quotes(
+    ticker: str,
+    interval: str = Query(default="5Min", pattern="^(1Min|5Min|15Min|30Min|1Hour)$"),
+    data_provider=Depends(get_data_provider_dep),
+):
+    """Intraday OHLCV + bid/ask data from Alpaca."""
+    tick = ticker.upper()
+
+    # Fetch bars and quotes concurrently
+    import asyncio
+    bars_task = data_provider.get_intraday_bars([tick], timeframe=interval)
+    quotes_task = data_provider.get_intraday_quotes(tick)
+    bars_result, raw_quotes = await asyncio.gather(bars_task, quotes_task)
+
+    bars = bars_result.get(tick, [])
+    if not bars:
+        return []
+
+    # Build a lookup: for each bar timestamp, find the closest quote
+    # by bucketing quotes into bar intervals
+    from datetime import datetime, timedelta
+
+    # Parse bar timestamps
+    _INTERVAL_SECONDS = {
+        "1Min": 60, "5Min": 300, "15Min": 900, "30Min": 1800, "1Hour": 3600,
+    }
+    interval_secs = _INTERVAL_SECONDS.get(interval, 300)
+
+    # Build quote lookup keyed by bar timestamp
+    quote_by_bar: dict[str, dict] = {}
+    for q in raw_quotes:
+        qt = datetime.fromisoformat(q["timestamp"].replace("Z", "+00:00"))
+        # Floor to bar boundary
+        epoch = int(qt.timestamp())
+        bar_epoch = epoch - (epoch % interval_secs)
+        bar_key = datetime.fromtimestamp(bar_epoch, tz=qt.tzinfo).isoformat()
+
+        # Keep the latest quote per bar
+        if bar_key not in quote_by_bar or q["timestamp"] > quote_by_bar[bar_key]["timestamp"]:
+            quote_by_bar[bar_key] = q
+
+    # Merge bars + quotes
+    points = []
+    for bar in bars:
+        ts = bar["timestamp"]
+        # Try exact match, then normalised key
+        q = quote_by_bar.get(ts, {})
+        if not q:
+            bt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            epoch = int(bt.timestamp())
+            bar_epoch = epoch - (epoch % interval_secs)
+            norm_key = datetime.fromtimestamp(bar_epoch, tz=bt.tzinfo).isoformat()
+            q = quote_by_bar.get(norm_key, {})
+
+        points.append({
+            "date": ts,
+            "open": bar["open"],
+            "high": bar["high"],
+            "low": bar["low"],
+            "close": bar["close"],
+            "volume": bar["volume"],
+            "bid": q.get("bid", 0) if q.get("bid", 0) > 0 else None,
+            "ask": q.get("ask", 0) if q.get("ask", 0) > 0 else None,
+        })
+
+    # Fill gaps
+    _fill_bid_ask(points)
+
+    return [QuotePoint(**p) for p in points]
 
 
 @router.post("/research/asset/{ticker}/analyse", response_model=LLMAnalysisResponse)

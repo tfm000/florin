@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 import SearchBar from '../components/SearchBar'
 import ExportButton from '../components/ExportButton'
@@ -7,6 +8,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 const PIE_COLORS = ['#6366F1', '#22C55E', '#F59E0B', '#EF4444', '#EC4899', '#14B8A6', '#8B5CF6', '#F97316']
 
 export default function Portfolio() {
+  const navigate = useNavigate()
   const { data: portfolios, refetch } = useApi('/portfolios')
   const [selectedId, setSelectedId] = useState('')
   const [newName, setNewName] = useState('')
@@ -85,7 +87,7 @@ export default function Portfolio() {
           <div className="space-y-2">
             {/* Ungrouped portfolios first */}
             {(portfolios || []).filter(p => !p.group).map(p => (
-              <div key={p.id} onClick={() => { setSelectedId(p.id); setEditHoldings(null) }}
+              <div key={p.id} onClick={() => navigate(`/portfolio/${p.id}`)}
                 className={`p-2 rounded cursor-pointer text-sm ${
                   selectedId === p.id ? 'bg-indigo-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'
                 }`}>
@@ -98,7 +100,7 @@ export default function Portfolio() {
               <div key={group}>
                 <p className="text-xs text-gray-500 uppercase font-semibold mt-3 mb-1">{group}</p>
                 {(portfolios || []).filter(p => p.group === group).map(p => (
-                  <div key={p.id} onClick={() => { setSelectedId(p.id); setEditHoldings(null) }}
+                  <div key={p.id} onClick={() => navigate(`/portfolio/${p.id}`)}
                     className={`p-2 rounded cursor-pointer text-sm ${
                       selectedId === p.id ? 'bg-indigo-600 text-white' : 'bg-gray-900 text-gray-300 hover:bg-gray-700'
                     }`}>

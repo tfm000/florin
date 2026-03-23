@@ -400,3 +400,74 @@ class TestIVSpread:
         assert len(data["term_structure"]) == 2
         assert data["term_structure"][0]["expiry"] == "2024-03-15"
         assert len(data["available_expiries"]) == 3
+
+
+class TestQuotesEndpoint:
+    @pytest.mark.asyncio
+    async def test_quotes_returns_ohlcv_with_bid_ask(self, client):
+        """Quotes endpoint returns history with bid/ask on the last bar."""
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+        yf_mock.get_info.return_value = {
+            "ticker": "AAPL", "bid": 191.0, "ask": 192.0, "current_price": 191.5,
+        }
+        resp = await client.get("/api/research/asset/AAPL/quotes?period=1y")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        # Last bar should have bid/ask
+        assert data[-1]["bid"] == 191.0
+        assert data[-1]["ask"] == 192.0
+        # Earlier bars should have null bid/ask
+        assert data[0]["bid"] is None
+        assert data[0]["ask"] is None
+
+    @pytest.mark.asyncio
+    async def test_quotes_without_bid_ask_returns_nulls(self, client):
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+        yf_mock.get_info.return_value = {"ticker": "AAPL", "bid": None, "ask": None}
+        resp = await client.get("/api/research/asset/AAPL/quotes?period=1y")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[-1]["bid"] is None
+        assert data[-1]["ask"] is None
+
+
+class TestFillBidAsk:
+    def test_fill_both_valid(self):
+        from dashboard.routes.research import _fill_bid_ask
+        points = [{"close": 100, "bid": 99.5, "ask": 100.5}]
+        result = _fill_bid_ask(points)
+        assert result[0]["bid"] == 99.5
+        assert result[0]["ask"] == 100.5
+
+    def test_fill_missing_ask_uses_spread(self):
+        from dashboard.routes.research import _fill_bid_ask
+        points = [
+            {"close": 100, "bid": 99.5, "ask": 100.5},
+            {"close": 101, "bid": 100.5, "ask": 0},
+        ]
+        result = _fill_bid_ask(points)
+        # Last spread was 1.0, so ask = 100.5 + 1.0 = 101.5
+        assert result[1]["ask"] == 101.5
+
+    def test_fill_both_missing_uses_forward_fill(self):
+        from dashboard.routes.research import _fill_bid_ask
+        points = [
+            {"close": 100, "bid": 99.5, "ask": 100.5},
+            {"close": 101, "bid": 0, "ask": 0},
+        ]
+        result = _fill_bid_ask(points)
+        # Last spread was 1.0, so bid = 101 - 0.5, ask = 101 + 0.5
+        assert result[1]["bid"] == 100.5
+        assert result[1]["ask"] == 101.5
+
+    def test_fill_no_prior_spread_mirrors_around_close(self):
+        from dashboard.routes.research import _fill_bid_ask
+        points = [
+            {"close": 100, "bid": 99.0, "ask": 0},
+        ]
+        result = _fill_bid_ask(points)
+        # No prior spread, mirror: ask = close + (close - bid) = 101
+        assert result[0]["ask"] == 101.0

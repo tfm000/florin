@@ -216,6 +216,7 @@ class PortfolioORM(Base):
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     name: Mapped[str] = mapped_column(String(200), unique=True)
     group: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default=None)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
@@ -321,3 +322,69 @@ class CusipTickerORM(Base):
     cusip: Mapped[str] = mapped_column(String(12), primary_key=True)
     ticker: Mapped[str] = mapped_column(String(20))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Portfolio Summary Cache
+# =============================================================================
+
+class PortfolioCacheMetaORM(Base):
+    """One row per portfolio: cached analytics + aggregated fundamentals."""
+    __tablename__ = "portfolio_cache_meta"
+
+    portfolio_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    start_date: Mapped[str] = mapped_column(String(10))   # YYYY-MM-DD
+    end_date: Mapped[str] = mapped_column(String(10))     # YYYY-MM-DD
+
+    # Full-range analytics
+    total_return: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    annualized_vol: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sharpe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sortino: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_drawdown: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    var_95: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    cvar_95: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Weighted fundamentals
+    weighted_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    weighted_forward_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    weighted_dividend_yield: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    weighted_beta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Average fundamentals
+    avg_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    avg_forward_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    avg_dividend_yield: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    avg_beta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Max fundamentals
+    max_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_forward_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_dividend_yield: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_beta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Min fundamentals
+    min_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    min_forward_pe: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    min_dividend_yield: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    min_beta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    holdings_count: Mapped[int] = mapped_column(Integer, default=0)
+    priceable_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class PortfolioCacheReturnORM(Base):
+    """Daily portfolio return time series (prorated and non-prorated variants)."""
+    __tablename__ = "portfolio_cache_returns"
+    __table_args__ = (
+        # Fast range queries: WHERE portfolio_id=? AND prorated=? AND date >= ?
+        {"sqlite_autoincrement": False},
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    date: Mapped[str] = mapped_column(String(10))          # YYYY-MM-DD
+    cumulative_return: Mapped[float] = mapped_column(Float)
+    prorated: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -18,11 +18,12 @@ const FIELDS = [
   { key: 'low', label: 'Low' },
   { key: 'close', label: 'Close' },
   { key: 'volume', label: 'Volume' },
+  { key: 'bid', label: 'Bid' },
+  { key: 'ask', label: 'Ask' },
 ]
 
 const PROVIDERS = [
-  { value: 'yfinance', label: 'yfinance (free)' },
-  { value: 'alpaca', label: 'Alpaca (live)' },
+  { value: 'yfinance', label: 'Yahoo Finance' },
 ]
 
 export default function DataDownload() {
@@ -36,6 +37,7 @@ export default function DataDownload() {
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
   const [progress, setProgress] = useState('')
+  const [error, setError] = useState('')
 
   const addTicker = (item) => {
     const sym = item.ticker.toUpperCase()
@@ -56,9 +58,12 @@ export default function DataDownload() {
   const fetchData = async () => {
     if (tickers.length === 0) return
     setLoading(true)
+    setPreview(null)
+    setError('')
     setProgress('Fetching...')
 
     const allData = []
+    const errors = []
     for (let i = 0; i < tickers.length; i++) {
       const sym = tickers[i]
       setProgress(`Fetching ${sym} (${i + 1}/${tickers.length})...`)
@@ -68,22 +73,38 @@ export default function DataDownload() {
           ? `start=${customStart}&end=${customEnd}&interval=${frequency}`
           : `period=${period}&interval=${frequency}`
 
-        const resp = await fetch(`/api/research/asset/${sym}/history?${params}`)
-        if (resp.ok) {
-          const history = await resp.json()
-          for (const h of history) {
-            const row = { ticker: sym, date: h.date }
-            for (const f of fields) {
-              row[f] = h[f]
-            }
-            allData.push(row)
-          }
+        // Use quotes endpoint when bid/ask fields are selected
+        const needsBidAsk = fields.has('bid') || fields.has('ask')
+        const endpoint = needsBidAsk
+          ? `/api/research/asset/${sym}/quotes?${params}`
+          : `/api/research/asset/${sym}/history?${params}`
+        const resp = await fetch(endpoint)
+        if (!resp.ok) {
+          errors.push(`${sym}: HTTP ${resp.status}`)
+          continue
         }
-      } catch { /* skip */ }
+        const history = await resp.json()
+        if (!history || history.length === 0) {
+          errors.push(`${sym}: no data returned`)
+          continue
+        }
+        for (const h of history) {
+          const row = { ticker: sym, date: h.date }
+          for (const f of fields) {
+            row[f] = h[f] ?? ''
+          }
+          allData.push(row)
+        }
+      } catch (err) {
+        errors.push(`${sym}: ${err.message || 'fetch failed'}`)
+      }
     }
 
     setPreview(allData)
-    setProgress(`Done — ${allData.length} rows`)
+    if (errors.length > 0) {
+      setError(errors.join('; '))
+    }
+    setProgress(allData.length > 0 ? `Done — ${allData.length} rows` : '')
     setLoading(false)
   }
 
@@ -115,15 +136,17 @@ export default function DataDownload() {
         <div>
           <input
             type="text"
-            placeholder="Or paste tickers: AAPL, MSFT, GOOG..."
+            placeholder="Type or paste tickers (e.g. AAPL, MSFT, GOOG) and press Enter"
             onKeyDown={e => {
               if (e.key === 'Enter') {
                 const syms = e.target.value.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-                setTickers(prev => [...new Set([...prev, ...syms])])
-                e.target.value = ''
+                if (syms.length > 0) {
+                  setTickers(prev => [...new Set([...prev, ...syms])])
+                  e.target.value = ''
+                }
               }
             }}
-            className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-500"
+            className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         </div>
 
@@ -172,23 +195,29 @@ export default function DataDownload() {
         {/* Actions */}
         <div className="flex items-center gap-3">
           <button onClick={fetchData} disabled={loading || tickers.length === 0}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 text-white text-sm rounded-lg">
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-sm rounded-lg">
             {loading ? progress : 'Fetch Data'}
           </button>
+          {tickers.length === 0 && !loading && (
+            <span className="text-gray-500 text-xs">Add tickers above to enable download</span>
+          )}
           {preview && preview.length > 0 && (
             <>
               <button onClick={() => handleExport('csv')}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg">
+                className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white text-sm rounded-lg font-medium">
                 Download CSV
               </button>
               <button onClick={() => handleExport('json')}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg">
+                className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white text-sm rounded-lg font-medium">
                 Download JSON
               </button>
               <span className="text-gray-400 text-xs">{preview.length} rows</span>
             </>
           )}
         </div>
+        {error && (
+          <p className="text-red-400 text-xs">{error}</p>
+        )}
       </div>
 
       {/* Preview */}

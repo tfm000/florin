@@ -20,20 +20,54 @@ from core.models import StockInfo
 
 logger = logging.getLogger(__name__)
 
-# TTL cache implementation
+# TTL cache implementation — market-aware.
+# During market hours: use short TTLs for fresh data.
+# When market is closed: cache until next market open (data won't change).
 _cache: dict[str, tuple[float, Any]] = {}
 
-INFO_TTL = 300  # 5 minutes (asset info, IV spreads)
+# TTLs used during market hours (seconds)
+INFO_TTL = 3600  # 1 hour (asset info — sector/PE/beta change slowly)
 MACRO_TTL = 60  # 1 minute (indices, commodities, crypto, FX)
-HISTORY_TTL = 3600  # 1 hour
+HISTORY_TTL = 3600  # 1 hour (daily OHLCV doesn't change intraday)
 SEARCH_TTL = 300  # 5 minutes
 
 
-def _get_cached(key: str, ttl: float) -> Any | None:
-    """Return cached value if still valid, else None."""
+def _normalize_dividend_yield(raw: float | None) -> float | None:
+    """Normalize dividend yield to decimal form (0.032 = 3.2%).
+
+    yfinance usually returns decimals but some tickers return percentages.
+    """
+    if raw is None:
+        return None
+    if raw > 1.0:
+        return raw / 100
+    if raw < 0:
+        return None
+    return raw
+
+
+def _effective_ttl(ttl: float) -> float:
+    """Return the TTL to use: short during market hours, until next open otherwise."""
+    from core.market_hours import is_market_open, next_market_open
+    if is_market_open():
+        return ttl
+    # Market closed — cache until next open
+    from datetime import UTC, datetime
+    now = datetime.now(UTC)
+    seconds_until_open = (next_market_open(now) - now).total_seconds()
+    return max(seconds_until_open, ttl)
+
+
+def _get_cached(key: str, ttl: float, market_aware: bool = True) -> Any | None:
+    """Return cached value if still valid, else None.
+
+    market_aware=True: extend TTL until next market open when market is closed.
+    market_aware=False: always use the raw TTL (for 24/7 assets like crypto/FX/rates).
+    """
     if key in _cache:
         ts, val = _cache[key]
-        if time.time() - ts < ttl:
+        effective = _effective_ttl(ttl) if market_aware else ttl
+        if time.time() - ts < effective:
             return val
         del _cache[key]
     return None
@@ -43,8 +77,291 @@ def _set_cached(key: str, val: Any) -> None:
     _cache[key] = (time.time(), val)
 
 
+# Periods that can be served from cached 5y data (subset of 5 years)
+_SLICEABLE_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y"}
+
+# Map yfinance period strings to approximate day counts for date slicing
+_PERIOD_DAYS = {
+    "1d": 1, "5d": 5, "1mo": 31, "3mo": 93,
+    "6mo": 183, "1y": 366, "2y": 731, "3y": 1095, "5y": 1827,
+}
+
+
+def _period_cutoff(period: str) -> str | None:
+    """Return the ISO date string N days ago for a given period, or None if unknown."""
+    from datetime import date, timedelta
+    days = _PERIOD_DAYS.get(period)
+    if days is None:
+        return None
+    return (date.today() - timedelta(days=days)).isoformat()
+
+
+def _slice_history(records: list[dict], start: str = "", end: str = "") -> list[dict]:
+    """Filter history records to [start, end] by date prefix (YYYY-MM-DD)."""
+    if not records:
+        return records
+    result = records
+    if start:
+        result = [r for r in result if r["date"][:10] >= start]
+    if end:
+        result = [r for r in result if r["date"][:10] <= end]
+    return result
+
+
+def _try_get_wide_cache(ticker: str, interval: str) -> list[dict] | None:
+    """Try to find cached max or 5y data for a ticker. Returns records or None."""
+    for wide_period in ("max", "5y"):
+        key = f"history:{ticker}:{wide_period}::{interval}"
+        cached = _get_cached(key, HISTORY_TTL)
+        if cached is not None:
+            return cached
+    return None
+
+
 class YFinanceProvider:
     """Asset data via Yahoo Finance."""
+
+    # Semaphore for throttling concurrent per-ticker calls (e.g. get_info).
+    _info_semaphore = asyncio.Semaphore(10)
+
+    async def get_histories_batch(
+        self,
+        tickers: list[str],
+        period: str = "1y",
+        interval: str = "1d",
+        start: str = "",
+        end: str = "",
+        chunk_size: int = 500,
+    ) -> dict[str, list[dict]]:
+        """Batch-fetch price histories using yf.download() (single HTTP request per chunk).
+
+        Fetches 5y of data and caches it, then slices to the requested period.
+        Subsequent requests for any period <= 5y are served from cache without
+        new API calls. If ``max`` is requested, it is fetched and cached separately
+        and supersedes 5y for future lookups.
+
+        Returns a dict mapping ticker -> list of OHLCV dicts, same format as get_history().
+        Populates the per-ticker cache so subsequent get_history() calls benefit.
+
+        Args:
+            tickers: List of ticker symbols.
+            period: yfinance period string (e.g. "1y", "6m", "max").
+            interval: Bar interval (default "1d").
+            start: ISO date string for custom range start.
+            end: ISO date string for custom range end.
+            chunk_size: Max tickers per yf.download() call (default 500).
+        """
+        if not tickers:
+            return {}
+
+        # Determine if we can use the 5y-fetch-and-slice strategy
+        cutoff_5y = _period_cutoff("5y")
+        can_slice = interval == "1d" and (
+            (not start and not end and period in _SLICEABLE_PERIODS)
+            or (start and end and cutoff_5y and start >= cutoff_5y)
+        )
+
+        # Compute the slice bounds
+        if can_slice:
+            if start and end:
+                slice_start, slice_end = start, end
+            else:
+                slice_start = _period_cutoff(period) or ""
+                slice_end = ""
+            fetch_period = "5y"
+        elif period == "max":
+            fetch_period = "max"
+            slice_start, slice_end = start, end
+        else:
+            # Non-daily interval or custom range outside 5y — fetch as-is
+            fetch_period = period
+            slice_start, slice_end = start, end
+
+        result: dict[str, list[dict]] = {}
+
+        # Process in chunks
+        for i in range(0, len(tickers), chunk_size):
+            chunk = tickers[i : i + chunk_size]
+
+            uncached: list[str] = []
+            for t in chunk:
+                # Try wide cache (max → 5y) first, then exact match
+                wide = _try_get_wide_cache(t, interval)
+                if wide is not None:
+                    result[t] = _slice_history(wide, slice_start, slice_end)
+                    continue
+
+                # Check exact cache key
+                ck = f"history:{t}:{start or period}:{end}:{interval}"
+                cached = _get_cached(ck, HISTORY_TTL)
+                if cached is not None:
+                    result[t] = cached
+                    continue
+
+                uncached.append(t)
+
+            if not uncached:
+                continue
+
+            # Download the wide period (5y or max) for cache benefit
+            if can_slice or period == "max":
+                chunk_result = await asyncio.to_thread(
+                    self._download_chunk, uncached, fetch_period, interval, "", "",
+                )
+            else:
+                chunk_result = await asyncio.to_thread(
+                    self._download_chunk, uncached, period, interval, start, end,
+                )
+
+            # Cache wide data and slice for result
+            for t in uncached:
+                records = chunk_result.get(t, [])
+                if can_slice or period == "max":
+                    # Cache the wide (5y or max) data
+                    _set_cached(f"history:{t}:{fetch_period}::{interval}", records)
+                    # Slice to requested range for the return value
+                    result[t] = _slice_history(records, slice_start, slice_end)
+                else:
+                    ck = f"history:{t}:{start or period}:{end}:{interval}"
+                    _set_cached(ck, records)
+                    result[t] = records
+
+        return result
+
+    @staticmethod
+    def _download_chunk(
+        tickers: list[str],
+        period: str,
+        interval: str,
+        start: str,
+        end: str,
+    ) -> dict[str, list[dict]]:
+        """Synchronous yf.download() for a chunk of tickers.
+
+        Handles both single-ticker (flat columns) and multi-ticker (MultiIndex) DataFrames.
+        """
+        import pandas as pd
+
+        try:
+            kwargs: dict[str, Any] = {
+                "tickers": tickers,
+                "interval": interval,
+                "auto_adjust": True,
+                "progress": False,
+                "threads": True,
+            }
+            if start and end:
+                kwargs["start"] = start
+                kwargs["end"] = end
+            else:
+                kwargs["period"] = period
+
+            df = yf.download(**kwargs)
+
+            if df is None or df.empty:
+                logger.warning("yf.download returned empty for %d tickers", len(tickers))
+                return {t: [] for t in tickers}
+
+            result: dict[str, list[dict]] = {}
+
+            if isinstance(df.columns, pd.MultiIndex):
+                # Multi-ticker: columns are (Price, Ticker)
+                available_tickers = df.columns.get_level_values("Ticker").unique().tolist()
+                for t in tickers:
+                    if t not in available_tickers:
+                        logger.debug("yf.download: no data for %s (delisted/invalid)", t)
+                        result[t] = []
+                        continue
+                    sub = df.xs(t, level="Ticker", axis=1)
+                    result[t] = YFinanceProvider._df_to_records(sub)
+            else:
+                # Single ticker: flat columns
+                t = tickers[0]
+                result[t] = YFinanceProvider._df_to_records(df)
+
+            # Ensure all requested tickers have an entry
+            for t in tickers:
+                if t not in result:
+                    result[t] = []
+
+            return result
+
+        except TypeError as e:
+            if "tz-naive" in str(e) and len(tickers) > 1:
+                # yfinance bug: mixed tz-aware/tz-naive DatetimeIndex in batch.
+                # Fall back to individual downloads.
+                logger.warning(
+                    "Batch download hit tz mismatch for %d tickers, falling back to individual downloads",
+                    len(tickers),
+                )
+                result: dict[str, list[dict]] = {}
+                for t in tickers:
+                    try:
+                        single_kwargs = {**kwargs, "tickers": [t]}
+                        single_df = yf.download(**single_kwargs)
+                        if single_df is not None and not single_df.empty:
+                            # Single ticker returns flat columns
+                            if isinstance(single_df.columns, pd.MultiIndex):
+                                single_df = single_df.xs(t, level="Ticker", axis=1)
+                            result[t] = YFinanceProvider._df_to_records(single_df)
+                        else:
+                            result[t] = []
+                    except Exception:
+                        result[t] = []
+                return result
+            logger.exception("yf.download failed for %d tickers", len(tickers))
+            return {t: [] for t in tickers}
+        except Exception:
+            logger.exception("yf.download failed for %d tickers", len(tickers))
+            return {t: [] for t in tickers}
+
+    @staticmethod
+    def _df_to_records(df) -> list[dict]:
+        """Convert a single-ticker OHLCV DataFrame to list of dicts."""
+        records = []
+        for idx, row in df.iterrows():
+            close = row.get("Close")
+            if close is None or (hasattr(close, '__float__') and not close == close):
+                # Skip NaN rows (delisted periods)
+                continue
+            records.append({
+                "date": str(idx),
+                "open": float(row.get("Open", 0)),
+                "high": float(row.get("High", 0)),
+                "low": float(row.get("Low", 0)),
+                "close": float(close),
+                "volume": int(row.get("Volume", 0)),
+            })
+        return records
+
+    async def get_info_batch(
+        self,
+        tickers: list[str],
+        max_concurrent: int = 10,
+    ) -> dict[str, dict]:
+        """Fetch info for multiple tickers with concurrency throttling.
+
+        Uses a semaphore to limit concurrent yfinance calls.
+
+        Args:
+            tickers: Ticker symbols to enrich.
+            max_concurrent: Max concurrent get_info() calls (default 10).
+
+        Returns:
+            Dict mapping ticker -> info dict.
+        """
+        if not tickers:
+            return {}
+
+        sem = asyncio.Semaphore(max_concurrent)
+
+        async def _throttled_info(t: str) -> tuple[str, dict]:
+            async with sem:
+                info = await self.get_info(t)
+                return t, info
+
+        results = await asyncio.gather(*[_throttled_info(t) for t in tickers])
+        return dict(results)
 
     async def search(self, query: str) -> list[dict]:
         """Search tickers by name/symbol."""
@@ -76,6 +393,9 @@ class YFinanceProvider:
 
     async def get_info(self, ticker: str) -> dict:
         """Full asset info: name, sector, industry, market_cap, pe_ratio, etc."""
+        if not ticker or ticker[0].isdigit():
+            return {"ticker": ticker}
+
         cached = _get_cached(f"info:{ticker}", INFO_TTL)
         if cached is not None:
             return cached
@@ -101,7 +421,7 @@ class YFinanceProvider:
                     "previous_close": info.get("previousClose"),
                     "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
                     "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
-                    "dividend_yield": info.get("dividendYield"),
+                    "dividend_yield": _normalize_dividend_yield(info.get("dividendYield")),
                     "beta": info.get("beta"),
                     "currency": info.get("currency", "USD"),
                     "quote_type": info.get("quoteType", ""),
@@ -163,6 +483,11 @@ class YFinanceProvider:
                     "average_volume": info.get("averageVolume"),
                     "book_value": info.get("bookValue"),
                     "revenue_per_share": info.get("revenuePerShare"),
+                    # Bid-ask (current snapshot, delayed)
+                    "bid": info.get("bid"),
+                    "ask": info.get("ask"),
+                    "bid_size": info.get("bidSize"),
+                    "ask_size": info.get("askSize"),
                 }
             except Exception:
                 logger.exception("yfinance get_info failed for %s", ticker)
@@ -183,11 +508,37 @@ class YFinanceProvider:
         """Historical OHLCV data using adjusted prices (accounts for splits and dividends).
 
         Use start/end for custom date ranges, or period for presets.
+        Checks for cached 5y/max data first to avoid redundant API calls.
         """
+        if not ticker or ticker[0].isdigit():
+            return []
+
         cache_key = f"history:{ticker}:{start or period}:{end}:{interval}"
         cached = _get_cached(cache_key, HISTORY_TTL)
         if cached is not None:
             return cached
+
+        # Try to slice from wide cache (max or 5y) — avoids a new API call
+        # when portfolio batch download already populated the cache
+        if interval == "1d":
+            wide = _try_get_wide_cache(ticker, interval)
+            if wide is not None:
+                cutoff_5y = _period_cutoff("5y")
+                can_slice = (
+                    (not start and not end and period in _SLICEABLE_PERIODS)
+                    or (start and end and cutoff_5y and start >= cutoff_5y)
+                    or period == "max"
+                )
+                if can_slice:
+                    if start and end:
+                        sliced = _slice_history(wide, start, end)
+                    elif period == "max":
+                        sliced = wide
+                    else:
+                        cutoff = _period_cutoff(period) or ""
+                        sliced = _slice_history(wide, cutoff, "")
+                    _set_cached(cache_key, sliced)
+                    return sliced
 
         def _get() -> list[dict]:
             try:
@@ -773,7 +1124,7 @@ class YFinanceProvider:
                     logger.debug("Failed to get macro data for %s", label)
             return summary
 
-        cached = _get_cached("macro_summary", MACRO_TTL)
+        cached = _get_cached("macro_summary", MACRO_TTL, market_aware=False)
         if cached is not None:
             return cached
 
