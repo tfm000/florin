@@ -216,7 +216,7 @@ class Florin:
         # Market breadth scanner (hourly during market hours)
         from scanner.breadth_scanner import breadth_scan_loop
         services.append(asyncio.create_task(
-            breadth_scan_loop(self.db, yfinance_provider, data_provider),
+            breadth_scan_loop(self.db, alpaca=data_provider),
             name="breadth-scanner",
         ))
 
