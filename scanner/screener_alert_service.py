@@ -140,9 +140,11 @@ class ScreenerAlertService:
 
         # Apply momentum filter if configured
         momentum_period = str(filters.get("momentum_period") or "")
-        momentum_min = float(filters.get("momentum_min") or 0)
-        momentum_max = float(filters.get("momentum_max") or 0)
-        if momentum_period and (momentum_min > 0 or momentum_max > 0) and self._yf:
+        raw_min = filters.get("momentum_min")
+        raw_max = filters.get("momentum_max")
+        momentum_min = float(raw_min) if raw_min is not None and raw_min != "" else None
+        momentum_max = float(raw_max) if raw_max is not None and raw_max != "" else None
+        if momentum_period and (momentum_min is not None or momentum_max is not None) and self._yf:
             results = await apply_momentum_filter(
                 results, momentum_min, momentum_max, momentum_period, self._yf,
             )

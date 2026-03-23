@@ -1,8 +1,9 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-
-const COLORS = ['#22c55e', '#ef4444']
+import { useChartColors } from '../hooks/useChartColors'
 
 export default function StatsCharts({ stats }) {
+  const colors = useChartColors()
+
   if (!stats || stats.total_trades === 0) {
     return <p className="text-gray-500 text-center py-8">No trading data yet</p>
   }
@@ -11,6 +12,8 @@ export default function StatsCharts({ stats }) {
     { name: 'Wins', value: stats.winning_trades },
     { name: 'Losses', value: stats.losing_trades },
   ]
+
+  const winLossColors = [colors.positive, colors.negative]
 
   const pnlData = [
     { name: 'Total P&L', value: stats.total_pnl },
@@ -36,7 +39,7 @@ export default function StatsCharts({ stats }) {
               label={({ name, value }) => `${name}: ${value}`}
             >
               {winLossData.map((_, i) => (
-                <Cell key={i} fill={COLORS[i]} />
+                <Cell key={i} fill={winLossColors[i]} />
               ))}
             </Pie>
             <Tooltip />
@@ -53,7 +56,11 @@ export default function StatsCharts({ stats }) {
             <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
             <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
             <Tooltip />
-            <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+              {pnlData.map((entry, i) => (
+                <Cell key={i} fill={entry.value >= 0 ? colors.positive : colors.negative} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
