@@ -25,6 +25,7 @@ async def app():
 
     yf_mock = AsyncMock()
     yf_mock.get_info.return_value = {"name": "Apple Inc."}
+    yf_mock.get_info_batch.return_value = {}
 
     app = create_app(settings, db, event_bus)
     set_state("yfinance_provider", yf_mock)

@@ -5,14 +5,16 @@ Provides the core stock screening logic used by both:
   - The /api/screener REST endpoint (user-initiated screens)
   - The ScreenerAlertService (background periodic screens)
 
-Uses yfinance's EquityQuery + screen() API for server-side filtering,
-with optional momentum post-filtering via historical price data.
+Uses yfinance's EquityQuery + screen() API for equities, and raw Yahoo
+Finance POST for ETFs, indices, and crypto (since yfinance hardcodes
+quoteType=EQUITY in its screen() function).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from json import dumps
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -28,6 +30,18 @@ class MarketDataProvider(Protocol):
 
 logger = logging.getLogger(__name__)
 
+# Asset types that use EquityQuery via yfinance's screen()
+_EQUITY_TYPES = {"", "EQUITY"}
+# Asset types that require a direct POST with a custom quoteType
+_DIRECT_POST_TYPES = {"ETF", "INDEX", "CRYPTOCURRENCY"}
+# Default sort fields per asset type (Yahoo rejects intradaymarketcap for ETF/INDEX)
+_SORT_FIELD_DEFAULTS = {
+    "ETF": "fundnetassets",
+    "MUTUALFUND": "fundnetassets",
+    "INDEX": "intradayprice",
+    "CRYPTOCURRENCY": "intradayprice",
+}
+
 
 class ScreenerResult(BaseModel):
     """Single result from a stock screen."""
@@ -36,6 +50,10 @@ class ScreenerResult(BaseModel):
     exchange: str = ""
     sector: str = ""
     industry: str = ""
+    asset_type: str = ""
+    currency: str = ""
+    financial_currency: str = ""
+    is_adr: bool = False
     market_cap: float | None = None
     price: float | None = None
     volume: int | None = None
@@ -53,12 +71,20 @@ class ScreenerResponse(BaseModel):
 
 def _quote_to_result(q: dict) -> ScreenerResult:
     """Convert a yfinance screen quote dict to a ScreenerResult."""
+    cur = q.get("currency", "USD")
+    fin_cur = q.get("financialCurrency", "")
+    # ADR: trades in USD but reports financials in a foreign currency
+    is_adr = bool(fin_cur and fin_cur != cur)
     return ScreenerResult(
         ticker=q.get("symbol", ""),
         name=q.get("shortName") or q.get("longName", ""),
         exchange=q.get("exchange", ""),
         sector=q.get("sector", ""),
         industry=q.get("industry", ""),
+        asset_type=q.get("quoteType", ""),
+        currency=cur,
+        financial_currency=fin_cur,
+        is_adr=is_adr,
         market_cap=q.get("marketCap"),
         price=q.get("regularMarketPrice"),
         volume=q.get("regularMarketVolume"),
@@ -67,6 +93,66 @@ def _quote_to_result(q: dict) -> ScreenerResult:
         dividend_yield=q.get("dividendYield"),
         change_pct=q.get("regularMarketChangePercent"),
     )
+
+
+def _build_equity_operands(
+    regions: list[str],
+    exchanges: list[str],
+    price_min: float,
+    price_max: float,
+    market_cap_min: float,
+    market_cap_max: float,
+    pe_min: float,
+    pe_max: float,
+    dividend_yield_min: float,
+    sector: str,
+) -> list:
+    """Build EquityQuery operand list from filter params."""
+    from yfinance import EquityQuery
+
+    operands = []
+
+    # Region filter (multi-select)
+    if len(regions) == 1:
+        operands.append(EquityQuery("eq", ["region", regions[0]]))
+    elif len(regions) > 1:
+        operands.append(EquityQuery("or", [
+            EquityQuery("eq", ["region", r]) for r in regions
+        ]))
+    else:
+        operands.append(EquityQuery("eq", ["region", "us"]))
+
+    if price_min > 0:
+        operands.append(EquityQuery("gt", ["intradayprice", price_min]))
+    if price_max > 0:
+        operands.append(EquityQuery("lt", ["intradayprice", price_max]))
+    if market_cap_min > 0:
+        operands.append(EquityQuery("gt", ["intradaymarketcap", market_cap_min]))
+    if market_cap_max > 0:
+        operands.append(EquityQuery("lt", ["intradaymarketcap", market_cap_max]))
+    if pe_min > 0:
+        operands.append(EquityQuery("gt", ["trailingpe", pe_min]))
+    if pe_max > 0:
+        operands.append(EquityQuery("lt", ["trailingpe", pe_max]))
+    if dividend_yield_min > 0:
+        operands.append(EquityQuery("gt", ["dividendyield", dividend_yield_min / 100]))
+    if sector:
+        operands.append(EquityQuery("eq", ["sector", sector]))
+
+    # Exchange filter (multi-select)
+    if exchanges:
+        if len(exchanges) == 1:
+            operands.append(EquityQuery("eq", ["exchange", exchanges[0]]))
+        else:
+            operands.append(EquityQuery("or", [
+                EquityQuery("eq", ["exchange", e]) for e in exchanges
+            ]))
+
+    # EquityQuery AND requires at least 2 operands
+    if len(operands) < 2:
+        operands.append(EquityQuery("gt", ["intradayprice", 0]))
+
+    return operands
 
 
 async def run_screen(
@@ -90,7 +176,7 @@ async def run_screen(
     """
     Execute a stock screen query via yfinance.
 
-    Runs the blocking yfinance screen() call in a thread to avoid
+    Runs the blocking yfinance/Yahoo screen call in a thread to avoid
     blocking the event loop.
 
     Args:
@@ -101,107 +187,137 @@ async def run_screen(
         pe_min: Minimum trailing P/E (0 = no minimum).
         pe_max: Maximum trailing P/E (0 = no limit).
         dividend_yield_min: Minimum dividend yield % (0 = no minimum).
-        region: Region code for market (default: 'us'). Supports: us, gb, de, jp, ca, hk, etc.
+        region: Comma-separated region codes (default: 'us').
         sector: Filter by sector name (empty = all).
         exchange: Comma-separated exchange codes (empty = all for the region).
-        asset_type: Filter by quoteType: EQUITY, ETF, INDEX, etc. (empty = all).
+        asset_type: EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY (empty = EQUITY).
         sort_by: yfinance sort field name.
         sort_asc: Sort ascending if True.
         limit: Maximum results to return.
-        yf: YFinanceProvider instance (unused by screen, but kept for API compat).
+        yf: MarketDataProvider instance (unused by screen, kept for API compat).
 
     Returns:
         List of ScreenerResult matching the criteria.
     """
+    regions = [r.strip() for r in (region or "us").split(",") if r.strip()]
+    exchanges = [e.strip() for e in exchange.split(",") if e.strip()] if exchange else []
+    at = (asset_type or "").upper()
+
+    # Resolve sort field — Yahoo rejects intradaymarketcap for non-equity types
+    effective_sort = sort_by
+    if at in _SORT_FIELD_DEFAULTS and sort_by == "intradaymarketcap":
+        effective_sort = _SORT_FIELD_DEFAULTS[at]
 
     def _screen() -> list[ScreenerResult]:
         try:
-            from yfinance import EquityQuery, screen
-
-            # Mutual funds use a separate FundQuery — handle separately
-            if asset_type == "MUTUALFUND":
-                return _screen_funds()
-
-            operands = [
-                EquityQuery("eq", ["region", region or "us"]),
-            ]
-
-            if price_min > 0:
-                operands.append(EquityQuery("gt", ["intradayprice", price_min]))
-            if price_max > 0:
-                operands.append(EquityQuery("lt", ["intradayprice", price_max]))
-            if market_cap_min > 0:
-                operands.append(EquityQuery("gt", ["intradaymarketcap", market_cap_min]))
-            if market_cap_max > 0:
-                operands.append(EquityQuery("lt", ["intradaymarketcap", market_cap_max]))
-            if pe_min > 0:
-                operands.append(EquityQuery("gt", ["trailingpe", pe_min]))
-            if pe_max > 0:
-                operands.append(EquityQuery("lt", ["trailingpe", pe_max]))
-            if dividend_yield_min > 0:
-                operands.append(EquityQuery("gt", ["dividendyield", dividend_yield_min / 100]))
-            if sector:
-                operands.append(EquityQuery("eq", ["sector", sector]))
-
-            # Exchange filter
-            if exchange:
-                exchanges = [e.strip() for e in exchange.split(",")]
-                if len(exchanges) == 1:
-                    operands.append(EquityQuery("eq", ["exchange", exchanges[0]]))
-                else:
-                    operands.append(EquityQuery("or", [
-                        EquityQuery("eq", ["exchange", e]) for e in exchanges
-                    ]))
-
-            if len(operands) < 2:
-                operands.append(EquityQuery("gt", ["intradayprice", 0]))
-            query = EquityQuery("and", operands)
-            resp = screen(query, size=limit, offset=0,
-                          sortField=sort_by, sortAsc=sort_asc)
-
-            quotes = resp.get("quotes", []) if resp else []
-
-            results = []
-            for q in quotes:
-                # Apply asset type filter (post-screen, yfinance doesn't support quoteType in EquityQuery)
-                if asset_type:
-                    qt = q.get("quoteType", "EQUITY")
-                    if qt.upper() != asset_type.upper():
-                        continue
-
-                results.append(_quote_to_result(q))
-
-            return results
-
+            if at == "MUTUALFUND":
+                return _screen_funds(regions, sector, effective_sort, sort_asc, limit)
+            elif at in _DIRECT_POST_TYPES:
+                return _screen_direct(at, regions, exchanges, price_min, price_max,
+                                      market_cap_min, market_cap_max, pe_min, pe_max,
+                                      dividend_yield_min, sector, effective_sort, sort_asc, limit)
+            else:
+                return _screen_equity(regions, exchanges, price_min, price_max,
+                                      market_cap_min, market_cap_max, pe_min, pe_max,
+                                      dividend_yield_min, sector, at, effective_sort, sort_asc, limit)
         except Exception:
             logger.exception("Screener query failed")
             return []
 
-    def _screen_funds() -> list[ScreenerResult]:
-        """Screen mutual funds via yfinance's FundQuery."""
-        try:
-            from yfinance import FundQuery, screen
-
-            operands = [
-                FundQuery("eq", ["exchange", region or "us"]),
-                FundQuery("gt", ["initialinvestment", 0]),  # FundQuery AND requires 2+ operands
-            ]
-
-            if sector:
-                operands.append(FundQuery("eq", ["sector", sector]))
-
-            query = FundQuery("and", operands)
-            resp = screen(query, size=limit, offset=0,
-                          sortField=sort_by, sortAsc=sort_asc)
-
-            quotes = resp.get("quotes", []) if resp else []
-            return [_quote_to_result(q) for q in quotes]
-
-        except Exception:
-            logger.exception("Fund screener query failed")
-            return []
-
     return await asyncio.to_thread(_screen)
+
+
+def _screen_equity(
+    regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
+    pe_min, pe_max, dividend_yield_min, sector, asset_type, sort_by, sort_asc, limit,
+) -> list[ScreenerResult]:
+    """Screen equities via yfinance's EquityQuery + screen()."""
+    from yfinance import EquityQuery, screen
+
+    operands = _build_equity_operands(
+        regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
+        pe_min, pe_max, dividend_yield_min, sector,
+    )
+    query = EquityQuery("and", operands)
+    resp = screen(query, size=limit, offset=0, sortField=sort_by, sortAsc=sort_asc)
+
+    quotes = resp.get("quotes", []) if resp else []
+    return [_quote_to_result(q) for q in quotes]
+
+
+def _screen_direct(
+    quote_type, regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
+    pe_min, pe_max, dividend_yield_min, sector, sort_by, sort_asc, limit,
+) -> list[ScreenerResult]:
+    """Screen ETFs, indices, or crypto via direct Yahoo POST with custom quoteType."""
+    from yfinance import EquityQuery
+    from yfinance.const import _QUERY1_URL_
+    from yfinance.data import YfData
+
+    # Crypto doesn't use region — uses a simple price filter
+    if quote_type == "CRYPTOCURRENCY":
+        price_filter = price_min if price_min > 0 else 0.001
+        operands = [EquityQuery("gt", ["intradayprice", price_filter])]
+        if price_max > 0:
+            operands.append(EquityQuery("lt", ["intradayprice", price_max]))
+        if len(operands) < 2:
+            operands.append(EquityQuery("gt", ["dayvolume", 0]))
+        query = EquityQuery("and", operands)
+    else:
+        operands = _build_equity_operands(
+            regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
+            pe_min, pe_max, dividend_yield_min, sector,
+        )
+        query = EquityQuery("and", operands)
+
+    body = {
+        "offset": 0,
+        "size": limit,
+        "sortField": sort_by,
+        "sortType": "ASC" if sort_asc else "DESC",
+        "quoteType": quote_type,
+        "query": query.to_dict(),
+    }
+    params = {
+        "corsDomain": "finance.yahoo.com",
+        "formatted": "false",
+        "lang": "en-US",
+        "region": "US",
+    }
+
+    data_client = YfData(session=None)
+    url = f"{_QUERY1_URL_}/v1/finance/screener"
+    resp = data_client.post(url, data=dumps(body, separators=(",", ":")), params=params)
+    resp.raise_for_status()
+
+    result = resp.json().get("finance", {}).get("result")
+    if not result or not isinstance(result, list) or len(result) == 0:
+        return []
+
+    quotes = result[0].get("quotes", [])
+    return [_quote_to_result(q) for q in quotes]
+
+
+def _screen_funds(regions, sector, sort_by, sort_asc, limit) -> list[ScreenerResult]:
+    """Screen mutual funds via yfinance's FundQuery."""
+    from yfinance import FundQuery, screen
+
+    # FundQuery uses region codes for its exchange field
+    region_code = regions[0] if regions else "us"
+
+    operands = [
+        FundQuery("eq", ["exchange", region_code]),
+        FundQuery("gt", ["initialinvestment", 0]),
+    ]
+
+    if sector:
+        operands.append(FundQuery("eq", ["sector", sector]))
+
+    query = FundQuery("and", operands)
+    resp = screen(query, size=limit, offset=0, sortField=sort_by, sortAsc=sort_asc)
+
+    quotes = resp.get("quotes", []) if resp else []
+    return [_quote_to_result(q) for q in quotes]
 
 
 async def apply_momentum_filter(

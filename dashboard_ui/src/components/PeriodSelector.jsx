@@ -22,13 +22,28 @@ const INTERDAY_PRESETS = [
 
 export const INTRADAY_KEYS = new Set(INTRADAY_PRESETS.map(p => p.key))
 
+/**
+ * Map an intraday key to yfinance-compatible period + interval for the /history endpoint.
+ * Periods are sized to avoid fetching excessive data:
+ *   1m/5m  → last 24h of trading (1d)
+ *   15m/30m → last week (5d)
+ *   1h     → last week (5d)
+ */
+export const INTRADAY_TO_HISTORY = {
+  '1Min':  { period: '1d', interval: '1m' },
+  '5Min':  { period: '1d', interval: '5m' },
+  '15Min': { period: '5d', interval: '15m' },
+  '30Min': { period: '5d', interval: '30m' },
+  '1Hour': { period: '5d', interval: '60m' },
+}
+
 export default function PeriodSelector({ period, onPeriodChange, startDate, endDate, onCustomRange }) {
   const [showCustom, setShowCustom] = useState(period === 'custom')
   const [localStart, setLocalStart] = useState(startDate || '')
   const [localEnd, setLocalEnd] = useState(endDate || '')
 
   const { data: marketData } = useApi('/market/hours', { interval: 60000 })
-  const usMarket = (marketData?.markets || []).find(m => m.name === 'US (NYSE/NASDAQ)')
+  const usMarket = (marketData?.markets || []).find(m => m.name.includes('NYSE'))
   const marketOpen = usMarket?.is_open ?? false
 
   const handlePreset = (key) => {

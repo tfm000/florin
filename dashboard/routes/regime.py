@@ -44,27 +44,45 @@ class RegimeResponse(BaseModel):
     stats: list[RegimeStats]
 
 
+# Approximate annualized trading periods per interval
+_ANNUALIZE_FACTOR = {
+    "1m": 252 * 390,    # ~390 one-minute bars per trading day × 252 days
+    "5m": 252 * 78,     # ~78 five-minute bars per day
+    "15m": 252 * 26,
+    "30m": 252 * 13,
+    "60m": 252 * 6.5,
+    "1h": 252 * 6.5,
+    "1d": 252,
+}
+
+
 @router.get("/regime/{ticker}", response_model=RegimeResponse)
 async def detect_regimes(
     ticker: str,
     source: str = Query(default="", description="Benchmark ticker for regime detection (empty = self)"),
     n_regimes: int = Query(default=2, ge=2, le=3),
-    period: str = Query(default="1y", description="Display range (model always fits on max history)"),
+    period: str = Query(default="1y", description="Display range (model always fits on max history for daily)"),
+    interval: str = Query(default="1d", description="Data interval — matches chart frequency"),
     start: str = Query(default="", description="Custom start YYYY-MM-DD"),
     end: str = Query(default="", description="Custom end YYYY-MM-DD"),
     yf=Depends(get_yfinance_dep),
 ):
     """Detect market regimes using Markov switching regression.
 
-    The model is always fit on the FULL available history (max) for accuracy.
-    Only the regimes within the requested display period are returned.
+    For daily data the model is fit on FULL available history (max) for accuracy.
+    For intraday data the model is fit on whatever the period provides (limited history).
+    The source/benchmark ticker is always fetched at the same interval.
     """
     ticker = ticker.upper()
     source_ticker = source.upper() if source else ticker
+    is_intraday = interval != "1d"
 
-    # Single fetch — max history for regime fitting
+    # Fetch history — max for daily, requested period for intraday
     from data.yfinance_provider import _period_cutoff
-    full_history = await yf.get_history(source_ticker, period="max")
+    if is_intraday:
+        full_history = await yf.get_history(source_ticker, period=period, interval=interval)
+    else:
+        full_history = await yf.get_history(source_ticker, period="max")
 
     if not full_history or len(full_history) < 30:
         return RegimeResponse(
@@ -72,13 +90,18 @@ async def detect_regimes(
             regimes=[], stats=[],
         )
 
-    # Compute display cutoff from period — no second fetch
-    if start:
+    # Compute display cutoff from period — no second fetch (daily only)
+    if is_intraday:
+        display_start = ""
+        display_end = ""
+    elif start:
         display_start = start
         display_end = end
     else:
         display_start = _period_cutoff(period) or ""
         display_end = ""
+
+    annualize = _ANNUALIZE_FACTOR.get(interval, 252)
 
     def _compute():
         closes = [h["close"] for h in full_history if h["close"] > 0]
@@ -95,6 +118,7 @@ async def detect_regimes(
         return fit_markov_regimes(
             log_rets, dates[1:], n_regimes,
             display_start=display_start, display_end=display_end,
+            annualize_factor=annualize,
         )
 
     result = await asyncio.to_thread(_compute)

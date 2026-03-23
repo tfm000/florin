@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApi, apiPost, apiFetch } from '../hooks/useApi'
 import { useChartColors } from '../hooks/useChartColors'
@@ -12,8 +12,8 @@ const SECTORS = [
 ]
 
 const REGIONS = [
-  { value: 'us', label: 'United States' },
-  { value: 'gb', label: 'United Kingdom' },
+  { value: 'us', label: 'US' },
+  { value: 'gb', label: 'UK' },
   { value: 'ca', label: 'Canada' },
   { value: 'de', label: 'Germany' },
   { value: 'fr', label: 'France' },
@@ -27,57 +27,52 @@ const REGIONS = [
   { value: 'es', label: 'Spain' },
   { value: 'se', label: 'Sweden' },
   { value: 'sg', label: 'Singapore' },
-  { value: 'kr', label: 'South Korea' },
+  { value: 'kr', label: 'S. Korea' },
   { value: 'br', label: 'Brazil' },
   { value: 'mx', label: 'Mexico' },
   { value: 'tw', label: 'Taiwan' },
   { value: 'nz', label: 'New Zealand' },
 ]
 
-// Exchange options per region — only populated for the most common ones
-const EXCHANGES_BY_REGION = {
-  us: [
-    { value: '', label: 'All US' },
-    { value: 'NMS,NGM,NCM', label: 'NASDAQ' },
-    { value: 'NYQ', label: 'NYSE' },
-    { value: 'PCX', label: 'NYSE Arca' },
-    { value: 'ASE', label: 'NYSE American' },
-    { value: 'BTS', label: 'BATS' },
-    { value: 'PNK,OQB,OQX', label: 'OTC Markets' },
-  ],
-  gb: [
-    { value: '', label: 'All UK' },
-    { value: 'LSE', label: 'London Stock Exchange' },
-    { value: 'IOB', label: 'Intl. Order Book' },
-  ],
-  ca: [
-    { value: '', label: 'All Canada' },
-    { value: 'TOR', label: 'Toronto (TSX)' },
-    { value: 'VAN', label: 'TSX Venture' },
-    { value: 'CNQ', label: 'CSE' },
-  ],
-  de: [
-    { value: '', label: 'All Germany' },
-    { value: 'GER', label: 'XETRA' },
-    { value: 'FRA', label: 'Frankfurt' },
-  ],
-  jp: [
-    { value: '', label: 'All Japan' },
-    { value: 'JPX', label: 'Tokyo (JPX)' },
-  ],
-  hk: [
-    { value: '', label: 'All Hong Kong' },
-    { value: 'HKG', label: 'HKEX' },
-  ],
-}
+const EXCHANGES = [
+  { value: 'NMS', label: 'NASDAQ GS', region: 'us' },
+  { value: 'NGM', label: 'NASDAQ GM', region: 'us' },
+  { value: 'NCM', label: 'NASDAQ CM', region: 'us' },
+  { value: 'NYQ', label: 'NYSE', region: 'us' },
+  { value: 'PCX', label: 'NYSE Arca', region: 'us' },
+  { value: 'ASE', label: 'NYSE American', region: 'us' },
+  { value: 'BTS', label: 'BATS', region: 'us' },
+  { value: 'PNK', label: 'OTC (Pink/ADRs)', region: 'us' },
+  { value: 'OQB', label: 'OTC (QB Tier)', region: 'us' },
+  { value: 'OQX', label: 'OTC (QX Tier)', region: 'us' },
+  { value: 'LSE', label: 'London', region: 'gb' },
+  { value: 'IOB', label: 'Intl. Order Book', region: 'gb' },
+  { value: 'TOR', label: 'Toronto (TSX)', region: 'ca' },
+  { value: 'VAN', label: 'TSX Venture', region: 'ca' },
+  { value: 'CNQ', label: 'CSE', region: 'ca' },
+  { value: 'GER', label: 'XETRA', region: 'de' },
+  { value: 'FRA', label: 'Frankfurt', region: 'de' },
+  { value: 'JPX', label: 'Tokyo (JPX)', region: 'jp' },
+  { value: 'HKG', label: 'HKEX', region: 'hk' },
+  { value: 'ASX', label: 'ASX', region: 'au' },
+  { value: 'NSI', label: 'NSE India', region: 'in' },
+  { value: 'BSE', label: 'BSE India', region: 'in' },
+]
 
 const ASSET_TYPES = [
-  { value: '', label: 'All' },
-  { value: 'EQUITY', label: 'Stocks' },
+  { value: '', label: 'Stocks' },
   { value: 'ETF', label: 'ETFs' },
   { value: 'MUTUALFUND', label: 'Mutual Funds' },
   { value: 'INDEX', label: 'Indices' },
   { value: 'CRYPTOCURRENCY', label: 'Crypto' },
+]
+
+const ASSET_TYPE_LABELS = { '': 'Equity', EQUITY: 'Equity', ETF: 'ETF', MUTUALFUND: 'Fund', INDEX: 'Index', CRYPTOCURRENCY: 'Crypto' }
+
+const ADR_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'domestic', label: 'Excl ADRs' },
+  { value: 'adr', label: 'ADRs' },
 ]
 
 const MOMENTUM_PERIODS = [
@@ -99,10 +94,70 @@ const DEFAULT_FILTERS = {
   sector: '',
   exchange: '',
   asset_type: '',
+  adr_filter: '',
   momentum_min: '', momentum_max: '',
   momentum_period: '',
   sort_by: 'intradaymarketcap',
   sort_asc: false,
+}
+
+/** Multi-select dropdown with checkboxes. Stores comma-separated values. */
+function MultiSelect({ label, options, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const selected = new Set(value ? value.split(',').filter(Boolean) : [])
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const toggle = (val) => {
+    const next = new Set(selected)
+    next.has(val) ? next.delete(val) : next.add(val)
+    onChange(Array.from(next).join(','))
+  }
+
+  const summary = selected.size === 0
+    ? 'All'
+    : selected.size <= 2
+      ? options.filter(o => selected.has(o.value)).map(o => o.label).join(', ')
+      : `${selected.size} selected`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs text-left truncate"
+      >
+        {summary}
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-48 max-h-60 overflow-y-auto bg-gray-700 border border-gray-600 rounded shadow-lg">
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false) }}
+            className="w-full text-left px-2 py-1 text-xs text-gray-300 hover:bg-gray-600"
+          >
+            Clear all
+          </button>
+          {options.map(o => (
+            <label key={o.value} className="flex items-center gap-2 px-2 py-1 text-xs text-white hover:bg-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.has(o.value)}
+                onChange={() => toggle(o.value)}
+                className="rounded bg-gray-800 border-gray-500"
+              />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Screener() {
@@ -134,25 +189,32 @@ export default function Screener() {
       .catch(() => {})
   }, [presetId])
 
+  // adr_filter is client-side only — exclude from API params
   const queryParams = Object.entries(filters)
-    .filter(([, v]) => v !== '' && v !== false)
+    .filter(([k, v]) => v !== '' && v !== false && k !== 'adr_filter')
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join('&')
 
   const { data, loading } = useApi(`/screener?${queryParams}`)
   const rawResults = data?.results || []
 
-  // Client-side sorting (overrides server sort for columns the server doesn't sort by)
+  // Client-side ADR filter + sorting
   const results = useMemo(() => {
-    if (!sortCol) return rawResults
-    const sorted = [...rawResults].sort((a, b) => {
+    let filtered = rawResults
+    if (filters.adr_filter === 'adr') {
+      filtered = rawResults.filter(r => r.is_adr)
+    } else if (filters.adr_filter === 'domestic') {
+      filtered = rawResults.filter(r => !r.is_adr)
+    }
+    if (!sortCol) return filtered
+    const sorted = [...filtered].sort((a, b) => {
       const av = a[sortCol] ?? -Infinity
       const bv = b[sortCol] ?? -Infinity
       if (typeof av === 'string') return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
       return sortDir === 'asc' ? av - bv : bv - av
     })
     return sorted
-  }, [rawResults, sortCol, sortDir])
+  }, [rawResults, sortCol, sortDir, filters.adr_filter])
 
   const update = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
@@ -184,6 +246,10 @@ export default function Screener() {
       setSaveMessage({ type: 'error', text: err.message })
     }
   }
+
+  // Filter exchanges by selected regions
+  const selectedRegions = new Set(filters.region ? filters.region.split(',').filter(Boolean) : ['us'])
+  const availableExchanges = EXCHANGES.filter(e => selectedRegions.has(e.region))
 
   function formatMcap(val) {
     if (!val) return '\u2014'
@@ -263,6 +329,43 @@ export default function Screener() {
       <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
           <div>
+            <label className="text-gray-400 block mb-1">Asset Type</label>
+            <select value={filters.asset_type} onChange={e => update('asset_type', e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
+              {ASSET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-gray-400 block mb-1">Region(s)</label>
+            <MultiSelect
+              options={REGIONS}
+              value={filters.region}
+              onChange={(v) => { update('region', v); update('exchange', '') }}
+            />
+          </div>
+          <div>
+            <label className="text-gray-400 block mb-1">Exchange(s)</label>
+            <MultiSelect
+              options={availableExchanges}
+              value={filters.exchange}
+              onChange={(v) => update('exchange', v)}
+            />
+          </div>
+          <div>
+            <label className="text-gray-400 block mb-1">ADR / Domestic</label>
+            <select value={filters.adr_filter} onChange={e => update('adr_filter', e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
+              {ADR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-gray-400 block mb-1">Sector</label>
+            <select value={filters.sector} onChange={e => update('sector', e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
+              {SECTORS.map(s => <option key={s} value={s}>{s || 'All'}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="text-gray-400 block mb-1">Price Min ($)</label>
             <input type="number" value={filters.price_min} onChange={e => update('price_min', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0" />
@@ -298,36 +401,6 @@ export default function Screener() {
               step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0" />
           </div>
           <div>
-            <label className="text-gray-400 block mb-1">Sector</label>
-            <select value={filters.sector} onChange={e => update('sector', e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
-              {SECTORS.map(s => <option key={s} value={s}>{s || 'All'}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-gray-400 block mb-1">Region</label>
-            <select value={filters.region} onChange={e => { update('region', e.target.value); update('exchange', '') }}
-              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
-              {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-gray-400 block mb-1">Exchange</label>
-            <select value={filters.exchange} onChange={e => update('exchange', e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
-              {(EXCHANGES_BY_REGION[filters.region] || [{ value: '', label: `All ${filters.region.toUpperCase()}` }]).map(e => (
-                <option key={e.value} value={e.value}>{e.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-gray-400 block mb-1">Asset Type</label>
-            <select value={filters.asset_type} onChange={e => update('asset_type', e.target.value)}
-              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
-              {ASSET_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </div>
-          <div>
             <label className="text-gray-400 block mb-1">Momentum Period</label>
             <select value={filters.momentum_period} onChange={e => update('momentum_period', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
@@ -361,6 +434,8 @@ export default function Screener() {
               <tr>
                 <SortHeader col="ticker" label="Ticker" />
                 <SortHeader col="name" label="Name" />
+                <SortHeader col="asset_type" label="Type" />
+                <SortHeader col="currency" label="Ccy" />
                 <SortHeader col="price" label="Price" align="right" />
                 <SortHeader col="volume" label="Volume" align="right" />
                 <SortHeader col="change_pct" label="Chg%" align="right" />
@@ -368,7 +443,7 @@ export default function Screener() {
                 <SortHeader col="pe_ratio" label="P/E" align="right" />
                 <SortHeader col="dividend_yield" label="Div%" align="right" />
                 <SortHeader col="sector" label="Sector" />
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase">Exchange</th>
+                <SortHeader col="exchange" label="Exchange" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -377,6 +452,11 @@ export default function Screener() {
                   className="hover:bg-gray-800/50 cursor-pointer">
                   <td className="px-3 py-2 font-mono text-white font-semibold">{r.ticker}</td>
                   <td className="px-3 py-2 text-gray-300 truncate max-w-40">{r.name}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">
+                    {ASSET_TYPE_LABELS[r.asset_type] || r.asset_type}
+                    {r.is_adr && <span className="ml-1 px-1 py-0.5 bg-indigo-900/50 text-indigo-300 rounded text-[10px]">ADR</span>}
+                  </td>
+                  <td className="px-3 py-2 text-gray-500 text-xs font-mono">{r.currency}{r.financial_currency && r.financial_currency !== r.currency ? `/${r.financial_currency}` : ''}</td>
                   <td className="px-3 py-2 text-right font-mono text-white">{r.price != null ? `$${r.price.toFixed(2)}` : '\u2014'}</td>
                   <td className="px-3 py-2 text-right font-mono text-gray-400">{formatVolume(r.volume || r.avg_volume)}</td>
                   <td className="px-3 py-2 text-right font-mono" style={{ color: r.change_pct != null ? valueColor(r.change_pct, colors) : undefined }}>
