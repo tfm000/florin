@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from dashboard.dependencies import get_db_session, get_yfinance_dep
+from dashboard.dependencies import get_db_session
 from db.models import BreadthSnapshotORM
 from scanner.breadth_scanner import DEFAULT_EXCHANGES, compute_breadth
 
@@ -50,7 +50,6 @@ async def get_market_breadth(
         description="Comma-separated exchange codes (e.g. NMS,NGM,NCM,NYQ)",
     ),
     session=Depends(get_db_session),
-    yf=Depends(get_yfinance_dep),
 ):
     """Latest market breadth — from DB snapshot or live computation.
 
@@ -79,7 +78,7 @@ async def get_market_breadth(
             )
 
     # Live computation (either no DB snapshot or non-default exchanges)
-    data = await compute_breadth([], exchange=exchange)
+    data = await compute_breadth(exchange=exchange)
     total = data["total"]
     if total == 0:
         return BreadthResponse()
