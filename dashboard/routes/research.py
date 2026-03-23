@@ -202,16 +202,17 @@ class MacroSummary(BaseModel):
 
 
 class LLMAnalysisResponse(BaseModel):
+    """Response model for the LLM analysis endpoint."""
     ticker: str
     provider: str = ""
     model: str = ""
-    sentiment_score: float = 0.0
+    score: float = 5.0  # 0–10 scale
     confidence: float = 0.5
     bullish_signals: list[str] = []
     bearish_signals: list[str] = []
     recommendation: str = "HOLD"
     summary: str = ""
-    key_factors: list[str] = []
+    key_points: list[str] = []
     error: str | None = None
 
 
@@ -469,17 +470,8 @@ async def analyse_asset(
             "No LLM analysers available. Configure Groq, Claude, or Gemini API keys in Settings."
         )
 
-    # Build a minimal AlertSignal and fetch real sentiment data
-    from core.models import AlertSignal, SentimentData
-
-    alert = AlertSignal(
-        ticker=ticker,
-        price=info.get("current_price") or 0.0,
-        change_pct=0.0,
-        volume=0,
-    )
-
     # Fetch sentiment from aggregator (with source filtering)
+    from core.models import SentimentData
     sentiment_agg = _state.get("sentiment_aggregator")
     if sentiment_agg:
         try:
@@ -496,8 +488,18 @@ async def analyse_asset(
     else:
         sentiment = SentimentData(ticker=ticker)
 
+    # Build alert context for the sentiment prompt
+    alert_context = {
+        "price": info.get("current_price") or 0.0,
+        "change_pct": 0.0,
+        "volume": 0,
+        "avg_volume": 0,
+    }
+
     try:
-        analysis = await analyser.analyse(alert, sentiment)
+        analysis = await analyser.analyse_sentiment(
+            ticker, sentiment, alert_context, settings.llm_user_context,
+        )
     except Exception as e:
         logger.exception("LLM analysis failed for %s", ticker)
         # Return error in response body rather than 502, so the frontend can show it
@@ -511,13 +513,13 @@ async def analyse_asset(
         ticker=ticker,
         provider=analysis.provider,
         model=analysis.model,
-        sentiment_score=analysis.sentiment_score,
+        score=analysis.score,
         confidence=analysis.confidence,
         bullish_signals=analysis.bullish_signals,
         bearish_signals=analysis.bearish_signals,
         recommendation=analysis.recommendation.value,
         summary=analysis.summary,
-        key_factors=analysis.key_factors,
+        key_points=analysis.key_points,
         error=analysis.error,
     )
 

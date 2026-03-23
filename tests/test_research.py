@@ -296,20 +296,21 @@ class TestAnalyse:
     @pytest.mark.asyncio
     async def test_analyse_success_path(self, client):
         """With a mock analyser, returns full LLMAnalysisResponse."""
-        from core.models import LLMAnalysis, Recommendation
+        from core.models import AnalysisResult, AnalysisType, Recommendation
 
         mock_analyser = AsyncMock()
         mock_analyser.provider_name = "test-provider"
-        mock_analyser.analyse.return_value = LLMAnalysis(
+        mock_analyser.analyse_sentiment.return_value = AnalysisResult(
             provider="test-provider",
             model="test-model-v1",
-            sentiment_score=7.5,
+            analysis_type=AnalysisType.SENTIMENT,
+            score=7.5,
             confidence=0.85,
             bullish_signals=["Strong revenue growth", "Expanding margins"],
             bearish_signals=["High valuation"],
             recommendation=Recommendation.BUY,
             summary="Company shows strong fundamentals.",
-            key_factors=["Q4 earnings beat", "Market share gains"],
+            key_points=["Q4 earnings beat", "Market share gains"],
             error=None,
         )
 
@@ -322,13 +323,13 @@ class TestAnalyse:
         assert data["ticker"] == "AAPL"
         assert data["provider"] == "test-provider"
         assert data["model"] == "test-model-v1"
-        assert data["sentiment_score"] == 7.5
+        assert data["score"] == 7.5
         assert data["confidence"] == 0.85
         assert data["recommendation"] == "BUY"
         assert data["summary"] == "Company shows strong fundamentals."
         assert len(data["bullish_signals"]) == 2
         assert len(data["bearish_signals"]) == 1
-        assert len(data["key_factors"]) == 2
+        assert len(data["key_points"]) == 2
         assert data["error"] is None
 
         # Cleanup
@@ -339,7 +340,7 @@ class TestAnalyse:
         """When the LLM call fails, error is returned in the response body (not 502)."""
         mock_analyser = AsyncMock()
         mock_analyser.provider_name = "broken-llm"
-        mock_analyser.analyse.side_effect = ConnectionError("LLM unreachable")
+        mock_analyser.analyse_sentiment.side_effect = ConnectionError("LLM unreachable")
 
         set_state("analysers", {"broken-llm": mock_analyser})
         set_state("sentiment_aggregator", None)

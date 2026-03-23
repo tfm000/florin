@@ -9,7 +9,7 @@ from __future__ import annotations
 from core.models import (
     AccountSummary,
     AnalysisReport,
-    LLMAnalysis,
+    AnalysisResult,
     Position,
     Recommendation,
 )
@@ -35,7 +35,6 @@ def format_alert_message(
 ) -> str:
     """Format an analysis report as a Telegram alert message with account context."""
     alert = report.alert
-    analysis = report.get_best_analysis()
 
     # Header with emoji based on recommendation
     rec = report.final_recommendation
@@ -50,10 +49,19 @@ def format_alert_message(
         escape_md("━" * 25),
     ]
 
-    # Sentiment summary
-    score_str = escape_md(f"{report.final_score:.1f}/10")
-    conf_str = escape_md(f"{report.final_confidence:.0%}")
-    lines.append(f"📊 *Sentiment:* {score_str} \\({conf_str} confidence\\)")
+    # Announcement analysis score
+    ann = report.get_best_announcement()
+    if ann and not ann.error:
+        ann_score = escape_md(f"{ann.score:.1f}/10")
+        ann_conf = escape_md(f"{ann.confidence:.0%}")
+        lines.append(f"📄 *Announcement:* {ann_score} \\({ann_conf} confidence\\)")
+
+    # Sentiment analysis score
+    sent = report.get_best_sentiment()
+    if sent and not sent.error:
+        sent_score = escape_md(f"{sent.score:.1f}/10")
+        sent_conf = escape_md(f"{sent.confidence:.0%}")
+        lines.append(f"📱 *Sentiment:* {sent_score} \\({sent_conf} confidence\\)")
 
     # Source counts
     s = report.sentiment
@@ -73,13 +81,14 @@ def format_alert_message(
     rec_str = escape_md(rec.value.replace("_", " "))
     lines.append(f"🤖 *Recommendation:* {rec_str}")
 
-    # Key signals
-    if analysis:
+    # Key signals from best available analysis
+    best_analysis = sent or ann
+    if best_analysis and not best_analysis.error:
         lines.append("")
         lines.append("*Key Signals:*")
-        for signal in (analysis.bullish_signals or [])[:3]:
+        for signal in (best_analysis.bullish_signals or [])[:3]:
             lines.append(f"  • ✅ {escape_md(signal)}")
-        for signal in (analysis.bearish_signals or [])[:3]:
+        for signal in (best_analysis.bearish_signals or [])[:3]:
             lines.append(f"  • ⚠️ {escape_md(signal)}")
 
     # Account context (if provided)
@@ -96,8 +105,10 @@ def format_alert_message(
 
     # Mode indicator
     if report.mode == "consensus":
-        n = len([a for a in report.individual_analyses if not a.error])
-        lines.append(f"\n_Consensus from {escape_md(str(n))} LLMs_")
+        n_ann = len([a for a in report.announcement_analyses if not a.error])
+        n_sent = len([a for a in report.sentiment_analyses if not a.error])
+        total = max(n_ann, n_sent)
+        lines.append(f"\n_Consensus from {escape_md(str(total))} LLMs_")
 
     return "\n".join(lines)
 

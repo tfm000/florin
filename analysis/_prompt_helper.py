@@ -1,9 +1,13 @@
 """
 Shared prompt building and response parsing for LLM analysers.
 
-All cloud LLM analysers (Groq, Gemini, Claude) use the same
-prompt template from config/constants.py and expect the same JSON output.
-This module centralises that logic.
+Provides three prompt builders:
+  - ``build_announcement_prompt`` — formats Form 8-K filing data for LLM
+  - ``build_sentiment_prompt`` — formats social/news sentiment data for LLM
+  - ``build_consensus_prompt`` — formats individual analyst reports for the leader LLM
+
+And a unified response parser:
+  - ``parse_llm_response`` — extracts JSON from raw LLM output into AnalysisResult
 """
 
 from __future__ import annotations
@@ -14,13 +18,15 @@ import re
 from typing import Any
 
 from config.constants import (
-    ANALYSIS_SYSTEM_PROMPT,
+    ANNOUNCEMENT_USER_PROMPT,
+    CONSENSUS_LEADER_USER_PROMPT,
     RESEARCH_ANALYSIS_PROMPT,
-    SINGLE_REPORT_PROMPT,
+    SENTIMENT_USER_PROMPT,
 )
 from core.models import (
-    AlertSignal,
-    LLMAnalysis,
+    AnalysisResult,
+    AnalysisType,
+    Form8KFiling,
     Recommendation,
     SentimentData,
 )
@@ -28,86 +34,219 @@ from core.models import (
 logger = logging.getLogger(__name__)
 
 
-def build_user_prompt(
-    alert: AlertSignal,
-    sentiment: SentimentData,
+# ---------------------------------------------------------------------------
+# Prompt builders
+# ---------------------------------------------------------------------------
+
+
+def build_announcement_prompt(
+    ticker: str,
+    filings: list[Form8KFiling],
     user_context: str = "",
 ) -> str:
-    """Build the user prompt from alert and sentiment data."""
-    # SEC summary from filings
-    sec_lines = []
-    for filing in sentiment.sec_filings[:5]:
-        sec_lines.append(
-            f"- {filing.form_type} ({filing.description}) filed {filing.filed_date.strftime('%Y-%m-%d')}"
-        )
-        if filing.insider_name:
-            sec_lines.append(f"  Insider: {filing.insider_name} — {filing.transaction_type}")
-    sec_summary = "\n".join(sec_lines) if sec_lines else "No recent SEC filings found."
+    """Build the user prompt for announcement (Form 8-K) analysis.
 
-    return SINGLE_REPORT_PROMPT.format(
-        ticker=alert.ticker,
-        price=alert.price,
-        change_pct=alert.change_pct,
-        volume=alert.volume,
-        avg_volume=alert.avg_volume,
-        sentiment_summary=sentiment.to_summary(),
-        sec_summary=sec_summary,
+    Args:
+        ticker: Stock symbol.
+        filings: List of Form 8-K filings to include.
+        user_context: Optional user-provided context.
+
+    Returns:
+        Formatted prompt string ready for the LLM.
+    """
+    filing_sections: list[str] = []
+    for i, filing in enumerate(filings, 1):
+        section = f"### Filing {i}"
+        section += f"\n- Filed: {filing.filed_date.strftime('%Y-%m-%d')}"
+        section += f"\n- Form Type: {filing.form_type}"
+        if filing.description:
+            section += f"\n- Description: {filing.description}"
+        if filing.items:
+            section += f"\n- 8-K Items: {', '.join(filing.items)}"
+        if filing.accession_number:
+            section += f"\n- Accession Number: {filing.accession_number}"
+        if filing.text_content:
+            section += f"\n\n#### Filing Text\n{filing.text_content}"
+        else:
+            section += "\n\n*(No text content available for this filing.)*"
+        filing_sections.append(section)
+
+    if not filing_sections:
+        filings_text = "No Form 8-K filings found for this ticker."
+    else:
+        filings_text = "\n\n".join(filing_sections)
+
+    return ANNOUNCEMENT_USER_PROMPT.format(
+        ticker=ticker,
+        filings_text=filings_text,
         user_context=user_context or "No additional context provided.",
     )
+
+
+def build_sentiment_prompt(
+    ticker: str,
+    sentiment: SentimentData,
+    alert_context: dict | None = None,
+    user_context: str = "",
+) -> str:
+    """Build the user prompt for sentiment analysis.
+
+    Args:
+        ticker: Stock symbol.
+        sentiment: Aggregated sentiment data from all sources.
+        alert_context: Optional dict with price, change_pct, volume, avg_volume.
+        user_context: Optional user-provided context.
+
+    Returns:
+        Formatted prompt string ready for the LLM.
+    """
+    ctx = alert_context or {}
+    return SENTIMENT_USER_PROMPT.format(
+        ticker=ticker,
+        price=ctx.get("price", 0.0),
+        change_pct=ctx.get("change_pct", 0.0),
+        volume=ctx.get("volume", 0),
+        avg_volume=ctx.get("avg_volume", 0),
+        sentiment_summary=sentiment.to_summary(),
+        user_context=user_context or "No additional context provided.",
+    )
+
+
+def build_consensus_prompt(
+    ticker: str,
+    analysis_type: str,
+    individual_results: list[AnalysisResult],
+) -> str:
+    """Build the user prompt for the consensus leader LLM.
+
+    Args:
+        ticker: Stock symbol.
+        analysis_type: "announcement" or "sentiment".
+        individual_results: List of AnalysisResult from individual analysts.
+
+    Returns:
+        Formatted prompt string for the consensus leader.
+    """
+    reports: list[str] = []
+    for i, result in enumerate(individual_results, 1):
+        report = (
+            f"### Analyst {i} ({result.provider}/{result.model})\n"
+            f"- Score: {result.score}/10\n"
+            f"- Confidence: {result.confidence:.0%}\n"
+            f"- Recommendation: {result.recommendation.value}\n"
+            f"- Bullish Signals: {', '.join(result.bullish_signals) or 'None'}\n"
+            f"- Bearish Signals: {', '.join(result.bearish_signals) or 'None'}\n"
+            f"- Key Points: {', '.join(result.key_points) or 'None'}\n"
+            f"- Summary: {result.summary}\n"
+        )
+        reports.append(report)
+
+    individual_reports = "\n".join(reports) if reports else "No analyst reports available."
+
+    return CONSENSUS_LEADER_USER_PROMPT.format(
+        ticker=ticker,
+        analysis_type=analysis_type,
+        individual_reports=individual_reports,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Response parser
+# ---------------------------------------------------------------------------
 
 
 def parse_llm_response(
     raw: str,
     provider: str,
     model: str,
+    analysis_type: AnalysisType,
     latency_ms: int = 0,
-) -> LLMAnalysis:
-    """
-    Parse JSON response from any LLM into an LLMAnalysis.
+) -> AnalysisResult:
+    """Parse JSON response from any LLM into an AnalysisResult.
 
     Handles common JSON extraction issues:
     - Markdown code fences around JSON
     - Trailing commas
     - Partial responses
+
+    Args:
+        raw: Raw text response from the LLM.
+        provider: Provider identifier (e.g. "openai").
+        model: Model identifier (e.g. "gpt-4o-mini").
+        analysis_type: The type of analysis this result represents.
+        latency_ms: Time taken for the API call in milliseconds.
+
+    Returns:
+        Parsed AnalysisResult. On parse failure, returns a result with
+        the ``error`` field set.
     """
     try:
         parsed = _extract_json(raw)
 
-        # Map string values to enums with fallbacks
+        # Map recommendation string to enum with fallback
         rec_str = parsed.get("recommendation", "HOLD")
         try:
             recommendation = Recommendation(rec_str)
         except ValueError:
             recommendation = Recommendation.HOLD
 
-        return LLMAnalysis(
+        # Clamp score to 0–10 range
+        raw_score = float(parsed.get("score", 5.0))
+        score = max(0.0, min(10.0, raw_score))
+
+        # Clamp confidence to 0–1 range
+        raw_confidence = float(parsed.get("confidence", 0.5))
+        confidence = max(0.0, min(1.0, raw_confidence))
+
+        return AnalysisResult(
             provider=provider,
             model=model,
-            sentiment_score=float(parsed.get("sentiment_score", 0.0)),
-            confidence=float(parsed.get("confidence", 0.5)),
+            analysis_type=analysis_type,
+            score=score,
+            confidence=confidence,
+            summary=parsed.get("summary", ""),
+            key_points=parsed.get("key_points", []),
             bullish_signals=parsed.get("bullish_signals", []),
             bearish_signals=parsed.get("bearish_signals", []),
-            risk_level=int(parsed.get("risk_level", 3)),
             recommendation=recommendation,
-            summary=parsed.get("summary", ""),
-            key_factors=parsed.get("key_factors", []),
             raw_response=raw,
             latency_ms=latency_ms,
         )
 
     except Exception as e:
         logger.warning("Failed to parse LLM response from %s: %s", provider, e)
-        return LLMAnalysis(
+        return AnalysisResult(
             provider=provider,
             model=model,
+            analysis_type=analysis_type,
             raw_response=raw,
             latency_ms=latency_ms,
             error=f"Failed to parse response: {e}",
         )
 
 
+# ---------------------------------------------------------------------------
+# JSON extraction
+# ---------------------------------------------------------------------------
+
+
 def _extract_json(raw: str) -> dict[str, Any]:
-    """Extract JSON from an LLM response, handling common formatting issues."""
+    """Extract JSON from an LLM response, handling common formatting issues.
+
+    Attempts in order:
+    1. Direct parse after stripping markdown code fences.
+    2. Scan for '{' characters and attempt parse from each.
+    3. Retry with trailing comma removal.
+
+    Args:
+        raw: Raw text that should contain a JSON object.
+
+    Returns:
+        Parsed dict from the JSON.
+
+    Raises:
+        ValueError: If no valid JSON object can be extracted.
+    """
     # Strip markdown code fences
     cleaned = raw.strip()
     if cleaned.startswith("```"):
@@ -137,6 +276,11 @@ def _extract_json(raw: str) -> dict[str, Any]:
     raise ValueError(f"Could not extract JSON from response: {cleaned[:200]}")
 
 
+# ---------------------------------------------------------------------------
+# Research prompt builder (kept for research tab)
+# ---------------------------------------------------------------------------
+
+
 def build_research_prompt(
     asset_info: dict,
     performance: dict,
@@ -144,7 +288,18 @@ def build_research_prompt(
     news: list[dict],
     user_context: str = "",
 ) -> str:
-    """Build prompt for research analysis (any asset)."""
+    """Build prompt for research analysis (any asset).
+
+    Args:
+        asset_info: Dict with ticker, name, sector, industry, market_cap, etc.
+        performance: Dict with sharpe_ratio, max_drawdown_pct, return_*, etc.
+        macro: Dict of macro indicators with price and change_pct.
+        news: List of news article dicts with title and publisher.
+        user_context: Optional user-provided context.
+
+    Returns:
+        Formatted prompt string for the research analysis.
+    """
     # Format performance metrics
     perf_lines = []
     if performance:
@@ -183,7 +338,7 @@ def build_research_prompt(
     news_summary = "\n".join(news_lines) if news_lines else "No recent news found."
 
     # Format values for the prompt
-    def _fmt(val, prefix="", suffix=""):
+    def _fmt(val: Any, prefix: str = "", suffix: str = "") -> str:
         if val is None:
             return "N/A"
         return f"{prefix}{val}{suffix}"

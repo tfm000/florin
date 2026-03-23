@@ -56,13 +56,6 @@ class Recommendation(str, Enum):
     STRONG_AVOID = "STRONG_AVOID"
 
 
-class AgreementLevel(str, Enum):
-    STRONG = "STRONG"
-    MODERATE = "MODERATE"
-    WEAK = "WEAK"
-    DIVIDED = "DIVIDED"
-
-
 class AlertSource(str, Enum):
     MOMENTUM = "MOMENTUM"
     MANUAL = "MANUAL"
@@ -308,64 +301,77 @@ class SentimentData(BaseModel):
 # LLM Analysis Models
 # =============================================================================
 
-class LLMAnalysis(BaseModel):
-    """Output from a single LLM analyser."""
+
+class AnalysisType(str, Enum):
+    """Type of LLM analysis task."""
+    ANNOUNCEMENT = "announcement"
+    SENTIMENT = "sentiment"
+
+
+class AnalysisResult(BaseModel):
+    """Output from a single LLM analysis — either announcement or sentiment.
+
+    Score semantics: 0 = extremely negative, 5 = neutral, 10 = extremely positive.
+    Used for both individual analyst results and consensus leader output.
+    """
     provider: str  # "groq", "gemini", "claude", "openai", "openrouter"
     model: str = ""
-    sentiment_score: float = Field(default=0.0, ge=-10.0, le=10.0)
+    analysis_type: AnalysisType = AnalysisType.SENTIMENT
+    score: float = Field(default=5.0, ge=0.0, le=10.0)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    summary: str = ""
+    key_points: list[str] = Field(default_factory=list)
     bullish_signals: list[str] = Field(default_factory=list)
     bearish_signals: list[str] = Field(default_factory=list)
-    risk_level: int = Field(default=3, ge=1, le=5)
     recommendation: Recommendation = Recommendation.HOLD
-    summary: str = ""
-    key_factors: list[str] = Field(default_factory=list)
     raw_response: str = ""  # Full LLM response for debugging
     latency_ms: int = 0
     error: Optional[str] = None
 
 
 class AnalysisReport(BaseModel):
-    """Complete analysis report for a stock alert — either single or consensus mode."""
+    """Complete analysis report for a stock alert.
+
+    Supports single-model and consensus modes, with separate results
+    for announcement analysis (Form 8-K) and sentiment analysis
+    (Google Search, Reddit, StockTwits).
+    """
     id: str = ""
     ticker: str
     alert: AlertSignal
     sentiment: SentimentData
+    filings: list[Form8KFiling] = Field(default_factory=list)
 
-    # Single-mode fields
-    primary_analysis: Optional[LLMAnalysis] = None
+    # Single-mode results (one model per analysis type)
+    announcement_analysis: Optional[AnalysisResult] = None
+    sentiment_analysis: Optional[AnalysisResult] = None
 
-    # Consensus-mode fields
-    individual_analyses: list[LLMAnalysis] = Field(default_factory=list)
-    consensus: Optional[LLMAnalysis] = None  # Meta-analysis
+    # Consensus-mode results (all models + leader synthesis)
+    announcement_analyses: list[AnalysisResult] = Field(default_factory=list)
+    sentiment_analyses: list[AnalysisResult] = Field(default_factory=list)
+    announcement_consensus: Optional[AnalysisResult] = None
+    sentiment_consensus: Optional[AnalysisResult] = None
 
-    # Final recommendation (from primary or consensus)
+    # Final scores (from single result or consensus leader)
+    announcement_score: Optional[float] = None
+    sentiment_score: Optional[float] = None
     final_recommendation: Recommendation = Recommendation.HOLD
-    final_score: float = 0.0
     final_confidence: float = 0.0
 
     mode: str = "single"  # "single" | "consensus"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    def get_best_analysis(self) -> Optional[LLMAnalysis]:
-        """Return the primary analysis (single mode) or consensus (consensus mode)."""
-        if self.mode == "consensus" and self.consensus:
-            return self.consensus
-        return self.primary_analysis
+    def get_best_announcement(self) -> Optional[AnalysisResult]:
+        """Return the best announcement analysis (consensus or single)."""
+        if self.mode == "consensus" and self.announcement_consensus:
+            return self.announcement_consensus
+        return self.announcement_analysis
 
-
-class ConsensusAnalysis(BaseModel):
-    """Meta-analysis output from consensus mode."""
-    consensus_score: float = Field(default=0.0, ge=-10.0, le=10.0)
-    agreement_level: AgreementLevel = AgreementLevel.MODERATE
-    points_of_agreement: list[str] = Field(default_factory=list)
-    points_of_disagreement: list[str] = Field(default_factory=list)
-    strongest_bullish_argument: str = ""
-    strongest_bearish_argument: str = ""
-    consensus_recommendation: Recommendation = Recommendation.HOLD
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    summary: str = ""
-    dissenting_view: Optional[str] = None
+    def get_best_sentiment(self) -> Optional[AnalysisResult]:
+        """Return the best sentiment analysis (consensus or single)."""
+        if self.mode == "consensus" and self.sentiment_consensus:
+            return self.sentiment_consensus
+        return self.sentiment_analysis
 
 
 # =============================================================================

@@ -2,22 +2,25 @@
 Abstract interface for LLM analysis providers.
 
 Implementations: GroqAnalyser, GeminiAnalyser, ClaudeAnalyser, OpenAIAnalyser, OpenRouterAnalyser
-All produce the same LLMAnalysis output — fully interchangeable.
+All produce AnalysisResult output with 0–10 scoring — fully interchangeable.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from core.models import AlertSignal, LLMAnalysis, SentimentData
+from core.models import AnalysisResult, Form8KFiling, SentimentData
 
 
 class LLMAnalyser(ABC):
     """
     Interface for any LLM-based stock analysis provider.
 
-    Given an alert + sentiment data, produces a structured LLMAnalysis
-    with recommendation and reasoning.
+    Supports two analysis types:
+    - **Announcement analysis**: Analyse SEC Form 8-K filings for a ticker.
+    - **Sentiment analysis**: Analyse social/news sentiment for a ticker.
+
+    Both return an ``AnalysisResult`` with a 0–10 score.
     """
 
     @property
@@ -33,16 +36,46 @@ class LLMAnalyser(ABC):
         ...
 
     @abstractmethod
-    async def analyse(
+    async def analyse_announcements(
         self,
-        alert: AlertSignal,
-        sentiment: SentimentData,
-    ) -> LLMAnalysis:
-        """
-        Generate analysis for a stock alert.
+        ticker: str,
+        filings: list[Form8KFiling],
+        user_context: str = "",
+    ) -> AnalysisResult:
+        """Analyse SEC Form 8-K filings for a ticker.
 
-        Must return LLMAnalysis even on failure (with error field set).
-        Should never raise — errors are captured in the response.
+        Args:
+            ticker: Stock symbol (e.g. "AAPL").
+            filings: One or more Form 8-K filings to analyse.
+            user_context: Optional user-provided context to include in the prompt.
+
+        Returns:
+            AnalysisResult with analysis_type=ANNOUNCEMENT. On failure the
+            ``error`` field is populated and the result is still returned.
+            Should never raise — errors are captured in the response.
+        """
+        ...
+
+    @abstractmethod
+    async def analyse_sentiment(
+        self,
+        ticker: str,
+        sentiment: SentimentData,
+        alert_context: dict | None = None,
+        user_context: str = "",
+    ) -> AnalysisResult:
+        """Analyse market sentiment from social/news sources for a ticker.
+
+        Args:
+            ticker: Stock symbol (e.g. "AAPL").
+            sentiment: Aggregated sentiment data (Reddit, StockTwits, Google, news).
+            alert_context: Optional dict with price, change_pct, volume, avg_volume.
+            user_context: Optional user-provided context to include in the prompt.
+
+        Returns:
+            AnalysisResult with analysis_type=SENTIMENT. On failure the
+            ``error`` field is populated and the result is still returned.
+            Should never raise — errors are captured in the response.
         """
         ...
 

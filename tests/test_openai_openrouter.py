@@ -1,8 +1,8 @@
 """Tests for OpenAI and OpenRouter LLM analysers.
 
 Validates both analysers with mocked API responses — no real API calls are made.
-Covers: successful analysis, API errors, health checks, base_url configuration,
-and settings integration (provider enablement).
+Covers: successful analysis (announcement + sentiment), API errors, health checks,
+base_url configuration, and settings integration (provider enablement).
 """
 
 from __future__ import annotations
@@ -17,11 +17,13 @@ from analysis.openai_analyser import OpenAIAnalyser
 from analysis.openrouter_analyser import OpenRouterAnalyser, _OPENROUTER_BASE_URL
 from config.settings import LLMProvider, Settings
 from core.models import (
-    AlertSignal,
-    LLMAnalysis,
+    AnalysisResult,
+    AnalysisType,
+    Form8KFiling,
     Recommendation,
     SentimentData,
 )
+from datetime import UTC, datetime
 
 
 # =============================================================================
@@ -29,33 +31,35 @@ from core.models import (
 # =============================================================================
 
 
-def _make_alert() -> AlertSignal:
-    """Create a minimal AlertSignal for testing."""
-    return AlertSignal(
-        ticker="TEST",
-        price=2.50,
-        change_pct=7.5,
-        volume=100_000,
-        avg_volume=10_000,
-    )
-
-
 def _make_sentiment() -> SentimentData:
     """Create a minimal SentimentData for testing."""
     return SentimentData(ticker="TEST")
 
 
+def _make_filings() -> list[Form8KFiling]:
+    """Create minimal Form 8-K filings for testing."""
+    return [
+        Form8KFiling(
+            ticker="TEST",
+            filed_date=datetime(2026, 1, 15, tzinfo=UTC),
+            form_type="8-K",
+            description="Current report",
+            items=["Item 2.02"],
+            text_content="The company reported Q4 earnings of $0.50 per share.",
+        )
+    ]
+
+
 def _make_valid_json_response() -> str:
-    """Return a valid JSON string matching the expected LLM analysis schema."""
+    """Return a valid JSON string matching the expected analysis schema."""
     return json.dumps({
-        "sentiment_score": 6.5,
+        "score": 6.5,
         "confidence": 0.85,
         "bullish_signals": ["Strong momentum", "Positive sentiment"],
         "bearish_signals": ["Low market cap"],
-        "risk_level": 2,
         "recommendation": "BUY",
         "summary": "Promising penny stock with strong momentum.",
-        "key_factors": ["Volume spike", "Social buzz"],
+        "key_points": ["Volume spike", "Social buzz"],
     })
 
 
@@ -100,20 +104,21 @@ class TestOpenAIAnalyser:
         assert analyser.model_name == "gpt-4o-mini"
 
     @pytest.mark.asyncio
-    async def test_analyse_success(self, analyser: OpenAIAnalyser) -> None:
-        """Successful API response should produce a valid LLMAnalysis."""
+    async def test_analyse_sentiment_success(self, analyser: OpenAIAnalyser) -> None:
+        """Successful sentiment analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.provider == "openai"
         assert result.model == "gpt-4o-mini"
+        assert result.analysis_type == AnalysisType.SENTIMENT
         assert result.error is None
-        assert result.sentiment_score == 6.5
+        assert result.score == 6.5
         assert result.confidence == 0.85
         assert result.recommendation == Recommendation.BUY
         assert len(result.bullish_signals) == 2
@@ -121,17 +126,32 @@ class TestOpenAIAnalyser:
         assert result.latency_ms >= 0
 
     @pytest.mark.asyncio
-    async def test_analyse_api_error(self, analyser: OpenAIAnalyser) -> None:
-        """API errors should produce an LLMAnalysis with the error field set."""
+    async def test_analyse_announcements_success(self, analyser: OpenAIAnalyser) -> None:
+        """Successful announcement analysis should produce a valid AnalysisResult."""
+        mock_response = _mock_completion_response(_make_valid_json_response())
+        analyser._client.chat = MagicMock()
+        analyser._client.chat.completions = MagicMock()
+        analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        result = await analyser.analyse_announcements("TEST", _make_filings())
+
+        assert isinstance(result, AnalysisResult)
+        assert result.analysis_type == AnalysisType.ANNOUNCEMENT
+        assert result.error is None
+        assert result.score == 6.5
+
+    @pytest.mark.asyncio
+    async def test_analyse_sentiment_api_error(self, analyser: OpenAIAnalyser) -> None:
+        """API errors should produce an AnalysisResult with the error field set."""
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(
             side_effect=Exception("Rate limit exceeded")
         )
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.provider == "openai"
         assert result.error is not None
         assert "Rate limit exceeded" in result.error
@@ -167,9 +187,9 @@ class TestOpenAIAnalyser:
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.error is not None
         assert "Failed to parse" in result.error
 
@@ -217,35 +237,51 @@ class TestOpenRouterAnalyser:
             assert "X-Title" in call_kwargs["default_headers"]
 
     @pytest.mark.asyncio
-    async def test_analyse_success(self, analyser: OpenRouterAnalyser) -> None:
-        """Successful API response should produce a valid LLMAnalysis."""
+    async def test_analyse_sentiment_success(self, analyser: OpenRouterAnalyser) -> None:
+        """Successful sentiment analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.provider == "openrouter"
         assert result.model == "anthropic/claude-3.5-sonnet"
+        assert result.analysis_type == AnalysisType.SENTIMENT
         assert result.error is None
-        assert result.sentiment_score == 6.5
+        assert result.score == 6.5
         assert result.recommendation == Recommendation.BUY
         assert result.latency_ms >= 0
 
     @pytest.mark.asyncio
+    async def test_analyse_announcements_success(self, analyser: OpenRouterAnalyser) -> None:
+        """Successful announcement analysis should produce a valid AnalysisResult."""
+        mock_response = _mock_completion_response(_make_valid_json_response())
+        analyser._client.chat = MagicMock()
+        analyser._client.chat.completions = MagicMock()
+        analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        result = await analyser.analyse_announcements("TEST", _make_filings())
+
+        assert isinstance(result, AnalysisResult)
+        assert result.analysis_type == AnalysisType.ANNOUNCEMENT
+        assert result.error is None
+        assert result.score == 6.5
+
+    @pytest.mark.asyncio
     async def test_analyse_api_error(self, analyser: OpenRouterAnalyser) -> None:
-        """API errors should produce an LLMAnalysis with the error field set."""
+        """API errors should produce an AnalysisResult with the error field set."""
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(
             side_effect=Exception("Model not available")
         )
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.provider == "openrouter"
         assert result.error is not None
         assert "Model not available" in result.error
@@ -280,9 +316,9 @@ class TestOpenRouterAnalyser:
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        result = await analyser.analyse(_make_alert(), _make_sentiment())
+        result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
-        assert isinstance(result, LLMAnalysis)
+        assert isinstance(result, AnalysisResult)
         assert result.error is not None
         assert "Failed to parse" in result.error
 

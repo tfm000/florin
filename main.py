@@ -114,6 +114,10 @@ class Florin:
         # Sentiment aggregator
         sentiment_agg = self._init_sentiment()
 
+        # SEC 8-K filing source (standalone, not a sentiment source)
+        from sentiment.sec_8k_source import SEC8KSource
+        sec_8k_source = SEC8KSource()
+
         # LLM analysers
         analysers = self._init_analysers()
 
@@ -173,7 +177,7 @@ class Florin:
         # Alert pipeline
         services.append(asyncio.create_task(
             self._alert_pipeline(
-                sentiment_agg, report_gen, consensus_gen,
+                sentiment_agg, sec_8k_source, report_gen, consensus_gen,
             ),
             name="alert-pipeline",
         ))
@@ -367,13 +371,13 @@ class Florin:
     async def _alert_pipeline(
         self,
         sentiment_agg: Any,
+        sec_8k_source: Any,
         report_gen: Any,
         consensus_gen: Any,
     ) -> None:
-        """
-        React to momentum alerts.
+        """React to momentum alerts.
 
-        Flow: MOMENTUM_ALERT → scrape sentiment
+        Flow: MOMENTUM_ALERT → fetch sentiment + 8-K filings concurrently
               → generate report (single or consensus) → save to DB
               → publish REPORT_READY
         """
@@ -382,19 +386,27 @@ class Florin:
             logger.info("Processing alert", ticker=alert.ticker, change=alert.change_pct)
 
             try:
-                # 1. Scrape sentiment
-                sentiment = await sentiment_agg.fetch(alert.ticker)
+                # 1. Fetch sentiment and 8-K filings concurrently
+                sentiment_task = sentiment_agg.fetch(alert.ticker)
+                filings_task = sec_8k_source.fetch(alert.ticker)
+                sentiment, filings = await asyncio.gather(
+                    sentiment_task, filings_task, return_exceptions=False,
+                )
 
-                # 2. Generate report
+                # 2. Generate report (both analysis types)
                 if self.settings.llm_mode.value == "consensus":
-                    report = await consensus_gen.generate(alert, sentiment)
+                    report = await consensus_gen.generate(
+                        alert, sentiment, filings=filings,
+                    )
                 else:
-                    report = await report_gen.generate(alert, sentiment)
+                    report = await report_gen.generate(
+                        alert, sentiment, filings=filings,
+                    )
 
-                # 4. Save to database
+                # 3. Save to database
                 await self._save_report(report)
 
-                # 5. Push to Telegram + Dashboard via event bus
+                # 4. Push to Telegram + Dashboard via event bus
                 await self.event_bus.publish(
                     EventType.REPORT_READY, report, source="alert_pipeline"
                 )
@@ -403,7 +415,8 @@ class Florin:
                     "Report generated",
                     ticker=alert.ticker,
                     recommendation=report.final_recommendation.value,
-                    score=report.final_score,
+                    announcement_score=report.announcement_score,
+                    sentiment_score=report.sentiment_score,
                 )
             except Exception as e:
                 logger.error("Alert pipeline failed for %s: %s", alert.ticker, e)
@@ -448,6 +461,9 @@ class Florin:
         if not self.db:
             return
 
+        # Use sentiment_score as final_score for DB, fallback to announcement
+        final_score = report.sentiment_score or report.announcement_score or 0.0
+
         orm = ReportORM(
             id=report.id,
             ticker=report.ticker,
@@ -456,8 +472,9 @@ class Florin:
             alert_change_pct=report.alert.change_pct,
             alert_volume=report.alert.volume,
             final_recommendation=report.final_recommendation.value,
-            final_score=report.final_score,
+            final_score=final_score,
             final_confidence=report.final_confidence,
+            # Legacy fraud columns — hardcoded for DB compat
             fraud_risk_level="LOW",
             fraud_risk_score=0.0,
             fraud_flags="[]",
