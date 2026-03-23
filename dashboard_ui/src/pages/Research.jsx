@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import SearchBar from '../components/SearchBar'
@@ -5,8 +6,9 @@ import NewsCard from '../components/NewsCard'
 import YieldCurveChart from '../components/YieldCurveChart'
 import PutCallIVChart from '../components/PutCallIVChart'
 import MetricsGrid from '../components/MetricsGrid'
-import SectorHeatMap from '../components/SectorHeatMap'
-import CorrelationMatrix from '../components/CorrelationMatrix'
+import SectorPerformanceChart from '../components/SectorPerformanceChart'
+import PresetCorrelationMatrix from '../components/PresetCorrelationMatrix'
+import CorrelationMatrix, { CORR_METHODS, CORR_PERIODS } from '../components/CorrelationMatrix'
 import MarketBreadth from '../components/MarketBreadth'
 import MarketHours from '../components/MarketHours'
 
@@ -15,6 +17,10 @@ export default function Research() {
   const { data: news, loading: newsLoading } = useApi('/research/news', { interval: 300000 }) // 5 min
   const { data: rates } = useApi('/research/policy-rates')
   const { data: macro } = useApi('/research/macro', { interval: 60000 }) // 60 sec auto-refresh
+
+  // Shared correlation state
+  const [corrMethod, setCorrMethod] = useState('pearson')
+  const [corrPeriod, setCorrPeriod] = useState('1y')
 
   const handleSelect = (item) => {
     navigate(`/research/${item.ticker}`)
@@ -94,11 +100,44 @@ export default function Research() {
       {/* Market Breadth */}
       <MarketBreadth />
 
-      {/* Sector Heat Map */}
-      <SectorHeatMap />
+      {/* Sector Performance */}
+      <SectorPerformanceChart />
 
-      {/* Correlation Matrix */}
-      <CorrelationMatrix />
+      {/* Correlation Matrices — unified controls */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-300">Correlation Matrices</h2>
+          <div className="flex items-center gap-2">
+            <select value={corrMethod} onChange={e => setCorrMethod(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
+              {CORR_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <select value={corrPeriod} onChange={e => setCorrPeriod(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
+              {CORR_PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <PresetCorrelationMatrix
+            title="Cross-Asset Correlation"
+            tickers={['SPY', '^FTSE', '^GDAXI', 'GC=F', 'CL=F', 'NG=F']}
+            labels={['S&P 500', 'FTSE 100', 'DAX', 'Gold', 'Oil', 'Nat Gas']}
+            method={corrMethod}
+            period={corrPeriod}
+          />
+          <PresetCorrelationMatrix
+            title="S&P 500 Sector Correlation"
+            tickers={['XLK', 'XLV', 'XLF', 'XLY', 'XLP', 'XLE', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC']}
+            labels={['Tech', 'Health', 'Fin', 'Disc', 'Stpl', 'Energy', 'Ind', 'Mat', 'Util', 'RE', 'Comm']}
+            method={corrMethod}
+            period={corrPeriod}
+          />
+        </div>
+
+        <CorrelationMatrix method={corrMethod} period={corrPeriod} hideControls />
+      </div>
 
       {/* Put-Call IV Spread */}
       <PutCallIVChart />

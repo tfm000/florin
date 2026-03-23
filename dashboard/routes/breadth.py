@@ -1,19 +1,20 @@
 """Market breadth indicators — live + historical from DB snapshots.
 
-Falls back to live yfinance computation when no DB snapshots exist.
+Falls back to live computation via the screener engine when no DB snapshots exist.
+Supports exchange selection via query parameter.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from dashboard.dependencies import get_db_session, get_yfinance_dep
+from dashboard.dependencies import get_db_session
 from db.models import BreadthSnapshotORM
+from scanner.breadth_scanner import DEFAULT_EXCHANGES, compute_breadth
 
 logger = logging.getLogger(__name__)
 
@@ -42,95 +43,53 @@ class BreadthHistoryResponse(BaseModel):
     snapshots: list[BreadthHistoryPoint]
 
 
-async def _live_breadth(yf) -> BreadthResponse:
-    """Compute breadth on-the-fly from major index ETFs as a proxy."""
-
-    def _compute():
-        try:
-            from yfinance import EquityQuery, screen
-
-            query = EquityQuery("and", [
-                EquityQuery("eq", ["region", "us"]),
-                EquityQuery("or", [
-                    EquityQuery("eq", ["exchange", "NMS"]),
-                    EquityQuery("eq", ["exchange", "NGM"]),
-                    EquityQuery("eq", ["exchange", "NCM"]),
-                    EquityQuery("eq", ["exchange", "NYQ"]),
-                    EquityQuery("eq", ["exchange", "ASE"]),
-                ]),
-                EquityQuery("gt", ["intradaymarketcap", 300_000_000]),
-            ])
-
-            advancing = 0
-            declining = 0
-            unchanged = 0
-            offset = 0
-            page_size = 250
-
-            while offset < 4000:
-                resp = screen(query, size=page_size, offset=offset,
-                              sortField="intradaymarketcap", sortAsc=False)
-                quotes = resp.get("quotes", []) if resp else []
-                if not quotes:
-                    break
-                for q in quotes:
-                    change = q.get("regularMarketChangePercent", 0) or 0
-                    if change > 0.01:
-                        advancing += 1
-                    elif change < -0.01:
-                        declining += 1
-                    else:
-                        unchanged += 1
-                offset += page_size
-                if len(quotes) < page_size:
-                    break
-
-            total = advancing + declining + unchanged
-            if total == 0:
-                return BreadthResponse()
-
-            ad_ratio = advancing / declining if declining > 0 else (
-                float(advancing) if advancing > 0 else 0
-            )
-            return BreadthResponse(
-                advancing=advancing,
-                declining=declining,
-                unchanged=unchanged,
-                advance_decline_ratio=round(ad_ratio, 2),
-                total_stocks=total,
-                pct_advancing=round(advancing / total * 100, 1),
-            )
-        except Exception:
-            logger.exception("Live breadth computation failed")
-            return BreadthResponse()
-
-    return await asyncio.to_thread(_compute)
-
-
 @router.get("/breadth", response_model=BreadthResponse)
 async def get_market_breadth(
+    exchange: str = Query(
+        default=DEFAULT_EXCHANGES,
+        description="Comma-separated exchange codes (e.g. NMS,NGM,NCM,NYQ)",
+    ),
     session=Depends(get_db_session),
-    yf=Depends(get_yfinance_dep),
 ):
-    """Latest market breadth — from DB snapshot, falling back to live computation."""
-    result = await session.execute(
-        select(BreadthSnapshotORM)
-        .order_by(BreadthSnapshotORM.recorded_at.desc())
-        .limit(1)
-    )
-    latest = result.scalar()
+    """Latest market breadth — from DB snapshot or live computation.
 
-    if not latest:
-        return await _live_breadth(yf)
+    When exchange differs from the default, always computes live
+    (DB snapshots only store the default exchange set).
+    """
+    is_default = exchange == DEFAULT_EXCHANGES
 
-    total = latest.total
+    if is_default:
+        result = await session.execute(
+            select(BreadthSnapshotORM)
+            .order_by(BreadthSnapshotORM.recorded_at.desc())
+            .limit(1)
+        )
+        latest = result.scalar()
+
+        if latest:
+            total = latest.total
+            return BreadthResponse(
+                advancing=latest.advancing,
+                declining=latest.declining,
+                unchanged=latest.unchanged,
+                advance_decline_ratio=latest.ad_ratio,
+                total_stocks=total,
+                pct_advancing=round(latest.advancing / total * 100, 1) if total > 0 else 0,
+            )
+
+    # Live computation (either no DB snapshot or non-default exchanges)
+    data = await compute_breadth(exchange=exchange)
+    total = data["total"]
+    if total == 0:
+        return BreadthResponse()
+
     return BreadthResponse(
-        advancing=latest.advancing,
-        declining=latest.declining,
-        unchanged=latest.unchanged,
-        advance_decline_ratio=latest.ad_ratio,
+        advancing=data["advancing"],
+        declining=data["declining"],
+        unchanged=data["unchanged"],
+        advance_decline_ratio=data["ad_ratio"],
         total_stocks=total,
-        pct_advancing=round(latest.advancing / total * 100, 1) if total > 0 else 0,
+        pct_advancing=round(data["advancing"] / total * 100, 1),
     )
 
 

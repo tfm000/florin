@@ -8,11 +8,14 @@ All settings are typed, validated, and documented. Access via:
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class AppEnv(str, Enum):
@@ -55,7 +58,7 @@ class Settings(BaseSettings):
     # --- General ---
     app_env: AppEnv = AppEnv.DEVELOPMENT
     log_level: str = "INFO"
-    database_url: str = "sqlite+aiosqlite:///./sentinel.db"
+    database_url: str = "sqlite+aiosqlite:///./florin.db"
 
     # --- Trading 212 ---
     t212_api_key: str = ""
@@ -85,16 +88,13 @@ class Settings(BaseSettings):
     def alpaca_data_rest_url(self) -> str:
         return "https://data.alpaca.markets"
 
-    # --- Polygon ---
-    polygon_api_key: str = ""
-
     # --- OpenFIGI ---
     openfigi_api_key: str = ""
 
     # --- Reddit ---
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
-    reddit_user_agent: str = "sentinel-terminal/0.2"
+    reddit_user_agent: str = "florin-terminal/0.2"
 
     # --- LLM: Ollama ---
     ollama_base_url: str = "http://localhost:11434"
@@ -224,4 +224,6 @@ async def load_db_overrides(db: object) -> None:
                 else:
                     setattr(settings, key, value)
             except (ValueError, KeyError):
-                pass
+                logger.warning(
+                    "Failed to apply DB override for setting %s=%r", key, value
+                )

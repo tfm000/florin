@@ -10,14 +10,11 @@ export default function Dashboard() {
   const { data: health } = useApi('/health', { interval: 30000 })
   const { data: watchlist } = useApi('/watchlist?limit=1')
   const { data: monitor } = useApi('/monitor?limit=1')
-  const { data: universe } = useApi('/universe?limit=1')
 
   const unconfigured = health?.setup_checklist?.filter(item => !item.configured) || []
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-
       {/* Setup Banner */}
       {unconfigured.length > 0 && (
         <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4">
@@ -34,7 +31,7 @@ export default function Dashboard() {
             ))}
           </ul>
           <Link
-            to="/settings"
+            to="/trading/settings"
             className="inline-block text-sm text-yellow-400 hover:text-yellow-300 underline"
           >
             Go to Settings &rarr;
@@ -44,10 +41,10 @@ export default function Dashboard() {
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <QuickLink to="/research" label="Research" description="Search & analyse any asset" />
-        <QuickLink to="/watchlist" label="Watchlist" count={watchlist?.total} />
-        <QuickLink to="/monitor" label="Live Monitor" count={monitor?.total} />
-        <QuickLink to="/penny-stocks" label="Penny Stocks" count={universe?.total} />
+        <QuickLink to="/" label="Research" description="Search & analyse any asset" />
+        <QuickLink to="/monitoring/watchlist" label="Watchlist" count={watchlist?.total} />
+        <QuickLink to="/monitoring/live" label="Live Monitor" count={monitor?.total} />
+        <QuickLink to="/screener" label="Screener" />
       </div>
 
       {/* Account Summary */}

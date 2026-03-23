@@ -1,11 +1,54 @@
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useChartColors } from '../hooks/useChartColors'
+import { EXCHANGE_GROUPS } from '../utils/exchanges'
+
+const DEFAULT_SELECTED = ['NASDAQ', 'NYSE']
 
 export default function MarketBreadth() {
   const colors = useChartColors()
-  const { data, loading } = useApi('/breadth', { interval: 60000 })
+  const [selected, setSelected] = useState(DEFAULT_SELECTED)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef(null)
 
-  if (loading) return (
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Resolve group labels to exchange codes
+  const exchangeCodes = useMemo(() => {
+    const codes = []
+    for (const group of EXCHANGE_GROUPS) {
+      if (selected.includes(group.label)) {
+        codes.push(...group.codes)
+      }
+    }
+    return codes.join(',')
+  }, [selected])
+
+  const { data, loading } = useApi(
+    `/breadth?exchange=${encodeURIComponent(exchangeCodes)}`,
+    { interval: 60000 },
+  )
+
+  const toggleGroup = (label) => {
+    setSelected(prev => {
+      if (prev.includes(label)) {
+        if (prev.length <= 1) return prev
+        return prev.filter(g => g !== label)
+      }
+      return [...prev, label]
+    })
+  }
+
+  if (loading && !data) return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       <h3 className="text-white font-semibold mb-3">Market Breadth</h3>
       <p className="text-gray-500 text-sm text-center py-4">Loading breadth data...</p>
@@ -18,7 +61,41 @@ export default function MarketBreadth() {
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-      <h3 className="text-white font-semibold mb-3">Market Breadth</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-white font-semibold">Market Breadth</h3>
+
+        {/* Multi-select dropdown */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setDropdownOpen(o => !o)}
+            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white flex items-center gap-1"
+          >
+            {selected.length === 1 ? selected[0] : `${selected.length} exchanges`}
+            <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {dropdownOpen && (
+            <div className="absolute right-0 mt-1 w-48 bg-gray-700 border border-gray-600 rounded shadow-lg z-50 max-h-64 overflow-y-auto">
+              {EXCHANGE_GROUPS.map(g => (
+                <label
+                  key={g.label}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-white hover:bg-gray-600 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(g.label)}
+                    onChange={() => toggleGroup(g.label)}
+                    className="rounded border-gray-500 text-blue-600 focus:ring-0 focus:ring-offset-0"
+                  />
+                  {g.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-4 gap-3 text-center">
         <div>
           <p className="text-gray-500 text-xs">Advancing</p>
@@ -45,7 +122,7 @@ export default function MarketBreadth() {
         <div style={{ width: `${data.unchanged / data.total_stocks * 100}%`, backgroundColor: '#6B7280' }} />
         <div style={{ width: `${decPct}%`, backgroundColor: colors.negative }} />
       </div>
-      <p className="text-gray-500 text-xs mt-1 text-center">{data.total_stocks} stocks tracked</p>
+      <p className="text-gray-500 text-xs mt-1 text-center">{data.total_stocks.toLocaleString()} stocks tracked</p>
     </div>
   )
 }

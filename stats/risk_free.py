@@ -114,8 +114,8 @@ class RiskFreeRateFetcher:
             timeout=30,
             headers={
                 "User-Agent": (
-                    "PennyStockSentinel/1.0 "
-                    "(+https://github.com/penny-stock-sentinel)"
+                    "FlorinTerminal/1.0 "
+                    "(+https://github.com/florin-terminal)"
                 ),
             },
         )
@@ -374,23 +374,26 @@ class RiskFreeRateFetcher:
         from db.models import RiskFreeRateORM
 
         async with self._db.session() as session:
-            for obs in observations:
-                # Upsert: check existence first
-                existing = await session.execute(
-                    select(RiskFreeRateORM.id)
-                    .where(RiskFreeRateORM.currency == obs.currency)
-                    .where(RiskFreeRateORM.date == obs.date)
-                )
-                if existing.first():
-                    continue
-                session.add(RiskFreeRateORM(
-                    id=uuid4().hex[:16],
-                    currency=obs.currency,
-                    benchmark=obs.benchmark,
-                    date=obs.date,
-                    rate=obs.rate,
-                    source=obs.source,
-                ))
+            # Disable autoflush: adding ORM objects then querying in the same
+            # loop would trigger a premature INSERT that violates the UNIQUE
+            # constraint on (currency, date) if earlier rows already exist.
+            with session.no_autoflush:
+                for obs in observations:
+                    existing = await session.execute(
+                        select(RiskFreeRateORM.id)
+                        .where(RiskFreeRateORM.currency == obs.currency)
+                        .where(RiskFreeRateORM.date == obs.date)
+                    )
+                    if existing.first():
+                        continue
+                    session.add(RiskFreeRateORM(
+                        id=uuid4().hex[:16],
+                        currency=obs.currency,
+                        benchmark=obs.benchmark,
+                        date=obs.date,
+                        rate=obs.rate,
+                        source=obs.source,
+                    ))
             await session.commit()
 
     # -- per-currency fetchers --------------------------------------------
@@ -439,8 +442,8 @@ class RiskFreeRateFetcher:
         )
         headers = {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; PennyStockSentinel/1.0; "
-                "+https://github.com/penny-stock-sentinel)"
+                "Mozilla/5.0 (compatible; FlorinTerminal/1.0; "
+                "+https://github.com/florin-terminal)"
             ),
             "Accept": "text/csv, text/plain, */*",
         }

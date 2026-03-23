@@ -1,9 +1,14 @@
 import { useApi } from '../hooks/useApi'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
+import { INTRADAY_TO_HISTORY } from './PeriodSelector'
 
 export default function RiskMetrics({ ticker, period = '1y', customStart = '', customEnd = '' }) {
+  const colors = useChartColors()
+  const effectivePeriod = INTRADAY_TO_HISTORY[period]?.period || period
   const queryStr = customStart && customEnd
-    ? `period=${period}&start=${customStart}&end=${customEnd}`
-    : `period=${period}`
+    ? `period=${effectivePeriod}&start=${customStart}&end=${customEnd}`
+    : `period=${effectivePeriod}`
 
   const { data, loading } = useApi(`/risk/${ticker}?${queryStr}`)
 
@@ -11,6 +16,8 @@ export default function RiskMetrics({ ticker, period = '1y', customStart = '', c
   if (!data || data.trading_days === 0) return null
 
   const fmt = (v) => v != null ? `${v.toFixed(2)}%` : '—'
+
+  const ratioColor = (v) => v != null ? valueColor(v, colors) : colors.neutral
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -33,8 +40,8 @@ export default function RiskMetrics({ ticker, period = '1y', customStart = '', c
           <tbody className="divide-y divide-gray-700/50">
             <tr>
               <td className="px-2 py-1 text-gray-400">Ann. Return</td>
-              <td className={`px-2 py-1 text-right ${data.annualized_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmt(data.annualized_return)}</td>
-              {data.parametric && <td className={`px-2 py-1 text-right ${data.parametric_return != null ? (data.parametric_return >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>{data.parametric_return != null ? fmt(data.parametric_return) : '—'}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: valueColor(data.annualized_return, colors) }}>{fmt(data.annualized_return)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: ratioColor(data.parametric_return) }}>{data.parametric_return != null ? fmt(data.parametric_return) : '—'}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">Ann. Volatility</td>
@@ -43,33 +50,33 @@ export default function RiskMetrics({ ticker, period = '1y', customStart = '', c
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">Sharpe</td>
-              <td className={`px-2 py-1 text-right ${data.sharpe >= 0 ? 'text-green-400' : 'text-red-400'}`}>{data.sharpe.toFixed(2)}</td>
-              {data.parametric && <td className={`px-2 py-1 text-right ${data.parametric_sharpe != null ? (data.parametric_sharpe >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>{data.parametric_sharpe != null ? data.parametric_sharpe.toFixed(2) : '—'}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: ratioColor(data.sharpe) }}>{data.sharpe.toFixed(2)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: ratioColor(data.parametric_sharpe) }}>{data.parametric_sharpe != null ? data.parametric_sharpe.toFixed(2) : '—'}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">Sortino</td>
-              <td className={`px-2 py-1 text-right ${data.sortino >= 0 ? 'text-green-400' : 'text-red-400'}`}>{data.sortino.toFixed(2)}</td>
-              {data.parametric && <td className={`px-2 py-1 text-right ${data.parametric_sortino != null ? (data.parametric_sortino >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>{data.parametric_sortino != null ? data.parametric_sortino.toFixed(2) : '—'}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: ratioColor(data.sortino) }}>{data.sortino.toFixed(2)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: ratioColor(data.parametric_sortino) }}>{data.parametric_sortino != null ? data.parametric_sortino.toFixed(2) : '—'}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">VaR (95%)</td>
-              <td className="px-2 py-1 text-right text-red-400">{fmt(data.historical.var_95)}</td>
-              {data.parametric && <td className="px-2 py-1 text-right text-red-400">{fmt(data.parametric.var_95)}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.historical.var_95)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.parametric.var_95)}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">VaR (99%)</td>
-              <td className="px-2 py-1 text-right text-red-400">{fmt(data.historical.var_99)}</td>
-              {data.parametric && <td className="px-2 py-1 text-right text-red-400">{fmt(data.parametric.var_99)}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.historical.var_99)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.parametric.var_99)}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">CVaR (95%)</td>
-              <td className="px-2 py-1 text-right text-red-400">{fmt(data.historical.cvar_95)}</td>
-              {data.parametric && <td className="px-2 py-1 text-right text-red-400">{fmt(data.parametric.cvar_95)}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.historical.cvar_95)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.parametric.cvar_95)}</td>}
             </tr>
             <tr>
               <td className="px-2 py-1 text-gray-400">CVaR (99%)</td>
-              <td className="px-2 py-1 text-right text-red-400">{fmt(data.historical.cvar_99)}</td>
-              {data.parametric && <td className="px-2 py-1 text-right text-red-400">{fmt(data.parametric.cvar_99)}</td>}
+              <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.historical.cvar_99)}</td>
+              {data.parametric && <td className="px-2 py-1 text-right" style={{ color: colors.negative }}>{fmt(data.parametric.cvar_99)}</td>}
             </tr>
           </tbody>
         </table>

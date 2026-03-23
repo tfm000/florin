@@ -1,42 +1,37 @@
 """
-Multi-factor stock screener — general-purpose equity screening.
+Multi-factor stock screener with saved filter presets.
 
-Separate from the penny stock universe scanner. Uses yfinance's
-EquityQuery + screen() API for server-side filtering.
+Uses the shared screener engine for query execution.
+Supports momentum-based post-filtering and saved screener configurations.
+Includes alert management endpoints for the ScreenerAlertService.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 
-from dashboard.dependencies import get_yfinance_dep
+from core.exceptions import ConflictError, NotFoundError
+from dashboard.dependencies import get_db_session, get_yfinance_dep
+from dashboard.services.screener_engine import (
+    ScreenerResponse,
+    apply_momentum_filter,
+    run_screen,
+)
+from db.models import SavedScreenerORM, ScreenerAlertLogORM
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["screener"])
 
 
-class ScreenerResult(BaseModel):
-    ticker: str
-    name: str = ""
-    exchange: str = ""
-    sector: str = ""
-    industry: str = ""
-    market_cap: float | None = None
-    price: float | None = None
-    pe_ratio: float | None = None
-    dividend_yield: float | None = None
-    avg_volume: int | None = None
-    change_pct: float | None = None
-
-
-class ScreenerResponse(BaseModel):
-    total: int
-    results: list[ScreenerResult]
+# ── Main screener endpoint ───────────────────────────────────────────────────
 
 
 @router.get("/screener", response_model=ScreenerResponse)
@@ -49,80 +44,271 @@ async def screen_stocks(
     pe_max: float = Query(default=0, description="0 = no limit"),
     dividend_yield_min: float = Query(default=0, ge=0),
     sector: str = Query(default="", description="Filter by sector name"),
-    exchange: str = Query(default="", description="NMS, NGM, NCM, NYQ, ASE or comma-separated"),
+    region: str = Query(default="", description="Region code(s): us, gb, de, jp, ca, hk, etc. Empty = default"),
+    exchange: str = Query(default="", description="Exchange codes: NMS, NYQ, PCX, LSE, etc."),
+    asset_type: str = Query(default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"),
+    momentum_min: float | None = Query(default=None, description="Min return % for momentum filter"),
+    momentum_max: float | None = Query(default=None, description="Max return % (None = no limit)"),
+    momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
     sort_by: str = Query(default="intradaymarketcap", description="Sort field"),
     sort_asc: bool = Query(default=False),
-    limit: int = Query(default=100, ge=1, le=250),
+    offset: int = Query(default=0, ge=0, description="Results to skip (pagination)"),
+    limit: int = Query(default=25, ge=1, le=250),
     yf=Depends(get_yfinance_dep),
 ):
-    """General-purpose multi-factor stock screener."""
-    import asyncio
+    """General-purpose multi-factor stock screener with momentum filtering."""
+    results, total = await run_screen(
+        price_min=price_min, price_max=price_max,
+        market_cap_min=market_cap_min, market_cap_max=market_cap_max,
+        pe_min=pe_min, pe_max=pe_max,
+        dividend_yield_min=dividend_yield_min,
+        region=region, sector=sector, exchange=exchange, asset_type=asset_type,
+        sort_by=sort_by, sort_asc=sort_asc, offset=offset, limit=limit, yf=yf,
+    )
 
-    def _screen() -> dict:
-        try:
-            from yfinance import EquityQuery, screen
+    # Apply momentum post-filter if requested
+    if momentum_period and (momentum_min is not None or momentum_max is not None):
+        results = await apply_momentum_filter(
+            results, momentum_min, momentum_max, momentum_period, yf,
+        )
+        total = len(results)
 
-            operands = [
-                EquityQuery("eq", ["region", "us"]),
-            ]
+    return ScreenerResponse(total=total, results=results)
 
-            if price_min > 0:
-                operands.append(EquityQuery("gt", ["intradayprice", price_min]))
-            if price_max > 0:
-                operands.append(EquityQuery("lt", ["intradayprice", price_max]))
-            if market_cap_min > 0:
-                operands.append(EquityQuery("gt", ["intradaymarketcap", market_cap_min]))
-            if market_cap_max > 0:
-                operands.append(EquityQuery("lt", ["intradaymarketcap", market_cap_max]))
-            if pe_min > 0:
-                operands.append(EquityQuery("gt", ["trailingpe", pe_min]))
-            if pe_max > 0:
-                operands.append(EquityQuery("lt", ["trailingpe", pe_max]))
-            if dividend_yield_min > 0:
-                operands.append(EquityQuery("gt", ["dividendyield", dividend_yield_min / 100]))
-            if sector:
-                operands.append(EquityQuery("eq", ["sector", sector]))
 
-            # Exchange filter
-            if exchange:
-                exchanges = [e.strip() for e in exchange.split(",")]
-                if len(exchanges) == 1:
-                    operands.append(EquityQuery("eq", ["exchange", exchanges[0]]))
-                else:
-                    operands.append(EquityQuery("or", [
-                        EquityQuery("eq", ["exchange", e]) for e in exchanges
-                    ]))
+# ── Saved screener CRUD ──────────────────────────────────────────────────────
 
-            if len(operands) < 2:
-                # EquityQuery("and", ...) requires at least 2 operands
-                operands.append(EquityQuery("gt", ["intradayprice", 0]))
-            query = EquityQuery("and", operands)
-            resp = screen(query, size=limit, offset=0,
-                          sortField=sort_by, sortAsc=sort_asc)
 
-            total = resp.get("total", 0) if resp else 0
-            quotes = resp.get("quotes", []) if resp else []
+class SavedScreenerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    filters: dict[str, Any]
+    sort_by: str = "intradaymarketcap"
+    sort_asc: bool = False
 
-            results = []
-            for q in quotes:
-                results.append(ScreenerResult(
-                    ticker=q.get("symbol", ""),
-                    name=q.get("shortName") or q.get("longName", ""),
-                    exchange=q.get("exchange", ""),
-                    sector=q.get("sector", ""),
-                    industry=q.get("industry", ""),
-                    market_cap=q.get("marketCap"),
-                    price=q.get("regularMarketPrice"),
-                    pe_ratio=q.get("trailingPE"),
-                    dividend_yield=q.get("dividendYield"),
-                    avg_volume=q.get("averageDailyVolume3Month"),
-                    change_pct=q.get("regularMarketChangePercent"),
-                ))
 
-            return {"total": total, "results": results}
+class SavedScreenerUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    filters: dict[str, Any] | None = None
+    sort_by: str | None = None
+    sort_asc: bool | None = None
 
-        except Exception:
-            logger.exception("Screener query failed")
-            return {"total": 0, "results": []}
 
-    return await asyncio.to_thread(_screen)
+class SavedScreenerResponse(BaseModel):
+    id: str
+    name: str
+    filters: dict[str, Any]
+    sort_by: str
+    sort_asc: bool
+    is_alert_active: bool
+    max_alerts_per_day: int
+    include_llm_report: bool
+    run_interval_seconds: int
+    last_run_at: str | None
+    created_at: str
+    updated_at: str
+
+
+def _orm_to_response(orm: SavedScreenerORM) -> SavedScreenerResponse:
+    return SavedScreenerResponse(
+        id=orm.id,
+        name=orm.name,
+        filters=json.loads(orm.filters_json),
+        sort_by=orm.sort_by,
+        sort_asc=orm.sort_asc,
+        is_alert_active=orm.is_alert_active,
+        max_alerts_per_day=orm.max_alerts_per_day,
+        include_llm_report=orm.include_llm_report,
+        run_interval_seconds=orm.run_interval_seconds,
+        last_run_at=str(orm.last_run_at) if orm.last_run_at else None,
+        created_at=str(orm.created_at),
+        updated_at=str(orm.updated_at),
+    )
+
+
+@router.get("/screener/saved", response_model=list[SavedScreenerResponse])
+async def list_saved_screeners(session=Depends(get_db_session)):
+    """List all saved screener configurations."""
+    result = await session.execute(
+        select(SavedScreenerORM).order_by(SavedScreenerORM.created_at.desc())
+    )
+    return [_orm_to_response(s) for s in result.scalars().all()]
+
+
+@router.get("/screener/saved/{screener_id}", response_model=SavedScreenerResponse)
+async def get_saved_screener(screener_id: str, session=Depends(get_db_session)):
+    """Get a single saved screener by ID."""
+    result = await session.execute(
+        select(SavedScreenerORM).where(SavedScreenerORM.id == screener_id)
+    )
+    orm = result.scalar()
+    if not orm:
+        raise NotFoundError("Saved screener not found")
+    return _orm_to_response(orm)
+
+
+@router.post("/screener/saved", response_model=SavedScreenerResponse, status_code=201)
+async def create_saved_screener(
+    req: SavedScreenerCreate,
+    session=Depends(get_db_session),
+):
+    """Save a new screener configuration."""
+    # Check uniqueness
+    existing = await session.execute(
+        select(SavedScreenerORM).where(SavedScreenerORM.name == req.name)
+    )
+    if existing.scalar():
+        raise ConflictError(f"Screener '{req.name}' already exists")
+
+    now = datetime.now(UTC)
+    orm = SavedScreenerORM(
+        name=req.name,
+        filters_json=json.dumps(req.filters),
+        sort_by=req.sort_by,
+        sort_asc=req.sort_asc,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(orm)
+    await session.commit()
+    await session.refresh(orm)
+    return _orm_to_response(orm)
+
+
+@router.put("/screener/saved/{screener_id}", response_model=SavedScreenerResponse)
+async def update_saved_screener(
+    screener_id: str,
+    req: SavedScreenerUpdate,
+    session=Depends(get_db_session),
+):
+    """Update an existing saved screener."""
+    result = await session.execute(
+        select(SavedScreenerORM).where(SavedScreenerORM.id == screener_id)
+    )
+    orm = result.scalar()
+    if not orm:
+        raise NotFoundError("Saved screener not found")
+
+    if req.name is not None:
+        # Check uniqueness if name is changing
+        if req.name != orm.name:
+            dup = await session.execute(
+                select(SavedScreenerORM).where(SavedScreenerORM.name == req.name)
+            )
+            if dup.scalar():
+                raise ConflictError(f"Screener '{req.name}' already exists")
+        orm.name = req.name
+    if req.filters is not None:
+        orm.filters_json = json.dumps(req.filters)
+    if req.sort_by is not None:
+        orm.sort_by = req.sort_by
+    if req.sort_asc is not None:
+        orm.sort_asc = req.sort_asc
+
+    orm.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(orm)
+    return _orm_to_response(orm)
+
+
+@router.delete("/screener/saved/{screener_id}")
+async def delete_saved_screener(screener_id: str, session=Depends(get_db_session)):
+    """Delete a saved screener."""
+    result = await session.execute(
+        select(SavedScreenerORM).where(SavedScreenerORM.id == screener_id)
+    )
+    orm = result.scalar()
+    if not orm:
+        raise NotFoundError("Saved screener not found")
+
+    await session.delete(orm)
+    await session.commit()
+    return {"deleted": screener_id}
+
+
+# ── Alert management endpoints ────────────────────────────────────────────────
+
+
+class AlertSettingsUpdate(BaseModel):
+    """Update alert-related settings on a saved screener."""
+    is_alert_active: bool | None = None
+    max_alerts_per_day: int | None = Field(None, ge=1, le=100)
+    run_interval_seconds: int | None = Field(None, ge=60, le=86400)
+    include_llm_report: bool | None = None
+
+
+class ScreenerAlertLogResponse(BaseModel):
+    """Single entry in the screener alert log."""
+    id: str
+    screener_id: str
+    ticker: str
+    price: float | None
+    change_pct: float | None
+    alert_data: dict[str, Any]
+    sent_at: str
+
+
+@router.put("/screener/saved/{screener_id}/alerts", response_model=SavedScreenerResponse)
+async def update_alert_settings(
+    screener_id: str,
+    req: AlertSettingsUpdate,
+    session=Depends(get_db_session),
+):
+    """Update alert settings (activate/deactivate, interval, max per day, LLM toggle)."""
+    result = await session.execute(
+        select(SavedScreenerORM).where(SavedScreenerORM.id == screener_id)
+    )
+    orm = result.scalar()
+    if not orm:
+        raise NotFoundError("Saved screener not found")
+
+    if req.is_alert_active is not None:
+        orm.is_alert_active = req.is_alert_active
+    if req.max_alerts_per_day is not None:
+        orm.max_alerts_per_day = req.max_alerts_per_day
+    if req.run_interval_seconds is not None:
+        orm.run_interval_seconds = req.run_interval_seconds
+    if req.include_llm_report is not None:
+        orm.include_llm_report = req.include_llm_report
+
+    orm.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(orm)
+    return _orm_to_response(orm)
+
+
+@router.get(
+    "/screener/saved/{screener_id}/alerts",
+    response_model=list[ScreenerAlertLogResponse],
+)
+async def get_alert_log(
+    screener_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    session=Depends(get_db_session),
+):
+    """Get recent alert log entries for a saved screener."""
+    # Verify screener exists
+    screener_result = await session.execute(
+        select(SavedScreenerORM.id).where(SavedScreenerORM.id == screener_id)
+    )
+    if not screener_result.scalar():
+        raise NotFoundError("Saved screener not found")
+
+    result = await session.execute(
+        select(ScreenerAlertLogORM)
+        .where(ScreenerAlertLogORM.screener_id == screener_id)
+        .order_by(ScreenerAlertLogORM.sent_at.desc())
+        .limit(limit)
+    )
+
+    return [
+        ScreenerAlertLogResponse(
+            id=log.id,
+            screener_id=log.screener_id,
+            ticker=log.ticker,
+            price=log.price,
+            change_pct=log.change_pct,
+            alert_data=json.loads(log.alert_data_json),
+            sent_at=str(log.sent_at),
+        )
+        for log in result.scalars().all()
+    ]

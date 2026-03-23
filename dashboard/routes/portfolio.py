@@ -271,15 +271,29 @@ async def list_portfolios(session=Depends(get_db_session)):
     result = await session.execute(select(PortfolioORM).order_by(PortfolioORM.created_at.desc()))
     portfolios = result.scalars().all()
 
+    if not portfolios:
+        return []
+
+    # Batch-fetch all holdings in one query to avoid N+1
+    portfolio_ids = [p.id for p in portfolios]
+    holdings_result = await session.execute(
+        select(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id.in_(portfolio_ids))
+    )
+    all_holdings = holdings_result.scalars().all()
+
+    # Group holdings by portfolio_id
+    holdings_by_portfolio: dict[str, list[dict]] = {}
+    for h in all_holdings:
+        holdings_by_portfolio.setdefault(h.portfolio_id, []).append(
+            {"ticker": h.ticker, "weight": h.weight}
+        )
+
     responses = []
     for p in portfolios:
-        holdings_result = await session.execute(
-            select(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == p.id)
-        )
-        holdings = [{"ticker": h.ticker, "weight": h.weight} for h in holdings_result.scalars().all()]
         responses.append(PortfolioResponse(
             id=p.id, name=p.name, group=p.group, description=p.description,
-            holdings=holdings, created_at=str(p.created_at),
+            holdings=holdings_by_portfolio.get(p.id, []),
+            created_at=str(p.created_at),
         ))
     return responses
 

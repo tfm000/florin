@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any
 
 import pytest
@@ -18,7 +17,6 @@ from core.models import (
 from sentiment.aggregator import SentimentAggregator
 from sentiment.base import SentimentSource
 from sentiment.stocktwits_source import StockTwitsSource
-from sentiment.news_source import NewsSource
 
 
 # =============================================================================
@@ -223,27 +221,6 @@ class TestStockTwitsSource:
 # =============================================================================
 # News source tests (parsing)
 # =============================================================================
-
-
-class TestNewsSource:
-    def test_parse_av_article(self) -> None:
-        from config.settings import Settings
-        source = NewsSource(Settings())
-
-        article = source._parse_av_article({
-            "title": "AI Revolution",
-            "source": "Reuters",
-            "url": "https://example.com",
-            "summary": "Summary text",
-            "time_published": "20240615T103000",
-            "ticker_sentiment": [
-                {"ticker": "TEST", "relevance_score": "0.85"},
-            ],
-        }, "TEST")
-
-        assert article is not None
-        assert article.title == "AI Revolution"
-        assert article.relevance_score == pytest.approx(0.85)
 
 
 # =============================================================================

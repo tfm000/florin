@@ -10,7 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncRateLimiter:
-    """Sliding-window rate limiter using a minimum interval between requests.
+    """Minimum-interval rate limiter for external API calls.
+
+    Enforces a minimum time gap between consecutive requests, computed as
+    ``window_seconds / max_requests``. This prevents burst-then-wait
+    patterns and provides steady pacing.
 
     Parameters
     ----------
@@ -19,7 +23,7 @@ class AsyncRateLimiter:
     window_seconds : float
         Time window in seconds.
     name : str
-        Label for debug logging (e.g. "Polygon", "StockTwits").
+        Label for debug logging (e.g. "SEC", "StockTwits").
     """
 
     def __init__(

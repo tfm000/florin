@@ -12,16 +12,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 from config.settings import Settings
 from core.events import EventBus
-from core.exceptions import SentinelError
+from core.exceptions import FlorinError
 from db.database import Database
 from dashboard.deps import set_state
 from dashboard.middleware import (
     RequestIdMiddleware,
-    sentinel_exception_handler,
+    florin_exception_handler,
 )
 from dashboard.ws import ConnectionManager
 
@@ -43,20 +43,26 @@ def create_app(
     set_state("ws_manager", ConnectionManager())
 
     app = FastAPI(
-        title="Sentinel Terminal",
+        title="Florin Terminal",
         version="0.2.0",
         docs_url="/api/docs",
         redoc_url=None,
     )
 
     # Exception handler for domain exceptions
-    app.add_exception_handler(SentinelError, sentinel_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)
 
     # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
+    # In production the frontend is served from the same origin, so CORS
+    # is only needed for the Vite dev server.  Allow any origin when the
+    # dashboard itself is binding to 0.0.0.0 (common in Docker/prod).
+    cors_origins = ["http://localhost:5173", "http://localhost:3000"]
+    if settings.is_production:
+        cors_origins = ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://localhost:3000"],
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials=not settings.is_production,  # Disable credentials with wildcard
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -64,7 +70,7 @@ def create_app(
 
     # Register API routes (import here to avoid circular imports)
     from dashboard.routes import (
-        positions, universe, reports, trades, account, orders,
+        positions, reports, trades, account, orders,
         stats, health, settings, research, watchlist, monitor,
         calendar, screener, correlation, risk, filings_13f, portfolio,
         short_interest, breadth, news_feed, regime, alerts, insiders,
@@ -76,7 +82,6 @@ def create_app(
     app.include_router(watchlist.router, prefix="/api")
     app.include_router(monitor.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
-    app.include_router(universe.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
     app.include_router(trades.router, prefix="/api")
     app.include_router(account.router, prefix="/api")
@@ -101,10 +106,37 @@ def create_app(
     from dashboard.ws import websocket_endpoint
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
-    # Serve React build if it exists
+    # Serve React SPA — catch-all route for client-side routing.
+    # Must be registered AFTER all /api routes and /ws WebSocket.
     static_dir = Path(__file__).parent / "static"
-    if static_dir.exists():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+    @app.get("/{full_path:path}", response_model=None, include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Serve static files if they exist, otherwise return index.html for SPA routing."""
+        if not static_dir.exists():
+            return JSONResponse(
+                {"detail": "Frontend not built — run 'npm run build' in dashboard_ui/"},
+                status_code=404,
+            )
+        # Prevent path traversal
+        try:
+            file_path = (static_dir / full_path).resolve()
+            if not str(file_path).startswith(str(static_dir.resolve())):
+                return FileResponse(static_dir / "index.html")
+        except (ValueError, OSError):
+            return FileResponse(static_dir / "index.html")
+
+        if file_path.is_file():
+            return FileResponse(file_path)
+
+        index = static_dir / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+
+        return JSONResponse(
+            {"detail": "Frontend not built — run 'npm run build' in dashboard_ui/"},
+            status_code=404,
+        )
 
     logger.info("Dashboard app created")
     return app

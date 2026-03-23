@@ -68,11 +68,17 @@ async def get_correlation_matrix(
                     for i in range(len(ticker_list))]
 
         # Build aligned returns matrix
+        # Normalise dates to YYYY-MM-DD (strip timezone info) so that
+        # tickers from different exchanges with different tz offsets align.
+        def _date_key(raw_date) -> str:
+            s = str(raw_date)
+            return s[:10]  # "2025-03-21" from "2025-03-21 00:00:00-04:00"
+
         # Find common dates
         date_sets = []
         for hist in histories:
             if hist:
-                date_sets.append({h["date"] for h in hist})
+                date_sets.append({_date_key(h["date"]) for h in hist})
             else:
                 date_sets.append(set())
 
@@ -85,10 +91,10 @@ async def get_correlation_matrix(
             return [[1.0 if i == j else 0.0 for j in range(len(ticker_list))]
                     for i in range(len(ticker_list))]
 
-        # Build price lookup per ticker
+        # Build price lookup per ticker (keyed by normalised date)
         returns_matrix = []
         for hist in histories:
-            price_map = {h["date"]: h["close"] for h in hist}
+            price_map = {_date_key(h["date"]): h["close"] for h in hist}
             prices = [price_map[d] for d in common_dates if d in price_map]
             # Compute log returns
             log_returns = [

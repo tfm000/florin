@@ -1,8 +1,7 @@
 """
 Abstract interface for market data providers.
 
-Implementations: AlpacaProvider, PolygonProvider
-All are interchangeable — swap by changing config.
+Implementations: AlpacaProvider
 """
 
 from __future__ import annotations
@@ -77,7 +76,7 @@ class MarketDataProvider(ABC):
     async def get_instruments(self) -> list[StockInfo]:
         """
         Get list of all tradeable instruments with metadata.
-        Used for building the penny stock universe.
+        Used for building the stock universe.
         """
         ...
 

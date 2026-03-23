@@ -430,3 +430,91 @@ class TestCorrelation:
         # Restore
         yf_mock.get_history.side_effect = None
         yf_mock.get_history.return_value = _generate_history(60)
+
+
+# =============================================================================
+# Saved Screener CRUD Tests
+# =============================================================================
+
+
+class TestSavedScreenerCRUD:
+    """Test CRUD operations for saved screener configurations."""
+
+    @pytest.mark.asyncio
+    async def test_create_saved_screener(self, client):
+        resp = await client.post("/api/screener/saved", json={
+            "name": "High Cap Tech",
+            "filters": {"sector": "Technology", "market_cap_min": 1e9},
+            "sort_by": "intradaymarketcap",
+            "sort_asc": False,
+        })
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "High Cap Tech"
+        assert data["filters"]["sector"] == "Technology"
+        assert data["is_alert_active"] is False
+
+    @pytest.mark.asyncio
+    async def test_list_saved_screeners(self, client):
+        await client.post("/api/screener/saved", json={
+            "name": "Screener A", "filters": {"price_min": 10},
+        })
+        await client.post("/api/screener/saved", json={
+            "name": "Screener B", "filters": {"price_max": 50},
+        })
+        resp = await client.get("/api/screener/saved")
+        assert resp.status_code == 200
+        items = resp.json()
+        names = [s["name"] for s in items]
+        assert "Screener A" in names
+        assert "Screener B" in names
+
+    @pytest.mark.asyncio
+    async def test_get_saved_screener_by_id(self, client):
+        create_resp = await client.post("/api/screener/saved", json={
+            "name": "Lookup Test", "filters": {"exchange": "NYQ"},
+        })
+        sid = create_resp.json()["id"]
+        resp = await client.get(f"/api/screener/saved/{sid}")
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Lookup Test"
+
+    @pytest.mark.asyncio
+    async def test_get_nonexistent_returns_404(self, client):
+        resp = await client.get("/api/screener/saved/nonexistent1234")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_update_saved_screener(self, client):
+        create_resp = await client.post("/api/screener/saved", json={
+            "name": "Update Me", "filters": {"price_min": 5},
+        })
+        sid = create_resp.json()["id"]
+        resp = await client.put(f"/api/screener/saved/{sid}", json={
+            "name": "Updated Name", "filters": {"price_min": 10, "sector": "Energy"},
+        })
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Updated Name"
+        assert resp.json()["filters"]["sector"] == "Energy"
+
+    @pytest.mark.asyncio
+    async def test_delete_saved_screener(self, client):
+        create_resp = await client.post("/api/screener/saved", json={
+            "name": "Delete Me", "filters": {},
+        })
+        sid = create_resp.json()["id"]
+        resp = await client.delete(f"/api/screener/saved/{sid}")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == sid
+        get_resp = await client.get(f"/api/screener/saved/{sid}")
+        assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_duplicate_name_returns_409(self, client):
+        await client.post("/api/screener/saved", json={
+            "name": "Unique Name", "filters": {},
+        })
+        resp = await client.post("/api/screener/saved", json={
+            "name": "Unique Name", "filters": {"price_min": 1},
+        })
+        assert resp.status_code == 409

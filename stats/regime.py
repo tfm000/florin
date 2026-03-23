@@ -20,21 +20,25 @@ def fit_markov_regimes(
     n_regimes: int = 2,
     display_start: str = "",
     display_end: str = "",
+    annualize_factor: float = 252,
 ) -> dict | None:
     """Fit a Markov switching regression and return regime assignments.
 
     Parameters
     ----------
     log_returns_scaled : np.ndarray
-        Daily log returns **already scaled by 100** for numerical stability.
+        Log returns **already scaled by 100** for numerical stability.
         Length must match ``len(dates)``.
     dates : list[str]
-        ISO date strings aligned to ``log_returns_scaled``.
+        ISO date/datetime strings aligned to ``log_returns_scaled``.
     n_regimes : int
         Number of regimes (2 or 3).
     display_start / display_end : str
-        Optional YYYY-MM-DD bounds.  The model is always fit on the full
+        Optional bounds.  The model is always fit on the full
         series; only the returned ``regimes`` list is filtered to this window.
+    annualize_factor : float
+        Number of periods per year for annualizing returns and volatility.
+        252 for daily, ~19656 for 1-minute bars, etc.
 
     Returns
     -------
@@ -63,12 +67,15 @@ def fit_markov_regimes(
         regime_probs = probs.max(axis=1)
 
         # Filter to display range (model was fit on full history)
+        is_intraday = annualize_factor != 252
         regimes: list[dict] = []
         for i in range(len(dates)):
-            date_str = dates[i][:10] if len(dates[i]) > 10 else dates[i]
-            if display_start and date_str < display_start:
+            # Preserve full timestamp for intraday; truncate to date for daily
+            date_str = dates[i] if is_intraday else (dates[i][:10] if len(dates[i]) > 10 else dates[i])
+            cmp_str = dates[i][:10] if len(dates[i]) > 10 else dates[i]
+            if display_start and cmp_str < display_start:
                 continue
-            if display_end and date_str > display_end:
+            if display_end and cmp_str > display_end:
                 continue
             regimes.append({
                 "date": date_str,
@@ -85,8 +92,8 @@ def fit_markov_regimes(
             regime_rets = log_returns_scaled[mask] / 100  # unscale
             stats.append({
                 "regime": r,
-                "mean_return": round(float(np.mean(regime_rets)) * 252 * 100, 2),
-                "volatility": round(float(np.std(regime_rets)) * np.sqrt(252) * 100, 2),
+                "mean_return": round(float(np.mean(regime_rets)) * annualize_factor * 100, 2),
+                "volatility": round(float(np.std(regime_rets)) * np.sqrt(annualize_factor) * 100, 2),
                 "count": int(mask.sum()),
             })
 

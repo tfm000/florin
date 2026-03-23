@@ -1,9 +1,7 @@
 """
 News sentiment source.
 
-Aggregates financial news from:
-  - yfinance (Yahoo Finance news for ticker)
-  - Alpha Vantage News Sentiment endpoint (if configured)
+Aggregates financial news from yfinance (Yahoo Finance news for ticker).
 """
 
 from __future__ import annotations
@@ -12,16 +10,11 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
 from config.settings import Settings
 from core.models import NewsArticle
-from core.rate_limiter import AsyncRateLimiter
 from sentiment.base import SentimentSource
 
 logger = logging.getLogger(__name__)
-
-ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
 
 MAX_ARTICLES = 15
 
@@ -35,9 +28,7 @@ class NewsSource(SentimentSource):
     """
 
     def __init__(self, settings: Settings) -> None:
-        # Alpha Vantage key reuse — add to settings if needed
-        self._av_key = ""  # Optional, not in settings yet
-        self._av_limiter = AsyncRateLimiter(5, 60, name="AlphaVantage")
+        pass
 
     @property
     def name(self) -> str:
@@ -58,15 +49,6 @@ class NewsSource(SentimentSource):
         # yfinance news (primary)
         yf_articles = await self._fetch_yfinance_news(ticker)
         articles.extend(yf_articles)
-
-        # Alpha Vantage news (supplementary)
-        if self._av_key:
-            av_articles = await self._fetch_av_news(ticker)
-            # Deduplicate by title similarity
-            existing_titles = {a.title.lower()[:50] for a in articles}
-            for article in av_articles:
-                if article.title.lower()[:50] not in existing_titles:
-                    articles.append(article)
 
         # Sort by published date, most recent first
         articles.sort(key=lambda a: a.published_at, reverse=True)
@@ -116,64 +98,3 @@ class NewsSource(SentimentSource):
 
         return await asyncio.to_thread(_get)
 
-    async def _fetch_av_news(self, ticker: str) -> list[NewsArticle]:
-        """Fetch news from Alpha Vantage News Sentiment endpoint."""
-        try:
-            await self._av_limiter.acquire()
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(
-                    ALPHA_VANTAGE_URL,
-                    params={
-                        "function": "NEWS_SENTIMENT",
-                        "tickers": ticker,
-                        "limit": 10,
-                        "apikey": self._av_key,
-                    },
-                )
-
-                if resp.status_code != 200:
-                    return []
-
-                data = resp.json()
-                articles = []
-                for item in data.get("feed", []):
-                    article = self._parse_av_article(item, ticker)
-                    if article:
-                        articles.append(article)
-
-                return articles
-
-        except Exception:
-            logger.exception("Alpha Vantage news fetch failed for %s", ticker)
-            return []
-
-    def _parse_av_article(
-        self, item: dict[str, Any], ticker: str,
-    ) -> NewsArticle | None:
-        """Parse an Alpha Vantage news item."""
-        try:
-            time_str = item.get("time_published", "")
-            published_at = datetime.now(UTC)
-            if time_str:
-                try:
-                    published_at = datetime.strptime(time_str, "%Y%m%dT%H%M%S")
-                except ValueError:
-                    pass
-
-            # Find relevance score for our ticker
-            relevance = 0.0
-            for ts in item.get("ticker_sentiment", []):
-                if ts.get("ticker") == ticker:
-                    relevance = float(ts.get("relevance_score", 0.0))
-                    break
-
-            return NewsArticle(
-                title=item.get("title", ""),
-                source=item.get("source", ""),
-                url=item.get("url", ""),
-                summary=(item.get("summary", "") or "")[:300],
-                published_at=published_at,
-                relevance_score=relevance,
-            )
-        except Exception:
-            return None

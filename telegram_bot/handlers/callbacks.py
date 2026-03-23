@@ -1,12 +1,13 @@
 """
 Telegram inline button callback handlers.
 
-Handles BUY, DENY, and REPORT button presses from alert messages.
+Handles BUY, DENY, REPORT, SELL, and screener alert button presses.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from aiogram import Dispatcher
@@ -19,12 +20,49 @@ from telegram_bot.formatters import escape_md, format_trade_confirmation
 logger = logging.getLogger(__name__)
 
 
+def _build_buy_order(ticker: str, settings: Settings) -> OrderRequest:
+    """Build a buy order using the configured position size settings."""
+    unit = settings.position_size_unit
+    size = settings.default_position_size
+    if unit == "shares":
+        return OrderRequest(ticker=ticker, side=Side.BUY, quantity=size)
+    return OrderRequest(ticker=ticker, side=Side.BUY, target_value=size)
+
+
+async def _execute_buy(
+    query: CallbackQuery,
+    ticker: str,
+    broker: Any,
+    settings: Settings,
+) -> None:
+    """Execute a buy order and send confirmation/error to chat."""
+    try:
+        order = _build_buy_order(ticker, settings)
+        result = await broker.place_order(order)
+
+        if result.success:
+            msg = format_trade_confirmation(
+                ticker, "BUY", result.filled_quantity, result.filled_price,
+            )
+            await query.message.answer(msg)
+        else:
+            await query.message.answer(
+                f"❌ Order failed: {escape_md(result.error_message)}"
+            )
+    except (ConnectionError, TimeoutError) as e:
+        logger.error("Broker connection error placing buy for %s: %s", ticker, e)
+        await query.message.answer(f"❌ Broker error: {escape_md(str(e))}")
+    except ValueError as e:
+        logger.error("Invalid order for %s: %s", ticker, e)
+        await query.message.answer(f"❌ Order error: {escape_md(str(e))}")
+
+
 def register_callback_handlers(
     dp: Dispatcher,
     settings: Settings,
     broker: Any = None,
 ) -> None:
-    """Register all callback query handlers."""
+    """Register all callback query handlers on the dispatcher."""
     chat_id = settings.telegram_chat_id
 
     def _authorised(query: CallbackQuery) -> bool:
@@ -40,43 +78,13 @@ def register_callback_handlers(
             await query.answer("No broker connected", show_alert=True)
             return
 
-        # Extract ticker from the message text
         ticker = _extract_ticker(query.message.text or "")
         if not ticker:
             await query.answer("Could not parse ticker", show_alert=True)
             return
 
         await query.answer(f"Placing buy order for {ticker}...")
-
-        try:
-            unit = settings.position_size_unit
-            size = settings.default_position_size
-            if unit == "shares":
-                order = OrderRequest(
-                    ticker=ticker,
-                    side=Side.BUY,
-                    quantity=size,
-                )
-            else:
-                order = OrderRequest(
-                    ticker=ticker,
-                    side=Side.BUY,
-                    target_value=size,
-                )
-            result = await broker.place_order(order)
-
-            if result.success:
-                msg = format_trade_confirmation(
-                    ticker, "BUY", result.filled_quantity, result.filled_price,
-                )
-                await query.message.answer(msg)
-            else:
-                await query.message.answer(
-                    f"❌ Order failed: {escape_md(result.error_message)}"
-                )
-
-        except Exception as e:
-            await query.message.answer(f"❌ Error: {escape_md(str(e))}")
+        await _execute_buy(query, ticker, broker, settings)
 
     @dp.callback_query(lambda c: c.data == "deny")
     async def cb_deny(query: CallbackQuery) -> None:
@@ -135,14 +143,50 @@ def register_callback_handlers(
                     f"❌ Sell failed: {escape_md(result.error_message)}"
                 )
 
-        except Exception as e:
-            await query.message.answer(f"❌ Error: {escape_md(str(e))}")
+        except (ConnectionError, TimeoutError) as e:
+            logger.error("Broker error selling %s: %s", ticker, e)
+            await query.message.answer(f"❌ Broker error: {escape_md(str(e))}")
+        except ValueError as e:
+            logger.error("Invalid sell order for %s: %s", ticker, e)
+            await query.message.answer(f"❌ Order error: {escape_md(str(e))}")
+
+
+    @dp.callback_query(lambda c: c.data and c.data.startswith("screener_buy:"))
+    async def cb_screener_buy(query: CallbackQuery) -> None:
+        """Handle BUY button press from a screener alert."""
+        if not _authorised(query):
+            await query.answer("Unauthorised", show_alert=True)
+            return
+
+        if not broker:
+            await query.answer("No broker connected", show_alert=True)
+            return
+
+        ticker = (query.data or "").split(":", 1)[1] if query.data else ""
+        if not ticker:
+            await query.answer("Invalid ticker", show_alert=True)
+            return
+
+        await query.answer(f"Placing buy order for {ticker}...")
+        await _execute_buy(query, ticker, broker, settings)
+
+    @dp.callback_query(lambda c: c.data == "screener_pass")
+    async def cb_screener_pass(query: CallbackQuery) -> None:
+        """Handle PASS button press from a screener alert."""
+        if not _authorised(query):
+            return
+        await query.answer("Alert passed")
+        try:
+            original = query.message.text or ""
+            await query.message.edit_text(
+                original + "\n\n_⏭ Passed_",
+            )
+        except Exception:
+            pass
 
 
 def _extract_ticker(text: str) -> str:
     """Extract ticker symbol from alert message text."""
-    # Look for pattern like "ALERT: $TICKER" or "$TICKER"
-    import re
     match = re.search(r"\$([A-Z]{1,5})\b", text)
     if match:
         return match.group(1)

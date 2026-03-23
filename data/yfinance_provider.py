@@ -1,7 +1,7 @@
 """
 Yahoo Finance data provider via yfinance.
 
-Powers research, enrichment, and penny stock screening.
+Powers research, enrichment, and stock screening.
 All yfinance calls are synchronous — wrapped in asyncio.to_thread().
 Results are cached with TTL to reduce API load.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from functools import lru_cache
 from typing import Any
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 # During market hours: use short TTLs for fresh data.
 # When market is closed: cache until next market open (data won't change).
 _cache: dict[str, tuple[float, Any]] = {}
+_CACHE_MAX_SIZE = 5000  # Evict oldest entries when cache exceeds this size
 
 # TTLs used during market hours (seconds)
 INFO_TTL = 3600  # 1 hour (asset info — sector/PE/beta change slowly)
@@ -75,6 +77,11 @@ def _get_cached(key: str, ttl: float, market_aware: bool = True) -> Any | None:
 
 def _set_cached(key: str, val: Any) -> None:
     _cache[key] = (time.time(), val)
+    # Evict oldest entries if cache exceeds max size
+    if len(_cache) > _CACHE_MAX_SIZE:
+        sorted_keys = sorted(_cache, key=lambda k: _cache[k][0])
+        for k in sorted_keys[: len(_cache) - _CACHE_MAX_SIZE]:
+            del _cache[k]
 
 
 # Periods that can be served from cached 5y data (subset of 5 years)
@@ -123,6 +130,9 @@ class YFinanceProvider:
 
     # Semaphore for throttling concurrent per-ticker calls (e.g. get_info).
     _info_semaphore = asyncio.Semaphore(10)
+
+    def __init__(self, policy_rate_fetcher=None):
+        self._policy_rate_fetcher = policy_rate_fetcher
 
     async def get_histories_batch(
         self,
@@ -321,7 +331,7 @@ class YFinanceProvider:
         records = []
         for idx, row in df.iterrows():
             close = row.get("Close")
-            if close is None or (hasattr(close, '__float__') and not close == close):
+            if close is None or (isinstance(close, float) and math.isnan(close)):
                 # Skip NaN rows (delisted periods)
                 continue
             records.append({
@@ -647,7 +657,7 @@ class YFinanceProvider:
         logger.info("yfinance: enriched %d/%d tickers", len(results), len(tickers[:max_calls]))
         return results
 
-    async def filter_penny_stocks(
+    async def filter_stocks(
         self,
         price_min: float,
         price_max: float,
@@ -655,7 +665,7 @@ class YFinanceProvider:
         market_cap_max: float = 0,
     ) -> list[StockInfo]:
         """
-        Screen for penny stocks using yfinance screener.
+        Screen for stocks using yfinance screener.
         No return-based filtering — just price/market_cap.
         Uses yf.EquityQuery + yf.screen() (yfinance >= 1.0).
         """
@@ -694,7 +704,7 @@ class YFinanceProvider:
                 all_quotes = resp.get("quotes", []) if resp else []
 
                 # Paginate through ALL results — yfinance is free with no rate limit.
-                # This ensures we don't miss any penny stock opportunities.
+                # This ensures we don't miss any matching stocks.
                 # Typically ~1700 results = 7 pages = ~2 seconds.
                 offset = PAGE_SIZE
                 while offset < total:
@@ -728,12 +738,12 @@ class YFinanceProvider:
                     ))
 
                 logger.info(
-                    "yfinance screener: %d/%d penny stocks on NASDAQ/NYSE/AMEX",
+                    "yfinance screener: %d/%d stocks on NASDAQ/NYSE/AMEX",
                     len(stocks), total,
                 )
                 return stocks
             except Exception:
-                logger.exception("yfinance penny stock screening failed")
+                logger.exception("yfinance stock screening failed")
                 return []
 
         return await asyncio.to_thread(_screen)
@@ -1061,8 +1071,15 @@ class YFinanceProvider:
         return result
 
     async def get_g10_rates(self) -> list[dict]:
-        """G10 central bank policy rates (semi-static)."""
-        # These are updated on central bank decisions, not real-time
+        """G10 central bank policy rates.
+
+        Delegates to PolicyRateFetcher if available (fetches from BIS API).
+        Falls back to hardcoded values if no fetcher is configured.
+        """
+        if self._policy_rate_fetcher is not None:
+            return await self._policy_rate_fetcher.get_rates()
+
+        # Fallback: hardcoded values (only used if fetcher not configured)
         return [
             {"country": "United States", "central_bank": "Federal Reserve", "rate": 4.50, "currency": "USD"},
             {"country": "Eurozone", "central_bank": "ECB", "rate": 2.65, "currency": "EUR"},

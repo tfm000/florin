@@ -12,14 +12,14 @@ from core.exceptions import (
     ForbiddenError,
     NotFoundError,
     RateLimitError,
-    SentinelError,
+    FlorinError,
     ServiceUnavailableError,
     ValidationError,
 )
 from dashboard.app import create_app
 from dashboard.middleware import (
     RequestIdMiddleware,
-    sentinel_exception_handler,
+    florin_exception_handler,
 )
 from db.database import Database
 
@@ -50,7 +50,7 @@ async def client(app):
 def _make_error_app() -> FastAPI:
     """Minimal FastAPI app with exception handler and test error routes."""
     app = FastAPI()
-    app.add_exception_handler(SentinelError, sentinel_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)
     app.add_middleware(RequestIdMiddleware)
 
     router = APIRouter()
@@ -113,7 +113,7 @@ class TestRequestIdMiddleware:
 
 class TestExceptionHandler:
     @pytest.mark.asyncio
-    async def test_sentinel_error_rendered_as_json(self, error_client):
+    async def test_florin_error_rendered_as_json(self, error_client):
         resp = await error_client.get("/api/test-error")
         assert resp.status_code == 404
         body = resp.json()
@@ -148,8 +148,8 @@ class TestExceptionHandler:
 
 
 class TestExceptionClasses:
-    def test_sentinel_error_base(self):
-        e = SentinelError("something broke", code="CUSTOM", status_code=418)
+    def test_florin_error_base(self):
+        e = FlorinError("something broke", code="CUSTOM", status_code=418)
         assert e.message == "something broke"
         assert e.code == "CUSTOM"
         assert e.status_code == 418
@@ -170,11 +170,11 @@ class TestExceptionClasses:
         assert e.status_code == 429
         assert e.code == "RATE_LIMIT_EXCEEDED"
 
-    def test_all_exceptions_inherit_from_sentinel_error(self):
+    def test_all_exceptions_inherit_from_florin_error(self):
         for cls in [NotFoundError, ValidationError, ConflictError,
                     ServiceUnavailableError, ForbiddenError,
                     RateLimitError]:
-            assert issubclass(cls, SentinelError)
+            assert issubclass(cls, FlorinError)
 
 
 class TestHealthEndpoints:

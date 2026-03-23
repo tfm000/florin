@@ -46,12 +46,8 @@ def get_shutdown_callback():
     return _state.get("shutdown_callback")
 
 
-def get_universe():
-    return _state.get("universe")
-
-
-def get_scanner():
-    return _state.get("scanner")
+def get_screener_alert_service():
+    return _state.get("screener_alert_service")
 
 
 def get_data_provider():
@@ -68,3 +64,7 @@ def get_sentiment_aggregator():
 
 def get_rf_fetcher():
     return _state.get("rf_fetcher")
+
+
+def get_policy_rate_fetcher():
+    return _state.get("policy_rate_fetcher")

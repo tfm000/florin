@@ -7,6 +7,7 @@ import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
 import { INDICATOR_DEFS } from '../utils/indicators'
+import { INTRADAY_TO_HISTORY } from './PeriodSelector'
 
 const OVERLAY_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'overlay').map(([k]) => k)
 const SUBCHART_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'subchart').map(([k]) => k)
@@ -19,9 +20,12 @@ export default function CumulativeReturnChart({
   const [activeIndicators, setActiveIndicators] = useState(new Set())
   const [chartType, setChartType] = useState('line') // 'line' | 'candle'
   const [showRegimes, setShowRegimes] = useState(false)
+  const intraday = INTRADAY_TO_HISTORY[period]
   const queryStr = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}&interval=1d`
-    : `period=${period}&interval=1d`
+    : intraday
+      ? `period=${intraday.period}&interval=${intraday.interval}`
+      : `period=${period}&interval=1d`
 
   const { data: history, loading } = useApi(`/research/asset/${ticker}/history?${queryStr}`)
 
@@ -71,12 +75,14 @@ export default function CumulativeReturnChart({
     const baseFirst = history[0].close
 
     return history.map((h, i) => {
-      const dateKey = h.date.slice(0, 10)
+      // For intraday data, keep full timestamp; for daily, truncate to date
+      const dateKey = intraday ? h.date : h.date.slice(0, 10)
       const row = { date: dateKey }
 
-      // Attach regime info if available
-      if (regimeMap[dateKey] != null) {
-        row.regime = regimeMap[dateKey]
+      // Attach regime info if available — use full key for intraday, date-only for daily
+      const regimeKey = intraday ? dateKey : h.date.slice(0, 10)
+      if (regimeMap[regimeKey] != null) {
+        row.regime = regimeMap[regimeKey]
         row.regimeBar = 1
       }
 
@@ -128,7 +134,7 @@ export default function CumulativeReturnChart({
       if (!vals) continue
 
       result[key] = history.map((h, i) => {
-        const row = { date: h.date.slice(0, 10) }
+        const row = { date: intraday ? h.date : h.date.slice(0, 10) }
         if (key === 'macd') {
           row.macd = vals.macdLine?.[i]
           row.signal = vals.signalLine?.[i]
@@ -266,8 +272,17 @@ export default function CumulativeReturnChart({
               />
             )}
             <YAxis yAxisId="regime" domain={[0, 1]} hide />
-            <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 11 }} interval={xInterval}
-              tickFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { month: 'short', year: 'numeric' }) }} />
+            <XAxis dataKey="date" tick={{ fill: '#9CA3AF', fontSize: 10 }} interval={xInterval}
+              tickFormatter={v => {
+                if (intraday) {
+                  // Show "Mar 23 15:30" for intraday
+                  const d = new Date(v)
+                  if (isNaN(d)) return v.slice(5, 16).replace('T', ' ')
+                  return d.toLocaleDateString('en', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+                }
+                const d = new Date(v + 'T00:00:00')
+                return d.toLocaleDateString('en', { month: 'short', year: 'numeric' })
+              }} />
             <YAxis
               tick={{ fill: '#9CA3AF', fontSize: 11 }}
               domain={yDomain}
@@ -277,7 +292,11 @@ export default function CumulativeReturnChart({
             <Tooltip
               contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
               labelStyle={{ color: '#fff' }}
-              labelFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) }}
+              labelFormatter={v => {
+                if (intraday) return v.length > 10 ? v.slice(0, 16).replace('T', ' ') : v
+                const d = new Date(v + 'T00:00:00')
+                return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })
+              }}
               content={!hasCompare && chartType === 'candle' ? ({ active, payload, label }) => {
                 if (!active || !payload?.[0]) return null
                 const d = payload[0].payload
@@ -391,7 +410,11 @@ export default function CumulativeReturnChart({
             <Tooltip
               contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, fontSize: 11 }}
               labelStyle={{ color: '#fff' }}
-              labelFormatter={v => { const d = new Date(v + 'T00:00:00'); return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }) }}
+              labelFormatter={v => {
+                if (intraday) return v.length > 10 ? v.slice(0, 16).replace('T', ' ') : v
+                const d = new Date(v + 'T00:00:00')
+                return d.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })
+              }}
               formatter={v => [v.toLocaleString(), 'Volume']}
             />
             <Bar dataKey="volume" fill="#6366F1" opacity={0.6} isAnimationActive={false}

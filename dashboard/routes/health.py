@@ -9,10 +9,9 @@ from dashboard.deps import (
     get_broker,
     get_data_provider,
     get_db,
-    get_scanner,
+    get_screener_alert_service,
     get_settings,
     get_shutdown_callback,
-    get_universe,
 )
 
 router = APIRouter(tags=["health"])
@@ -59,8 +58,7 @@ async def health_check() -> dict:
     settings = get_settings()
     db = get_db()
     broker = get_broker()
-    universe = get_universe()
-    scanner = get_scanner()
+    screener_svc = get_screener_alert_service()
     data_provider = get_data_provider()
 
     # Database
@@ -83,12 +81,6 @@ async def health_check() -> dict:
             broker_is_live = broker.is_live
         except Exception:
             pass
-
-    # Universe
-    universe_size = universe.size if universe else 0
-    universe_refresh = None
-    if universe and universe.last_refresh:
-        universe_refresh = universe.last_refresh.isoformat()
 
     # Setup checklist — tells the frontend what's missing
     checklist = [
@@ -123,12 +115,8 @@ async def health_check() -> dict:
             "alpaca_configured": settings.alpaca_configured,
             "alpaca_connected": data_provider is not None,
         },
-        "universe": {
-            "ticker_count": universe_size,
-            "last_refresh": universe_refresh,
-        },
-        "scanner": {
-            "active": scanner is not None,
+        "screener_alerts": {
+            "active": screener_svc is not None,
         },
         "telegram_configured": settings.telegram_configured,
         "setup_checklist": checklist,
@@ -137,7 +125,7 @@ async def health_check() -> dict:
 
 @router.post("/terminate")
 async def terminate() -> dict:
-    """Gracefully shut down the Sentinel application."""
+    """Gracefully shut down the Florin application."""
     import asyncio
 
     shutdown = get_shutdown_callback()

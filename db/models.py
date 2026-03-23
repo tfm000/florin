@@ -16,9 +16,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -98,7 +101,9 @@ class ReportORM(Base):
 
     # User action
     user_action: Mapped[str] = mapped_column(String(10), default="PENDING")  # BUY | DENY | PENDING
-    trade_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    trade_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("trades.id", ondelete="SET NULL"), nullable=True,
+    )
 
     generated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), index=True
@@ -118,7 +123,9 @@ class AlertORM(Base):
     change_pct: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(20), default="MOMENTUM")
-    report_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    report_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True,
+    )
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), index=True
     )
@@ -170,7 +177,9 @@ class TelegramMessageORM(Base):
     message_id: Mapped[int] = mapped_column(Integer)
     message_type: Mapped[str] = mapped_column(String(20))  # alert | position | status
     ticker: Mapped[str] = mapped_column(String(20), default="", index=True)
-    report_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    report_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     last_updated: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
@@ -224,7 +233,9 @@ class PortfolioHoldingORM(Base):
     __tablename__ = "portfolio_holdings"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
-    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
     ticker: Mapped[str] = mapped_column(String(20))
     weight: Mapped[float] = mapped_column(Float, default=0.0)  # 0-100
 
@@ -235,6 +246,9 @@ class PortfolioHoldingORM(Base):
 
 class BreadthSnapshotORM(Base):
     __tablename__ = "breadth_snapshots"
+    __table_args__ = (
+        UniqueConstraint("date", "hour", name="uq_breadth_date_hour"),
+    )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     date: Mapped[str] = mapped_column(String(10), index=True)  # YYYY-MM-DD
@@ -293,7 +307,7 @@ class NewsStoryORM(Base):
     importance: Mapped[int] = mapped_column(Integer, default=5)
     url: Mapped[str] = mapped_column(String(500))
     source_name: Mapped[str] = mapped_column(String(200))
-    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), index=True)
 
 
 # =============================================================================
@@ -302,6 +316,9 @@ class NewsStoryORM(Base):
 
 class RiskFreeRateORM(Base):
     __tablename__ = "risk_free_rates"
+    __table_args__ = (
+        UniqueConstraint("currency", "date", name="uq_rfr_currency_date"),
+    )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
     currency: Mapped[str] = mapped_column(String(3), index=True)      # USD, GBP, etc.
@@ -332,7 +349,9 @@ class PortfolioCacheMetaORM(Base):
     """One row per portfolio: cached analytics + aggregated fundamentals."""
     __tablename__ = "portfolio_cache_meta"
 
-    portfolio_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), primary_key=True
+    )
     start_date: Mapped[str] = mapped_column(String(10))   # YYYY-MM-DD
     end_date: Mapped[str] = mapped_column(String(10))     # YYYY-MM-DD
 
@@ -379,12 +398,82 @@ class PortfolioCacheReturnORM(Base):
     """Daily portfolio return time series (prorated and non-prorated variants)."""
     __tablename__ = "portfolio_cache_returns"
     __table_args__ = (
-        # Fast range queries: WHERE portfolio_id=? AND prorated=? AND date >= ?
-        {"sqlite_autoincrement": False},
+        Index("ix_cache_returns_lookup", "portfolio_id", "prorated", "date"),
     )
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
-    portfolio_id: Mapped[str] = mapped_column(String(16), index=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
     date: Mapped[str] = mapped_column(String(10))          # YYYY-MM-DD
     cumulative_return: Mapped[float] = mapped_column(Float)
     prorated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# =============================================================================
+# Saved Screeners (user-configured filter presets)
+# =============================================================================
+
+class SavedScreenerORM(Base):
+    """Saved screener filter configuration."""
+    __tablename__ = "saved_screeners"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    filters_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON blob of all filter params
+    sort_by: Mapped[str] = mapped_column(String(50), default="intradaymarketcap")
+    sort_asc: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Phase 7: live alert fields (pre-created for migration efficiency)
+    is_alert_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_alerts_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    alerts_sent_today: Mapped[int] = mapped_column(Integer, default=0)
+    include_llm_report: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    run_interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Screener Alert Log (tracks which tickers were alerted per screener)
+# =============================================================================
+
+class ScreenerAlertLogORM(Base):
+    """Log of screener alert notifications sent to the user."""
+    __tablename__ = "screener_alert_log"
+    __table_args__ = (
+        Index("ix_screener_alert_screener_date", "screener_id", "sent_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    screener_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("saved_screeners.id", ondelete="CASCADE"), index=True
+    )
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    alert_data_json: Mapped[str] = mapped_column(Text, default="{}")
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Central Bank Policy Rates
+# =============================================================================
+
+class PolicyRateORM(Base):
+    """G10 central bank policy rates fetched from BIS CBPOL API."""
+    __tablename__ = "policy_rates"
+    __table_args__ = (
+        UniqueConstraint("country_code", name="uq_policy_rate_country"),
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    country_code: Mapped[str] = mapped_column(String(3), index=True)  # US, XM, GB, ...
+    country: Mapped[str] = mapped_column(String(50))
+    central_bank: Mapped[str] = mapped_column(String(50))
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[float] = mapped_column(Float)
+    effective_date: Mapped[str] = mapped_column(String(10), default="")  # YYYY-MM-DD
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

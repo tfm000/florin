@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import MetricsGrid from '../components/MetricsGrid'
-import PeriodSelector from '../components/PeriodSelector'
+import PeriodSelector, { INTRADAY_TO_HISTORY, INTRADAY_KEYS } from '../components/PeriodSelector'
 import CumulativeReturnChart from '../components/CumulativeReturnChart'
 import ReturnsHistogram from '../components/ReturnsHistogram'
 import SearchBar from '../components/SearchBar'
@@ -25,13 +25,19 @@ export default function QuantitativeTab() {
   const [regimeNRegimes, setRegimeNRegimes] = useState(2)
   const [regimeSource, setRegimeSource] = useState('')
 
-  // Regime data fetch
+  // Map intraday keys to valid yfinance periods for non-chart API calls
+  const intradayMap = INTRADAY_TO_HISTORY[period]
+  const isIntraday = INTRADAY_KEYS.has(period)
+  const effectivePeriod = intradayMap?.period || period
+
+  // Regime data fetch — uses same interval as chart
   const regimeSourceParam = regimeSource ? `&source=${regimeSource}` : ''
+  const regimeInterval = intradayMap ? intradayMap.interval : '1d'
   const regimeRangeParam = customStart && customEnd
     ? `&start=${customStart}&end=${customEnd}`
-    : `&period=${period}`
+    : `&period=${effectivePeriod}`
   const { data: regimeData, loading: regimeLoading } = useApi(
-    `/regime/${ticker}?n_regimes=${regimeNRegimes}${regimeSourceParam}${regimeRangeParam}`
+    `/regime/${ticker}?n_regimes=${regimeNRegimes}&interval=${regimeInterval}${regimeSourceParam}${regimeRangeParam}`
   )
 
   const handlePeriodChange = (p) => {
@@ -60,12 +66,14 @@ export default function QuantitativeTab() {
   // History query string shared by charts
   const historyQuery = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}&interval=1d`
-    : `period=${period}&interval=1d`
+    : intradayMap
+      ? `period=${intradayMap.period}&interval=${intradayMap.interval}`
+      : `period=${period}&interval=1d`
 
   // Fetch stats from canonical server-side computation
   const statsQuery = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}`
-    : `period=${period}`
+    : `period=${effectivePeriod}`
   const { data: periodStats } = useApi(`/stats/returns/${ticker}?${statsQuery}`)
 
   const showReturns = !ticker.startsWith('^') && !ticker.includes('=')
@@ -149,6 +157,7 @@ export default function QuantitativeTab() {
           loading={regimeLoading}
           nRegimes={regimeNRegimes}
           source={regimeSource}
+          isIntraday={isIntraday}
           onNRegimesChange={setRegimeNRegimes}
           onSourceChange={setRegimeSource}
         />

@@ -1,8 +1,8 @@
 """
-Production middleware for the Sentinel Terminal dashboard.
+Production middleware for the Florin Terminal dashboard.
 
 - RequestIdMiddleware: injects X-Request-ID header for request tracing
-- sentinel_exception_handler: renders SentinelError as structured ErrorResponse
+- florin_exception_handler: renders FlorinError as structured ErrorResponse
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
-from core.exceptions import SentinelError
+from core.exceptions import FlorinError
 from dashboard.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -42,16 +42,16 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-async def sentinel_exception_handler(request: Request, exc: SentinelError) -> JSONResponse:
+async def florin_exception_handler(request: Request, exc: FlorinError) -> JSONResponse:
     """
-    Global exception handler for SentinelError subclasses.
+    Global exception handler for FlorinError subclasses.
 
     Renders a structured ErrorResponse with the appropriate HTTP status code.
     """
     request_id = getattr(request.state, "request_id", "")
 
     logger.warning(
-        "SentinelError: %s (code=%s, status=%d, request_id=%s)",
+        "FlorinError: %s (code=%s, status=%d, request_id=%s)",
         exc.message, exc.code, exc.status_code, request_id,
     )
 

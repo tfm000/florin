@@ -11,7 +11,7 @@ from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
 from db.database import Database
-from db.models import ReportORM, TradeORM, UniverseStockORM
+from db.models import ReportORM, TradeORM
 
 
 @pytest.fixture
@@ -105,26 +105,6 @@ async def readonly_client(readonly_app):
         yield c
 
 
-class TestUniverseRoutes:
-    @pytest.mark.asyncio
-    async def test_get_universe_empty(self, client):
-        resp = await client.get("/api/universe")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["items"] == []
-        assert data["total"] == 0
-        assert data["has_more"] is False
-
-    @pytest.mark.asyncio
-    async def test_get_scanner_settings(self, client):
-        resp = await client.get("/api/universe/settings")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "price_max" in data
-        assert "momentum_threshold" in data
-        assert "scan_interval_seconds" in data
-
-
 class TestReportRoutes:
     @pytest.mark.asyncio
     async def test_get_reports_empty(self, client):
@@ -191,9 +171,11 @@ class TestSettingsRoutes:
         data = resp.json()
         assert "sections" in data
         section_ids = [s["id"] for s in data["sections"]]
-        assert "scanner" in section_ids
         assert "llm" in section_ids
         assert "broker" in section_ids
+        assert "trading" in section_ids
+        # Scanner section was removed (replaced by per-screener configs)
+        assert "scanner" not in section_ids
 
     @pytest.mark.asyncio
     async def test_settings_masks_secrets(self, client):
@@ -216,14 +198,14 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_persists(self, client):
         await client.put("/api/settings", json={
-            "settings": [{"key": "scan_min_volume", "value": "5000"}]
+            "settings": [{"key": "default_position_size", "value": "250.0"}]
         })
         resp = await client.get("/api/settings")
         data = resp.json()
-        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
-        vol_field = next(f for f in scanner["fields"] if f["key"] == "scan_min_volume")
-        assert vol_field["value"] == "5000"
-        assert vol_field["has_db_override"] is True
+        trading = next(s for s in data["sections"] if s["id"] == "trading")
+        size_field = next(f for f in trading["fields"] if f["key"] == "default_position_size")
+        assert size_field["value"] == "250.0"
+        assert size_field["has_db_override"] is True
 
     @pytest.mark.asyncio
     async def test_delete_setting(self, client):
@@ -285,9 +267,9 @@ class TestSettingsRoutes:
         """Number fields should have type='number', enum fields type='select'."""
         resp = await client.get("/api/settings")
         data = resp.json()
-        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
-        interval_field = next(f for f in scanner["fields"] if f["key"] == "scan_interval_seconds")
-        assert interval_field["type"] == "number"
+        trading = next(s for s in data["sections"] if s["id"] == "trading")
+        size_field = next(f for f in trading["fields"] if f["key"] == "default_position_size")
+        assert size_field["type"] == "number"
 
         analysis = next(s for s in data["sections"] if s["id"] == "analysis")
         mode_field = next(f for f in analysis["fields"] if f["key"] == "llm_mode")
@@ -380,19 +362,11 @@ class TestHealthRoutes:
         assert isinstance(md["alpaca_configured"], bool)
 
     @pytest.mark.asyncio
-    async def test_health_universe_structure(self, client):
+    async def test_health_screener_alerts_structure(self, client):
         resp = await client.get("/api/health")
-        uni = resp.json()["universe"]
-        assert "ticker_count" in uni
-        assert "last_refresh" in uni
-        assert isinstance(uni["ticker_count"], int)
-
-    @pytest.mark.asyncio
-    async def test_health_scanner_structure(self, client):
-        resp = await client.get("/api/health")
-        scanner = resp.json()["scanner"]
-        assert "active" in scanner
-        assert isinstance(scanner["active"], bool)
+        screener = resp.json()["screener_alerts"]
+        assert "active" in screener
+        assert isinstance(screener["active"], bool)
 
     @pytest.mark.asyncio
     async def test_health_setup_checklist_structure(self, client):
@@ -853,107 +827,6 @@ class TestReportsDeep:
         assert resp.status_code == 404
 
 
-class TestUniverseDeep:
-    """Validate universe listing with seeded stocks and filtering."""
-
-    @pytest.fixture
-    async def seeded_client(self, app):
-        from dashboard.deps import get_db
-        db = get_db()
-        async with db.session() as session:
-            session.add(UniverseStockORM(
-                ticker="PENNY", name="Penny Corp", exchange="NASDAQ",
-                t212_ticker="PENNY_US", sector="Technology", industry="Software",
-                market_cap=50_000_000, avg_volume=200_000,
-                last_price=2.50, in_universe=True,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            session.add(UniverseStockORM(
-                ticker="CHEAP", name="Cheap Inc", exchange="NYSE",
-                t212_ticker="CHEAP_US", sector="Healthcare", industry="Biotech",
-                market_cap=20_000_000, avg_volume=500_000,
-                last_price=0.80, in_universe=True,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            session.add(UniverseStockORM(
-                ticker="EXPNSV", name="Expensive Ltd", exchange="NASDAQ",
-                t212_ticker="EXPNSV_US", sector="Finance", industry="Banking",
-                market_cap=500_000_000, avg_volume=1_000_000,
-                last_price=25.00, in_universe=False,
-                updated_at=datetime(2025, 1, 1, tzinfo=UTC),
-            ))
-            await session.commit()
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as c:
-            yield c
-
-    @pytest.mark.asyncio
-    async def test_universe_response_fields(self, seeded_client):
-        resp = await seeded_client.get("/api/universe")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == 2  # only in_universe=True
-        items = data["items"]
-        assert len(items) == 2
-        # Sorted by ticker by default
-        p = items[0]
-        assert p["ticker"] == "CHEAP"
-        assert p["name"] == "Cheap Inc"
-        assert p["exchange"] == "NYSE"
-        assert p["sector"] == "Healthcare"
-        assert p["industry"] == "Biotech"
-        assert p["market_cap"] == 20_000_000
-        assert p["avg_volume"] == 500_000
-        assert p["last_price"] == 0.80
-        assert p["in_universe"] is True
-        assert p["is_monitored"] is False
-        assert "updated_at" in p
-
-    @pytest.mark.asyncio
-    async def test_universe_include_not_in_universe(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?in_universe=false")
-        data = resp.json()
-        assert data["total"] == 3  # all stocks
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_exchange(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?exchange=NYSE")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "CHEAP"
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_price(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?min_price=1.0&max_price=5.0")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "PENNY"
-
-    @pytest.mark.asyncio
-    async def test_universe_filter_by_market_cap(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?min_market_cap=30000000")
-        items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["ticker"] == "PENNY"
-
-    @pytest.mark.asyncio
-    async def test_universe_pagination(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?limit=1&offset=0")
-        data = resp.json()
-        assert len(data["items"]) == 1
-        assert data["has_more"] is True
-        resp2 = await seeded_client.get("/api/universe?limit=1&offset=1")
-        assert len(resp2.json()["items"]) == 1
-        assert resp2.json()["has_more"] is False
-
-    @pytest.mark.asyncio
-    async def test_universe_sort_by_last_price(self, seeded_client):
-        resp = await seeded_client.get("/api/universe?sort_by=last_price")
-        items = resp.json()["items"]
-        assert items[0]["ticker"] == "PENNY"  # $2.50 > $0.80 (desc)
-
-
 class TestStatsDeep:
     """Validate trading stats computation with seeded trade data."""
 
@@ -1009,3 +882,55 @@ class TestStatsDeep:
         assert data["avg_pnl_per_trade"] == 50.0  # 100 / 2
         assert data["best_trade_pnl"] == 200.0
         assert data["worst_trade_pnl"] == -100.0
+
+
+# ---------------------------------------------------------------------------
+# SPA Routing Tests
+# ---------------------------------------------------------------------------
+
+class TestSPARouting:
+    """Test that the catch-all SPA route serves index.html for frontend routes."""
+
+    @pytest.mark.asyncio
+    async def test_api_routes_take_precedence(self, app):
+        """API routes should still return JSON, not index.html."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "status" in data or "paper_trading" in data
+
+    @pytest.mark.asyncio
+    async def test_frontend_route_returns_spa_fallback(self, app):
+        """Non-API routes should return index.html or a 404 if frontend not built."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/research")
+            # In test env, static dir may not exist, so we get the "not built" message
+            # or index.html if the build exists
+            assert resp.status_code in (200, 404)
+            if resp.status_code == 404:
+                assert "not built" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_deeply_nested_frontend_route(self, app):
+        """Deeply nested SPA routes should also be handled."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/research/AAPL/quantitative")
+            assert resp.status_code in (200, 404)
+
+    @pytest.mark.asyncio
+    async def test_catch_all_does_not_break_api_health(self, app):
+        """The catch-all route must not interfere with existing API endpoints."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Existing API endpoints should work normally
+            resp = await client.get("/api/health")
+            assert resp.status_code == 200
+            assert "application/json" in resp.headers.get("content-type", "")

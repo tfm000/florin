@@ -1,14 +1,15 @@
 """
-Sentinel Terminal — Main Entry Point
+Florin Terminal — Main Entry Point
 
 Starts all services:
   1. Database initialisation
   2. Market data connection
-  3. Penny stock scanner
+  3. Screener alert service (periodic screener execution + alerts)
   4. Alert processing pipeline
   5. Position monitoring
   6. Telegram bot
   7. Web dashboard
+  8. Market breadth scanner
 
 All services run concurrently via asyncio.gather().
 """
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
 from typing import Any
 
@@ -30,7 +32,7 @@ from db.models import ReportORM
 logger = get_logger(__name__)
 
 
-class Sentinel:
+class Florin:
     """Main application orchestrator."""
 
     def __init__(self) -> None:
@@ -44,15 +46,19 @@ class Sentinel:
         """Initialise and start all services."""
         setup_logging(self.settings.log_level, self.settings.app_env)
         logger.info(
-            "Starting Sentinel Terminal",
+            "Starting Florin Terminal",
             env=self.settings.app_env.value,
             llm_mode=self.settings.llm_mode.value,
-            price_range=f"${self.settings.scan_price_min:.2f}-${self.settings.scan_price_max:.2f}",
-            momentum_threshold=self.settings.scan_momentum_threshold,
             paper_trading=self.settings.paper_trading,
         )
 
         # --- Database ---
+        # Backward compatibility: rename sentinel.db → florin.db if needed
+        if "florin.db" in self.settings.database_url:
+            if not os.path.exists("florin.db") and os.path.exists("sentinel.db"):
+                logger.info("Migrating database: sentinel.db → florin.db")
+                os.rename("sentinel.db", "florin.db")
+
         self.db = Database(self.settings.database_url)
         await self.db.init()
         await self.db.run_migrations()
@@ -91,19 +97,19 @@ class Sentinel:
             await data_provider.connect()
             logger.info("Alpaca data provider connected")
 
+        # Policy rate fetcher (BIS API)
+        from data.policy_rates import PolicyRateFetcher
+        policy_rate_fetcher = PolicyRateFetcher(self.db)
+
         # yfinance provider (always available, no API key needed)
         from data.yfinance_provider import YFinanceProvider
-        yfinance_provider = YFinanceProvider()
+        yfinance_provider = YFinanceProvider(policy_rate_fetcher=policy_rate_fetcher)
 
-        # Universe manager
-        from scanner.universe import UniverseManager
-        universe = UniverseManager(self.settings, self.db, data_provider, yfinance_provider)
-
-        # Scanner
-        scanner = None
-        if data_provider:
-            from scanner.momentum_scanner import MomentumScanner
-            scanner = MomentumScanner(self.settings, data_provider, universe)
+        # Screener alert service (replaces old MomentumScanner + UniverseManager)
+        from scanner.screener_alert_service import ScreenerAlertService
+        screener_alert_svc = ScreenerAlertService(
+            self.db, self.event_bus, yfinance_provider,
+        )
 
         # Sentiment aggregator
         sentiment_agg = self._init_sentiment()
@@ -124,8 +130,8 @@ class Sentinel:
         # Telegram bot
         telegram_bot = None
         if self.settings.telegram_configured:
-            from telegram_bot.bot import SentinelBot
-            telegram_bot = SentinelBot(self.settings, self.event_bus, broker)
+            from telegram_bot.bot import FlorinBot
+            telegram_bot = FlorinBot(self.settings, self.event_bus, broker)
             await telegram_bot.setup()
             logger.info("Telegram bot initialised")
 
@@ -133,8 +139,7 @@ class Sentinel:
         from dashboard.app import create_app, serve as dashboard_serve
         from dashboard.deps import set_state
         set_state("shutdown_callback", self.shutdown)
-        set_state("universe", universe)
-        set_state("scanner", scanner)
+        set_state("screener_alert_service", screener_alert_svc)
         set_state("data_provider", data_provider)
         set_state("yfinance_provider", yfinance_provider)
         set_state("analysers", analysers)
@@ -145,6 +150,7 @@ class Sentinel:
         from stats.risk_free import RiskFreeRateFetcher
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
+        set_state("policy_rate_fetcher", policy_rate_fetcher)
 
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
@@ -158,22 +164,16 @@ class Sentinel:
         # Heartbeat
         services.append(asyncio.create_task(self._heartbeat(), name="heartbeat"))
 
-        # Universe refresh
-        services.append(asyncio.create_task(
-            self._universe_refresh_loop(universe), name="universe-refresh"
-        ))
-
         # Risk-free rate daily refresh
         services.append(asyncio.create_task(
             self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
         ))
 
-        # Scanner
-        if scanner:
-            services.append(asyncio.create_task(
-                scanner.run(self.event_bus), name="scanner"
-            ))
-            logger.info("Scanner started")
+        # Screener alert service (background, periodic screener execution)
+        services.append(asyncio.create_task(
+            screener_alert_svc.run(), name="screener-alerts"
+        ))
+        logger.info("Screener alert service started")
 
         # Alert pipeline
         services.append(asyncio.create_task(
@@ -195,10 +195,17 @@ class Sentinel:
                 telegram_bot.start_polling(), name="telegram-bot"
             ))
             # Alert listener — sends enriched alerts to Telegram with account context
-            from telegram_bot.handlers.alerts import alert_listener
+            from telegram_bot.handlers.alerts import alert_listener, screener_alert_listener
             services.append(asyncio.create_task(
                 alert_listener(self.event_bus, telegram_bot, broker, self.settings),
                 name="telegram-alerts",
+            ))
+            # Screener alert listener — sends screener alerts to Telegram
+            services.append(asyncio.create_task(
+                screener_alert_listener(
+                    self.event_bus, telegram_bot, broker, self.settings,
+                ),
+                name="telegram-screener-alerts",
             ))
 
         # Dashboard
@@ -209,7 +216,7 @@ class Sentinel:
         # Market breadth scanner (hourly during market hours)
         from scanner.breadth_scanner import breadth_scan_loop
         services.append(asyncio.create_task(
-            breadth_scan_loop(self.db, yfinance_provider, data_provider),
+            breadth_scan_loop(self.db, alpaca=data_provider),
             name="breadth-scanner",
         ))
 
@@ -221,7 +228,7 @@ class Sentinel:
         ))
 
         self._tasks = services
-        logger.info("Sentinel started — %d service(s) running", len(services))
+        logger.info("Florin started — %d service(s) running", len(services))
 
         # Wait for shutdown signal
         await self._shutdown_event.wait()
@@ -239,7 +246,7 @@ class Sentinel:
         if self.db:
             await self.db.close()
 
-        logger.info("Sentinel shut down cleanly")
+        logger.info("Florin shut down cleanly")
 
     # --- Component initialisation ---
 
@@ -343,17 +350,6 @@ class Sentinel:
                 subscribers=self.event_bus.subscriber_counts,
             )
             await asyncio.sleep(60)
-
-    async def _universe_refresh_loop(self, universe: Any) -> None:
-        """Refresh the penny stock universe periodically."""
-        while not self._shutdown_event.is_set():
-            try:
-                await universe.refresh()
-                logger.info("Universe refreshed", count=universe.size)
-            except Exception as e:
-                logger.error("Universe refresh failed: %s", e)
-            # Refresh daily
-            await asyncio.sleep(86_400)
 
     async def _rf_refresh_loop(self, rf_fetcher: Any) -> None:
         """Refresh G10 risk-free rates daily from central bank APIs."""
@@ -486,8 +482,8 @@ class Sentinel:
 
 
 def cli_entry() -> None:
-    """CLI entry point (called by `sentinel` command)."""
-    app = Sentinel()
+    """CLI entry point (called by `florin` command)."""
+    app = Florin()
 
     # Handle Ctrl+C and SIGTERM gracefully
     loop = asyncio.new_event_loop()
