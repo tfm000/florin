@@ -18,6 +18,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
+
 from db.models import BreadthSnapshotORM
 
 if TYPE_CHECKING:
@@ -157,19 +159,31 @@ async def compute_breadth(
 
 
 async def save_breadth_snapshot(db: Database, data: dict) -> None:
-    """Persist a breadth snapshot to the database."""
+    """Persist a breadth snapshot to the database, skipping if one already exists for this hour."""
     now = datetime.now(UTC)
+    date_str = now.strftime("%Y-%m-%d")
+    hour = now.hour
+
     async with db.session() as session:
-        snapshot = BreadthSnapshotORM(
-            date=now.strftime("%Y-%m-%d"),
-            hour=now.hour,
+        existing = await session.execute(
+            select(BreadthSnapshotORM.id).where(
+                BreadthSnapshotORM.date == date_str,
+                BreadthSnapshotORM.hour == hour,
+            )
+        )
+        if existing.first():
+            logger.debug("Breadth snapshot already exists for %s hour %d, skipping", date_str, hour)
+            return
+
+        session.add(BreadthSnapshotORM(
+            date=date_str,
+            hour=hour,
             advancing=data["advancing"],
             declining=data["declining"],
             unchanged=data["unchanged"],
             total=data["total"],
             ad_ratio=data["ad_ratio"],
-        )
-        session.add(snapshot)
+        ))
         await session.commit()
 
     logger.info(

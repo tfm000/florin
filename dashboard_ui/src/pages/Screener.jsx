@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApi, apiPost, apiFetch } from '../hooks/useApi'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
 import ExportButton from '../components/ExportButton'
 
 const SECTORS = [
@@ -9,17 +11,71 @@ const SECTORS = [
   'Communication Services', 'Real Estate', 'Utilities',
 ]
 
-const EXCHANGES = [
-  { value: '', label: 'All US' },
-  { value: 'NMS,NGM,NCM', label: 'NASDAQ' },
-  { value: 'NYQ', label: 'NYSE' },
-  { value: 'ASE', label: 'NYSE American' },
+const REGIONS = [
+  { value: 'us', label: 'United States' },
+  { value: 'gb', label: 'United Kingdom' },
+  { value: 'ca', label: 'Canada' },
+  { value: 'de', label: 'Germany' },
+  { value: 'fr', label: 'France' },
+  { value: 'jp', label: 'Japan' },
+  { value: 'hk', label: 'Hong Kong' },
+  { value: 'au', label: 'Australia' },
+  { value: 'in', label: 'India' },
+  { value: 'ch', label: 'Switzerland' },
+  { value: 'nl', label: 'Netherlands' },
+  { value: 'it', label: 'Italy' },
+  { value: 'es', label: 'Spain' },
+  { value: 'se', label: 'Sweden' },
+  { value: 'sg', label: 'Singapore' },
+  { value: 'kr', label: 'South Korea' },
+  { value: 'br', label: 'Brazil' },
+  { value: 'mx', label: 'Mexico' },
+  { value: 'tw', label: 'Taiwan' },
+  { value: 'nz', label: 'New Zealand' },
 ]
+
+// Exchange options per region — only populated for the most common ones
+const EXCHANGES_BY_REGION = {
+  us: [
+    { value: '', label: 'All US' },
+    { value: 'NMS,NGM,NCM', label: 'NASDAQ' },
+    { value: 'NYQ', label: 'NYSE' },
+    { value: 'PCX', label: 'NYSE Arca' },
+    { value: 'ASE', label: 'NYSE American' },
+    { value: 'BTS', label: 'BATS' },
+    { value: 'PNK,OQB,OQX', label: 'OTC Markets' },
+  ],
+  gb: [
+    { value: '', label: 'All UK' },
+    { value: 'LSE', label: 'London Stock Exchange' },
+    { value: 'IOB', label: 'Intl. Order Book' },
+  ],
+  ca: [
+    { value: '', label: 'All Canada' },
+    { value: 'TOR', label: 'Toronto (TSX)' },
+    { value: 'VAN', label: 'TSX Venture' },
+    { value: 'CNQ', label: 'CSE' },
+  ],
+  de: [
+    { value: '', label: 'All Germany' },
+    { value: 'GER', label: 'XETRA' },
+    { value: 'FRA', label: 'Frankfurt' },
+  ],
+  jp: [
+    { value: '', label: 'All Japan' },
+    { value: 'JPX', label: 'Tokyo (JPX)' },
+  ],
+  hk: [
+    { value: '', label: 'All Hong Kong' },
+    { value: 'HKG', label: 'HKEX' },
+  ],
+}
 
 const ASSET_TYPES = [
   { value: '', label: 'All' },
   { value: 'EQUITY', label: 'Stocks' },
   { value: 'ETF', label: 'ETFs' },
+  { value: 'MUTUALFUND', label: 'Mutual Funds' },
   { value: 'INDEX', label: 'Indices' },
   { value: 'CRYPTOCURRENCY', label: 'Crypto' },
 ]
@@ -39,6 +95,7 @@ const DEFAULT_FILTERS = {
   market_cap_min: '', market_cap_max: '',
   pe_min: '', pe_max: '',
   dividend_yield_min: '',
+  region: 'us',
   sector: '',
   exchange: '',
   asset_type: '',
@@ -50,13 +107,14 @@ const DEFAULT_FILTERS = {
 
 export default function Screener() {
   const navigate = useNavigate()
+  const colors = useChartColors()
   const [searchParams] = useSearchParams()
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('desc')
   const [saveName, setSaveName] = useState('')
   const [showSaveInput, setShowSaveInput] = useState(false)
-  const [saveMessage, setSaveMessage] = useState(null)
+  const [saveMessage, setSaveMessage] = useState(null) // { type: 'success' | 'error', text }
 
   // Load preset from URL if present
   const presetId = searchParams.get('preset')
@@ -118,12 +176,12 @@ export default function Screener() {
         sort_by,
         sort_asc,
       })
-      setSaveMessage('Saved!')
+      setSaveMessage({ type: 'success', text: 'Saved!' })
       setSaveName('')
       setShowSaveInput(false)
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
-      setSaveMessage(`Error: ${err.message}`)
+      setSaveMessage({ type: 'error', text: err.message })
     }
   }
 
@@ -194,8 +252,8 @@ export default function Screener() {
             </button>
           )}
           {saveMessage && (
-            <span className={`text-xs ${saveMessage.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>
-              {saveMessage}
+            <span className="text-xs" style={{ color: saveMessage.type === 'error' ? colors.negative : colors.positive }}>
+              {saveMessage.text}
             </span>
           )}
         </div>
@@ -247,10 +305,19 @@ export default function Screener() {
             </select>
           </div>
           <div>
+            <label className="text-gray-400 block mb-1">Region</label>
+            <select value={filters.region} onChange={e => { update('region', e.target.value); update('exchange', '') }}
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
+              {REGIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="text-gray-400 block mb-1">Exchange</label>
             <select value={filters.exchange} onChange={e => update('exchange', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
-              {EXCHANGES.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+              {(EXCHANGES_BY_REGION[filters.region] || [{ value: '', label: `All ${filters.region.toUpperCase()}` }]).map(e => (
+                <option key={e.value} value={e.value}>{e.label}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -312,7 +379,7 @@ export default function Screener() {
                   <td className="px-3 py-2 text-gray-300 truncate max-w-40">{r.name}</td>
                   <td className="px-3 py-2 text-right font-mono text-white">{r.price != null ? `$${r.price.toFixed(2)}` : '\u2014'}</td>
                   <td className="px-3 py-2 text-right font-mono text-gray-400">{formatVolume(r.volume || r.avg_volume)}</td>
-                  <td className={`px-3 py-2 text-right font-mono ${(r.change_pct || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className="px-3 py-2 text-right font-mono" style={{ color: r.change_pct != null ? valueColor(r.change_pct, colors) : undefined }}>
                     {r.change_pct != null ? `${r.change_pct >= 0 ? '+' : ''}${r.change_pct.toFixed(2)}%` : '\u2014'}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-gray-400">{formatMcap(r.market_cap)}</td>
@@ -328,7 +395,7 @@ export default function Screener() {
       )}
 
       {!loading && results.length === 0 && (
-        <p className="text-gray-500 text-center py-8">No stocks match your criteria</p>
+        <p className="text-gray-500 text-center py-8">No results match your criteria</p>
       )}
     </div>
   )

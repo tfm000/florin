@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi, apiDelete, apiPut } from '../hooks/useApi'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
 
 const INTERVAL_OPTIONS = [
   { value: 60, label: '1 min' },
@@ -205,6 +207,7 @@ export default function TradingScreeners() {
 }
 
 function AlertLog({ screenerId }) {
+  const colors = useChartColors()
   const { data: alerts, loading, error } = useApi(`/screener/saved/${screenerId}/alerts?limit=20`)
 
   if (loading) return <p className="text-gray-600 text-xs">Loading alerts...</p>
@@ -223,7 +226,7 @@ function AlertLog({ screenerId }) {
               <span className="text-white font-mono font-semibold">{a.ticker}</span>
               {a.price != null && <span className="text-gray-400">${a.price.toFixed(2)}</span>}
               {a.change_pct != null && (
-                <span className={a.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}>
+                <span style={{ color: valueColor(a.change_pct, colors) }}>
                   {a.change_pct >= 0 ? '+' : ''}{a.change_pct.toFixed(2)}%
                 </span>
               )}
@@ -236,6 +239,16 @@ function AlertLog({ screenerId }) {
   )
 }
 
+const ASSET_TYPE_LABELS = {
+  EQUITY: 'Stocks', ETF: 'ETFs', MUTUALFUND: 'Mutual Funds',
+  INDEX: 'Indices', CRYPTOCURRENCY: 'Crypto',
+}
+
+const EXCHANGE_LABELS = {
+  'NMS,NGM,NCM': 'NASDAQ', NYQ: 'NYSE', PCX: 'NYSE Arca',
+  ASE: 'NYSE American', BTS: 'BATS', 'PNK,OQB,OQX': 'OTC',
+}
+
 function _summarizeFilters(filters) {
   if (!filters || typeof filters !== 'object') return 'No filters'
   const parts = []
@@ -245,7 +258,8 @@ function _summarizeFilters(filters) {
     parts.push(`Price: $${min}-$${max}`)
   }
   if (filters.sector) parts.push(filters.sector)
-  if (filters.asset_type) parts.push(filters.asset_type)
+  if (filters.asset_type) parts.push(ASSET_TYPE_LABELS[filters.asset_type] || filters.asset_type)
+  if (filters.exchange) parts.push(EXCHANGE_LABELS[filters.exchange] || filters.exchange)
   if (filters.momentum_period) parts.push(`Momentum: ${filters.momentum_period}`)
-  return parts.length > 0 ? parts.join(' \u00B7 ') : 'All US equities'
+  return parts.length > 0 ? parts.join(' \u00B7 ') : 'All US assets'
 }
