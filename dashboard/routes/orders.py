@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.models import OrderRequest, OrderType, Side
 from dashboard.deps import get_broker, get_settings
@@ -12,22 +12,22 @@ router = APIRouter(tags=["orders"])
 
 
 class BuyRequest(BaseModel):
-    ticker: str
-    quantity: float | None = None
-    target_value: float | None = None
-    limit_price: float | None = None
+    ticker: str = Field(..., min_length=1, max_length=10)
+    quantity: float | None = Field(default=None, gt=0)
+    target_value: float | None = Field(default=None, gt=0)
+    limit_price: float | None = Field(default=None, gt=0)
 
 
 class SellRequest(BaseModel):
-    ticker: str
-    quantity: float | None = None
-    limit_price: float | None = None
+    ticker: str = Field(..., min_length=1, max_length=10)
+    quantity: float | None = Field(default=None, gt=0)
+    limit_price: float | None = Field(default=None, gt=0)
 
 
 class StopLossRequest(BaseModel):
-    ticker: str
-    quantity: float
-    stop_price: float
+    ticker: str = Field(..., min_length=1, max_length=10)
+    quantity: float = Field(..., gt=0)
+    stop_price: float = Field(..., gt=0)
 
 
 def _check_trading_allowed() -> None:
