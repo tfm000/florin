@@ -5,7 +5,7 @@ Fallback for when PRAW OAuth credentials aren't configured.
 Uses reddit.com/search.json which is publicly accessible but rate-limited
 to ~10 requests/minute for unauthenticated access.
 
-Searches across all penny stock subreddits in a single request to minimise
+Searches across all stock subreddits in a single request to minimise
 API calls. Results are cached with a 5-minute TTL.
 """
 
@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from config.constants import PENNY_STOCK_SUBREDDITS
+from config.constants import STOCK_SUBREDDITS
 from core.models import RedditPost
 from sentiment.base import SentimentSource
 
@@ -47,7 +47,7 @@ class RedditJsonSource(SentimentSource):
 
     BASE_URL = "https://www.reddit.com"
     HEADERS = {
-        "User-Agent": "sentinel-terminal/0.2 (market research tool)",
+        "User-Agent": "florin-terminal/0.2 (market research tool)",
         "Accept": "application/json",
     }
 
@@ -113,7 +113,7 @@ class RedditJsonSource(SentimentSource):
             query += f" OR {company_name}"
 
         # Restrict to our configured subreddits
-        subreddit_str = "+".join(PENNY_STOCK_SUBREDDITS)
+        subreddit_str = "+".join(STOCK_SUBREDDITS)
 
         params = {
             "q": query,

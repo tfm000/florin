@@ -31,7 +31,7 @@ def escape_md(text: str) -> str:
 def format_alert_message(
     report: AnalysisReport,
     broker_summary: AccountSummary | None = None,
-    penny_position_count: int = 0,
+    open_position_count: int = 0,
     default_order_size: str = "",
 ) -> str:
     """Format an analysis report as a Telegram alert message with account context."""
@@ -90,14 +90,14 @@ def format_alert_message(
             lines.append(f"  • ⚠️ {escape_md(signal)}")
 
     # Account context (if provided)
-    if broker_summary or penny_position_count or default_order_size:
+    if broker_summary or open_position_count or default_order_size:
         lines.append("")
         if broker_summary:
             acc_val = escape_md(f"{broker_summary.currency} {broker_summary.total_value:,.2f}")
             cash = escape_md(f"{broker_summary.currency} {broker_summary.cash_available:,.2f}")
             lines.append(f"💰 *Account:* {acc_val} \\({cash} cash\\)")
-        if penny_position_count > 0:
-            lines.append(f"📦 *Penny Positions:* {escape_md(str(penny_position_count))} open")
+        if open_position_count > 0:
+            lines.append(f"📦 *Positions:* {escape_md(str(open_position_count))} open")
         if default_order_size:
             lines.append(f"💷 *Default Order:* {escape_md(default_order_size)}")
 

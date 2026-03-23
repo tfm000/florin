@@ -423,13 +423,13 @@ class AlpacaProvider(MarketDataProvider):
         logger.info("Alpaca: fetched %d tradeable US equity assets", len(assets))
         return assets
 
-    async def get_penny_stock_universe(
+    async def get_stock_universe(
         self,
         price_min: float = 0.01,
         price_max: float = 5.0,
     ) -> list[StockInfo]:
         """
-        Discover penny stocks using Alpaca assets + snapshot pricing.
+        Discover stocks by price range using Alpaca assets + snapshot pricing.
 
         1. Fetch all tradeable assets via /v2/assets
         2. Batch-fetch snapshots to get current prices
@@ -444,7 +444,7 @@ class AlpacaProvider(MarketDataProvider):
         meta = {a["symbol"]: a for a in assets}
 
         # Fetch snapshots in batches with adaptive rate limiting
-        penny_stocks: list[StockInfo] = []
+        matched_stocks: list[StockInfo] = []
         total_batches = (len(all_tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
 
         # Filter out warrants, preferred shares, and other non-standard
@@ -472,7 +472,7 @@ class AlpacaProvider(MarketDataProvider):
                         continue
                     if price_min <= quote.price <= price_max:
                         info = meta.get(ticker, {})
-                        penny_stocks.append(StockInfo(
+                        matched_stocks.append(StockInfo(
                             ticker=ticker,
                             name=info.get("name", ""),
                             exchange=info.get("exchange", ""),
@@ -495,13 +495,13 @@ class AlpacaProvider(MarketDataProvider):
                 else:
                     logger.error("Alpaca snapshot batch failed: %s", e)
             except Exception:
-                logger.exception("Unexpected error in penny stock discovery batch")
+                logger.exception("Unexpected error in stock discovery batch")
 
         logger.info(
-            "Alpaca: discovered %d penny stocks ($%.2f–$%.2f) from %d assets",
-            len(penny_stocks), price_min, price_max, len(all_tickers),
+            "Alpaca: discovered %d stocks ($%.2f–$%.2f) from %d assets",
+            len(matched_stocks), price_min, price_max, len(all_tickers),
         )
-        return penny_stocks
+        return matched_stocks
 
     # =========================================================================
     # WebSocket streaming

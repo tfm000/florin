@@ -1,8 +1,8 @@
 services:
-  sentinel:
+  florin:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./sentinel.db:/app/sentinel.db
+      - ./florin.db:/app/florin.db
     restart: unless-stopped

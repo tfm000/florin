@@ -1,5 +1,5 @@
 """
-Shared API response schemas for the Sentinel Terminal dashboard.
+Shared API response schemas for the Florin Terminal dashboard.
 
 These provide consistent, typed responses across all endpoints:
 - ErrorResponse for all error cases

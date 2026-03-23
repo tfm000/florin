@@ -4,7 +4,7 @@ Database engine, session factory, and lifecycle management.
 Uses SQLAlchemy 2.0 async with aiosqlite for zero-config local storage.
 
 Usage:
-    db = Database("sqlite+aiosqlite:///./sentinel.db")
+    db = Database("sqlite+aiosqlite:///./florin.db")
     await db.init()
     
     async with db.session() as session:

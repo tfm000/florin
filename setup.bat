@@ -6,7 +6,7 @@ cd /d "%~dp0"
 set VENV_DIR=.venv
 
 echo.
-echo === Penny Stock Sentinel Setup ===
+echo === Florin Terminal Setup ===
 echo.
 
 :: ── 1. Python 3.12+ ─────────────────────────────────────
@@ -65,8 +65,8 @@ if %errorlevel% equ 0 (
 
 :: ── 5. Database ──────────────────────────────────────────
 echo Initialising database...
-%PYTHON% -c "import asyncio; from db.database import Database; asyncio.run((lambda: (db := Database('sqlite+aiosqlite:///./sentinel.db')) or asyncio.ensure_future(db.init()))())" 2>nul
-%PYTHON% -c "import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./sentinel.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')"
+%PYTHON% -c "import asyncio; from db.database import Database; asyncio.run((lambda: (db := Database('sqlite+aiosqlite:///./florin.db')) or asyncio.ensure_future(db.init()))())" 2>nul
+%PYTHON% -c "import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./florin.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')"
 echo [OK] Database initialised
 
 :: ── 7. Desktop launcher ─────────────────────────────────
@@ -75,15 +75,15 @@ echo @echo off
 echo cd /d "%%~dp0"
 echo call .venv\Scripts\activate.bat
 echo python main.py
-) > Sentinel.bat
-echo [OK] Created Sentinel.bat (double-click to launch)
+) > Florin.bat
+echo [OK] Created Florin.bat (double-click to launch)
 
 echo.
 echo === Setup complete! ===
 echo.
 echo Next steps:
 echo   1. Start the app:
-echo      * Double-click Sentinel.bat, or
+echo      * Double-click Florin.bat, or
 echo      * Run: .venv\Scripts\activate ^&^& python main.py
 echo   2. Configure your API keys via the dashboard at http://localhost:8000/settings
 echo.

@@ -77,7 +77,7 @@ class TestRunMigrations:
         asyncio.run() inside env.py which fails when there's already
         a running loop.
         """
-        db = Database("sqlite+aiosqlite:///./sentinel.db")
+        db = Database("sqlite+aiosqlite:///./florin.db")
         await db.init()
         # This should not raise "cannot be called from a running event loop"
         await db.run_migrations()
@@ -86,7 +86,7 @@ class TestRunMigrations:
     @pytest.mark.asyncio
     async def test_run_migrations_is_idempotent(self):
         """Running migrations twice should not error."""
-        db = Database("sqlite+aiosqlite:///./sentinel.db")
+        db = Database("sqlite+aiosqlite:///./florin.db")
         await db.init()
         await db.run_migrations()
         await db.run_migrations()  # second call should be a no-op

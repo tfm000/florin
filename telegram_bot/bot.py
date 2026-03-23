@@ -20,9 +20,9 @@ from core.events import EventBus
 logger = logging.getLogger(__name__)
 
 
-class SentinelBot:
+class FlorinBot:
     """
-    Telegram bot for Sentinel Terminal.
+    Telegram bot for Florin Terminal.
 
     Provides:
     - Alert notifications with BUY/DENY buttons

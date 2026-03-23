@@ -125,7 +125,7 @@ async def health_check() -> dict:
 
 @router.post("/terminate")
 async def terminate() -> dict:
-    """Gracefully shut down the Sentinel application."""
+    """Gracefully shut down the Florin application."""
     import asyncio
 
     shutdown = get_shutdown_callback()

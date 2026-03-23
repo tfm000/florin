@@ -1,5 +1,5 @@
 """
-Sentinel Terminal — Main Entry Point
+Florin Terminal — Main Entry Point
 
 Starts all services:
   1. Database initialisation
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
 from typing import Any
 
@@ -31,7 +32,7 @@ from db.models import ReportORM
 logger = get_logger(__name__)
 
 
-class Sentinel:
+class Florin:
     """Main application orchestrator."""
 
     def __init__(self) -> None:
@@ -45,13 +46,19 @@ class Sentinel:
         """Initialise and start all services."""
         setup_logging(self.settings.log_level, self.settings.app_env)
         logger.info(
-            "Starting Sentinel Terminal",
+            "Starting Florin Terminal",
             env=self.settings.app_env.value,
             llm_mode=self.settings.llm_mode.value,
             paper_trading=self.settings.paper_trading,
         )
 
         # --- Database ---
+        # Backward compatibility: rename sentinel.db → florin.db if needed
+        if "florin.db" in self.settings.database_url:
+            if not os.path.exists("florin.db") and os.path.exists("sentinel.db"):
+                logger.info("Migrating database: sentinel.db → florin.db")
+                os.rename("sentinel.db", "florin.db")
+
         self.db = Database(self.settings.database_url)
         await self.db.init()
         await self.db.run_migrations()
@@ -119,8 +126,8 @@ class Sentinel:
         # Telegram bot
         telegram_bot = None
         if self.settings.telegram_configured:
-            from telegram_bot.bot import SentinelBot
-            telegram_bot = SentinelBot(self.settings, self.event_bus, broker)
+            from telegram_bot.bot import FlorinBot
+            telegram_bot = FlorinBot(self.settings, self.event_bus, broker)
             await telegram_bot.setup()
             logger.info("Telegram bot initialised")
 
@@ -216,7 +223,7 @@ class Sentinel:
         ))
 
         self._tasks = services
-        logger.info("Sentinel started — %d service(s) running", len(services))
+        logger.info("Florin started — %d service(s) running", len(services))
 
         # Wait for shutdown signal
         await self._shutdown_event.wait()
@@ -234,7 +241,7 @@ class Sentinel:
         if self.db:
             await self.db.close()
 
-        logger.info("Sentinel shut down cleanly")
+        logger.info("Florin shut down cleanly")
 
     # --- Component initialisation ---
 
@@ -470,8 +477,8 @@ class Sentinel:
 
 
 def cli_entry() -> None:
-    """CLI entry point (called by `sentinel` command)."""
-    app = Sentinel()
+    """CLI entry point (called by `florin` command)."""
+    app = Florin()
 
     # Handle Ctrl+C and SIGTERM gracefully
     loop = asyncio.new_event_loop()

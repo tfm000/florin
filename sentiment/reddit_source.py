@@ -1,7 +1,7 @@
 """
 Reddit sentiment source via PRAW.
 
-Searches penny stock subreddits for mentions of a given ticker.
+Searches stock subreddits for mentions of a given ticker.
 Extracts posts, scores, author metadata, and comment activity.
 
 PRAW is synchronous — all calls are wrapped with asyncio.to_thread().
@@ -18,7 +18,7 @@ from typing import Any
 import praw
 from praw.models import Submission
 
-from config.constants import PENNY_STOCK_SUBREDDITS
+from config.constants import STOCK_SUBREDDITS
 from config.settings import Settings
 from core.models import RedditPost
 from sentiment.base import SentimentSource
@@ -86,7 +86,7 @@ class RedditSource(SentimentSource):
         if company_name:
             queries.append(company_name)
 
-        for subreddit_name in PENNY_STOCK_SUBREDDITS:
+        for subreddit_name in STOCK_SUBREDDITS:
             if len(all_posts) >= MAX_TOTAL_POSTS:
                 break
 

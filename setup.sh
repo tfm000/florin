@@ -17,7 +17,7 @@ warn()  { printf "${YELLOW}[!]${NC} %s\n" "$1"; }
 fail()  { printf "${RED}[✗]${NC} %s\n" "$1"; exit 1; }
 
 echo ""
-echo "=== Penny Stock Sentinel Setup ==="
+echo "=== Florin Terminal Setup ==="
 echo ""
 
 # ── 1. Python 3.12+ ─────────────────────────────────────
@@ -76,12 +76,12 @@ echo "Initialising database..."
 import asyncio
 from db.database import Database
 async def init():
-    db = Database('sqlite+aiosqlite:///./sentinel.db')
+    db = Database('sqlite+aiosqlite:///./florin.db')
     await db.init()
     await db.close()
 asyncio.run(init())
 "
-info "Database initialised (sentinel.db)"
+info "Database initialised (florin.db)"
 
 # ── 7. Ollama model (optional) ──────────────────────────
 if command -v ollama &>/dev/null; then
@@ -100,7 +100,7 @@ else
 fi
 
 # ── 8. Desktop launcher ─────────────────────────────────
-LAUNCHER="Sentinel.command"
+LAUNCHER="Florin.command"
 cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
@@ -115,7 +115,7 @@ echo "=== Setup complete! ==="
 echo ""
 echo "Next steps:"
 echo "  1. Start the app:"
-echo "     • Double-click Sentinel.command, or"
+echo "     • Double-click Florin.command, or"
 echo "     • Run: source .venv/bin/activate && python main.py"
 echo "  2. Configure your API keys via the dashboard at http://localhost:8000/settings"
 echo ""

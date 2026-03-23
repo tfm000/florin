@@ -1,7 +1,7 @@
 [project]
-name = "penny-stock-sentinel"
-version = "0.1.0"
-description = "AI-powered penny stock sentiment screening and trading tool"
+name = "florin"
+version = "0.2.0"
+description = "AI-powered financial terminal for market screening, analysis, and trading"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 
@@ -72,7 +72,7 @@ dev = [
 ]
 
 [project.scripts]
-sentinel = "main:cli_entry"
+florin = "main:cli_entry"
 
 [tool.ruff]
 target-version = "py312"

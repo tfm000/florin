@@ -146,7 +146,7 @@ class TestFraudDetector:
             sec_filings=[SECFiling(form_type="10-K", filed_date=datetime.now(UTC))],
         )
         result = await detector.assess(alert, sentiment)
-        assert any("Sub-penny" in f for f in result.flags)
+        assert any("Sub-dollar" in f for f in result.flags)
 
     @pytest.mark.asyncio
     async def test_no_sec_filings(self, detector):

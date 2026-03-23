@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # --- General ---
     app_env: AppEnv = AppEnv.DEVELOPMENT
     log_level: str = "INFO"
-    database_url: str = "sqlite+aiosqlite:///./sentinel.db"
+    database_url: str = "sqlite+aiosqlite:///./florin.db"
 
     # --- Trading 212 ---
     t212_api_key: str = ""
@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # --- Reddit ---
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
-    reddit_user_agent: str = "sentinel-terminal/0.2"
+    reddit_user_agent: str = "florin-terminal/0.2"
 
     # --- LLM: Ollama ---
     ollama_base_url: str = "http://localhost:11434"

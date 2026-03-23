@@ -53,7 +53,7 @@ def register_command_handlers(
         if not _authorised(message):
             return
         await message.answer(
-            "🤖 *Sentinel Terminal*\n\n"
+            "🤖 *Florin Terminal*\n\n"
             "Commands:\n"
             "/status \\- System health\n"
             "/balance \\- Account summary\n"
