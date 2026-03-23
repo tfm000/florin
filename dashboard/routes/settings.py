@@ -80,17 +80,6 @@ _SECTIONS = [
         ],
     },
     {
-        "id": "scanner",
-        "label": "Scanner",
-        "keys": [
-            "scan_price_min", "scan_price_max",
-            "scan_market_cap_min", "scan_market_cap_max",
-            "scan_momentum_threshold",
-            "scan_interval_seconds", "scan_cooldown_minutes", "scan_min_volume",
-            "market_cap_source",
-        ],
-    },
-    {
         "id": "trading",
         "label": "Trading",
         "keys": [

@@ -6,7 +6,7 @@ export default function Stats() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-white">Trading Statistics</h1>
+      <h2 className="text-lg font-semibold text-gray-300">Trading Statistics</h2>
 
       {loading && <p className="text-gray-500">Loading statistics...</p>}
       {error && <p className="text-red-400">Error: {error}</p>}
