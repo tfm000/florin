@@ -428,3 +428,25 @@ class SavedScreenerORM(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Screener Alert Log (tracks which tickers were alerted per screener)
+# =============================================================================
+
+class ScreenerAlertLogORM(Base):
+    """Log of screener alert notifications sent to the user."""
+    __tablename__ = "screener_alert_log"
+    __table_args__ = (
+        Index("ix_screener_alert_screener_date", "screener_id", "sent_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    screener_id: Mapped[str] = mapped_column(
+        String(16), ForeignKey("saved_screeners.id", ondelete="CASCADE"), index=True
+    )
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    alert_data_json: Mapped[str] = mapped_column(Text, default="{}")
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

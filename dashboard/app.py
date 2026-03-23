@@ -70,7 +70,7 @@ def create_app(
 
     # Register API routes (import here to avoid circular imports)
     from dashboard.routes import (
-        positions, universe, reports, trades, account, orders,
+        positions, reports, trades, account, orders,
         stats, health, settings, research, watchlist, monitor,
         calendar, screener, correlation, risk, filings_13f, portfolio,
         short_interest, breadth, news_feed, regime, alerts, insiders,
@@ -82,7 +82,6 @@ def create_app(
     app.include_router(watchlist.router, prefix="/api")
     app.include_router(monitor.router, prefix="/api")
     app.include_router(positions.router, prefix="/api")
-    app.include_router(universe.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
     app.include_router(trades.router, prefix="/api")
     app.include_router(account.router, prefix="/api")
