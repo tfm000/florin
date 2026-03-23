@@ -1009,3 +1009,55 @@ class TestStatsDeep:
         assert data["avg_pnl_per_trade"] == 50.0  # 100 / 2
         assert data["best_trade_pnl"] == 200.0
         assert data["worst_trade_pnl"] == -100.0
+
+
+# ---------------------------------------------------------------------------
+# SPA Routing Tests
+# ---------------------------------------------------------------------------
+
+class TestSPARouting:
+    """Test that the catch-all SPA route serves index.html for frontend routes."""
+
+    @pytest.mark.asyncio
+    async def test_api_routes_take_precedence(self, app):
+        """API routes should still return JSON, not index.html."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/health")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "status" in data or "paper_trading" in data
+
+    @pytest.mark.asyncio
+    async def test_frontend_route_returns_spa_fallback(self, app):
+        """Non-API routes should return index.html or a 404 if frontend not built."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/research")
+            # In test env, static dir may not exist, so we get the "not built" message
+            # or index.html if the build exists
+            assert resp.status_code in (200, 404)
+            if resp.status_code == 404:
+                assert "not built" in resp.json()["detail"].lower()
+
+    @pytest.mark.asyncio
+    async def test_deeply_nested_frontend_route(self, app):
+        """Deeply nested SPA routes should also be handled."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/research/AAPL/quantitative")
+            assert resp.status_code in (200, 404)
+
+    @pytest.mark.asyncio
+    async def test_catch_all_does_not_break_api_health(self, app):
+        """The catch-all route must not interfere with existing API endpoints."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # Existing API endpoints should work normally
+            resp = await client.get("/api/health")
+            assert resp.status_code == 200
+            assert "application/json" in resp.headers.get("content-type", "")

@@ -1652,9 +1652,15 @@ class TestPortfolioCacheService:
         from datetime import date, timedelta
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
+        from db.models import PortfolioORM
 
         db = get_db()
         svc = PortfolioCacheService(db)
+
+        # Create the parent portfolio so FK constraints are satisfied
+        async with db.session() as session:
+            session.add(PortfolioORM(id="test_port_1", name="Test Portfolio Cache"))
+            await session.commit()
 
         today = date.today()
         d1 = (today - timedelta(days=150)).isoformat()
@@ -1722,9 +1728,14 @@ class TestPortfolioCacheService:
         """Cache with narrower data still serves for wider period requests."""
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
+        from db.models import PortfolioORM
 
         db = get_db()
         svc = PortfolioCacheService(db)
+
+        async with db.session() as session:
+            session.add(PortfolioORM(id="test_port_2", name="Test Portfolio Cache 2"))
+            await session.commit()
 
         # Cache only 180 days of data
         from datetime import date, timedelta
@@ -1751,9 +1762,14 @@ class TestPortfolioCacheService:
         from datetime import date, timedelta
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
+        from db.models import PortfolioORM
 
         db = get_db()
         svc = PortfolioCacheService(db)
+
+        async with db.session() as session:
+            session.add(PortfolioORM(id="test_port_3", name="Test Portfolio Cache 3"))
+            await session.commit()
 
         today = date.today()
         returns = [
@@ -1782,10 +1798,15 @@ class TestPortfolioCacheService:
         """Cache with wide date range serves narrower period requests."""
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
+        from db.models import PortfolioORM
         from datetime import date, timedelta
 
         db = get_db()
         svc = PortfolioCacheService(db)
+
+        async with db.session() as session:
+            session.add(PortfolioORM(id="test_port_4", name="Test Portfolio Cache 4"))
+            await session.commit()
 
         # Cache 3 years of data
         today = date.today()

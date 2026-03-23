@@ -132,20 +132,18 @@ def _extract_json(raw: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON object in the text
-    match = re.search(r"\{[\s\S]*\}", cleaned)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-
-    # Try removing trailing commas
-    no_trailing = re.sub(r",\s*([}\]])", r"\1", cleaned)
-    try:
-        return json.loads(no_trailing)
-    except json.JSONDecodeError:
-        pass
+    # Try to find JSON object in the text — find each '{' and attempt parse
+    for i, ch in enumerate(cleaned):
+        if ch == '{':
+            try:
+                return json.loads(cleaned[i:])
+            except json.JSONDecodeError:
+                # Try with trailing comma removal
+                candidate = re.sub(r",\s*([}\]])", r"\1", cleaned[i:])
+                try:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    continue
 
     raise ValueError(f"Could not extract JSON from response: {cleaned[:200]}")
 

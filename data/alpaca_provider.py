@@ -710,7 +710,7 @@ class AlpacaProvider(MarketDataProvider):
         try:
             self._bar_queue.put_nowait(bar_data)
         except asyncio.QueueFull:
-            pass  # Drop oldest if queue is full
+            logger.debug("Bar queue full — dropping bar for %s", bar_data.ticker)
 
     # =========================================================================
     # Helpers

@@ -9,6 +9,7 @@ Tracks virtual positions, P&L, and trade history in memory.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -46,6 +47,7 @@ class PaperBroker(Broker):
         self._cash = initial_cash
         self._positions: dict[str, Position] = {}
         self._trades: list[TradeRecord] = []
+        self._max_trade_history = 10_000  # Cap to prevent unbounded memory growth
         self._pending_orders: list[dict] = []
         self._connected = False
 
@@ -270,6 +272,8 @@ class PaperBroker(Broker):
             executed_at=datetime.now(UTC),
         )
         self._trades.append(trade)
+        if len(self._trades) > self._max_trade_history:
+            self._trades = self._trades[-self._max_trade_history:]
 
         logger.info("Paper BUY: %s qty=%.4f @ $%.4f (total=$%.2f)", ticker, quantity, price, total_value)
 
@@ -306,7 +310,7 @@ class PaperBroker(Broker):
 
         # Update position
         existing.quantity -= quantity
-        if existing.quantity <= 0.0001:  # Effectively zero
+        if math.isclose(existing.quantity, 0.0, abs_tol=1e-9) or existing.quantity < 0:
             del self._positions[ticker]
         else:
             existing.update_pnl(price)
@@ -325,6 +329,8 @@ class PaperBroker(Broker):
             executed_at=datetime.now(UTC),
         )
         self._trades.append(trade)
+        if len(self._trades) > self._max_trade_history:
+            self._trades = self._trades[-self._max_trade_history:]
 
         logger.info(
             "Paper SELL: %s qty=%.4f @ $%.4f P&L=$%.2f (%.1f%%)",
