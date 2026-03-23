@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useApi } from '../hooks/useApi'
+import { corrColor } from '../utils/colors'
 import SearchBar from './SearchBar'
 import ExportButton from './ExportButton'
 
@@ -17,15 +18,6 @@ const METHODS = [
   { value: 'laloux_kendall', label: 'Laloux Kendall' },
   { value: 'laloux_pp_kendall', label: 'Laloux PP Kendall' },
 ]
-
-function corrColor(val) {
-  if (val == null) return 'transparent'
-  // Blue for positive, red for negative, white for zero
-  const abs = Math.min(Math.abs(val), 1)
-  if (val > 0) return `rgba(59, 130, 246, ${abs * 0.8})`
-  if (val < 0) return `rgba(239, 68, 68, ${abs * 0.8})`
-  return 'transparent'
-}
 
 export default function CorrelationMatrix() {
   const [tickers, setTickers] = useState(['SPY', 'QQQ', 'IWM', 'GLD', 'TLT'])

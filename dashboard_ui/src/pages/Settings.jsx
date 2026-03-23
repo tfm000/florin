@@ -11,7 +11,7 @@ export default function Settings() {
   const [colorblind, setColorblind] = useColorblindToggle()
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState(null)
+  const [message, setMessage] = useState(null) // { type: 'success' | 'error', text }
 
   // Reset edits when data loads
   useEffect(() => {
@@ -38,14 +38,13 @@ export default function Settings() {
       }))
       const result = await apiPut('/settings', { settings })
       setEdits({})
-      setMessage(
-        result.restart_required
-          ? `Saved ${result.updated.length} setting(s). Some changes require a restart to take effect.`
-          : `Saved ${result.updated.length} setting(s).`
-      )
+      const text = result.restart_required
+        ? `Saved ${result.updated.length} setting(s). Some changes require a restart to take effect.`
+        : `Saved ${result.updated.length} setting(s).`
+      setMessage({ type: 'success', text })
       refetch()
     } catch (err) {
-      setMessage(`Error: ${err.message}`)
+      setMessage({ type: 'error', text: err.message })
     } finally {
       setSaving(false)
     }
@@ -68,9 +67,9 @@ export default function Settings() {
 
       {message && (
         <div className={`px-4 py-3 rounded text-sm ${
-          message.startsWith('Error') ? 'bg-red-900/50 text-red-300 border border-red-700' : 'bg-green-900/50 text-green-300 border border-green-700'
+          message.type === 'error' ? 'bg-red-900/50 text-red-300 border border-red-700' : 'bg-green-900/50 text-green-300 border border-green-700'
         }`}>
-          {message}
+          {message.text}
         </div>
       )}
 

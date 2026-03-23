@@ -12,33 +12,43 @@ const INTERVAL_OPTIONS = [
 
 export default function TradingScreeners() {
   const navigate = useNavigate()
-  const { data: screeners, loading, refetch } = useApi('/screener/saved')
+  const { data: screeners, loading, error, refetch } = useApi('/screener/saved')
   const [expandedId, setExpandedId] = useState(null)
+  const [actionError, setActionError] = useState(null)
 
   const handleDelete = async (e, id, name) => {
     e.stopPropagation()
     if (!confirm(`Delete screener "${name}"?`)) return
     try {
+      setActionError(null)
       await apiDelete(`/screener/saved/${id}`)
       refetch()
-    } catch { /* ignore */ }
+    } catch (err) {
+      setActionError(`Failed to delete "${name}": ${err.message}`)
+    }
   }
 
   const handleToggleAlert = async (e, id, currentState) => {
     e.stopPropagation()
     try {
+      setActionError(null)
       await apiPut(`/screener/saved/${id}/alerts`, {
         is_alert_active: !currentState,
       })
       refetch()
-    } catch { /* ignore */ }
+    } catch (err) {
+      setActionError(`Failed to toggle alerts: ${err.message}`)
+    }
   }
 
   const handleUpdateAlertSetting = async (id, field, value) => {
     try {
+      setActionError(null)
       await apiPut(`/screener/saved/${id}/alerts`, { [field]: value })
       refetch()
-    } catch { /* ignore */ }
+    } catch (err) {
+      setActionError(`Failed to update setting: ${err.message}`)
+    }
   }
 
   const toggleExpand = (e, id) => {
@@ -60,9 +70,22 @@ export default function TradingScreeners() {
         </button>
       </div>
 
+      {actionError && (
+        <div className="px-4 py-3 rounded text-sm bg-red-900/50 text-red-300 border border-red-700">
+          {actionError}
+        </div>
+      )}
+
       {loading && <p className="text-gray-500 text-sm">Loading...</p>}
 
-      {!loading && items.length === 0 && (
+      {error && !loading && (
+        <div className="bg-gray-800 rounded-lg border border-red-700 p-8 text-center">
+          <p className="text-red-400 mb-2">Failed to load screeners</p>
+          <p className="text-gray-500 text-sm">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && items.length === 0 && (
         <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
           <p className="text-gray-400 mb-4">No saved screeners yet.</p>
           <p className="text-gray-500 text-sm">
@@ -145,8 +168,13 @@ export default function TradingScreeners() {
                       <label className="text-gray-400 block mb-1">Max Alerts/Day</label>
                       <input
                         type="number"
-                        value={s.max_alerts_per_day}
-                        onChange={(e) => handleUpdateAlertSetting(s.id, 'max_alerts_per_day', Math.max(1, Number(e.target.value)))}
+                        defaultValue={s.max_alerts_per_day}
+                        onBlur={(e) => {
+                          const val = Math.max(1, Number(e.target.value))
+                          if (val !== s.max_alerts_per_day) {
+                            handleUpdateAlertSetting(s.id, 'max_alerts_per_day', val)
+                          }
+                        }}
                         min="1" max="100"
                         className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-white"
                       />
@@ -177,9 +205,10 @@ export default function TradingScreeners() {
 }
 
 function AlertLog({ screenerId }) {
-  const { data: alerts, loading } = useApi(`/screener/saved/${screenerId}/alerts?limit=20`)
+  const { data: alerts, loading, error } = useApi(`/screener/saved/${screenerId}/alerts?limit=20`)
 
   if (loading) return <p className="text-gray-600 text-xs">Loading alerts...</p>
+  if (error) return <p className="text-red-400 text-xs">Failed to load alerts: {error}</p>
   if (!alerts || alerts.length === 0) {
     return <p className="text-gray-600 text-xs">No alerts sent yet.</p>
   }
@@ -210,9 +239,9 @@ function AlertLog({ screenerId }) {
 function _summarizeFilters(filters) {
   if (!filters || typeof filters !== 'object') return 'No filters'
   const parts = []
-  if (filters.price_min || filters.price_max) {
-    const min = filters.price_min || '0'
-    const max = filters.price_max || '\u221E'
+  if (filters.price_min != null || filters.price_max != null) {
+    const min = filters.price_min ?? '0'
+    const max = filters.price_max ?? '\u221E'
     parts.push(`Price: $${min}-$${max}`)
   }
   if (filters.sector) parts.push(filters.sector)
