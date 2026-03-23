@@ -19,7 +19,7 @@ This plan covers a 10-phase transformation of "Penny Stock Sentinel" into "Flori
 |---|-----------|-------|--------|--------------|
 | 1 | `01_codebase_audit.md` | Codebase audit, deduplication, testing, DB/cache review | **COMPLETE** | None |
 | 2 | `02_spa_routing_fix.md` | Fix SPA page reload crash | **COMPLETE** | None |
-| 3 | `03_research_improvements.md` | Correlation matrices, sector chart enhancements | Not started | Phase 2 |
+| 3 | `03_research_improvements.md` | Correlation matrices, sector chart enhancements | **COMPLETE** | Phase 2 |
 | 4 | `04_monitoring_consolidation.md` | Merge Watchlist + Live Monitor into "Monitoring" tab | Not started | Phase 2 |
 | 5 | `05_trading_consolidation.md` | Merge Dashboard/Account/Trades/Stats under "Trading" tab | Not started | Phase 4 |
 | 6 | `06_screener_redesign.md` | Enhanced screener with momentum, volume, save functionality | Not started | Phase 5 |

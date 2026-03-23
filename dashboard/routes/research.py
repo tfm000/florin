@@ -6,6 +6,7 @@ All endpoints use Pydantic response models and FastAPI Depends() for DI.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -597,6 +598,172 @@ async def get_macro_summary(
     data = await yf.get_macro_summary()
     indicators = {k: MacroIndicator(**v) for k, v in data.items()}
     return MacroSummary(indicators=indicators)
+
+
+# =============================================================================
+# Sectors
+# =============================================================================
+
+SECTOR_ETFS: dict[str, str] = {
+    "Technology": "XLK",
+    "Healthcare": "XLV",
+    "Financials": "XLF",
+    "Consumer Disc": "XLY",
+    "Consumer Stpl": "XLP",
+    "Energy": "XLE",
+    "Industrials": "XLI",
+    "Materials": "XLB",
+    "Utilities": "XLU",
+    "Real Estate": "XLRE",
+    "Comm Services": "XLC",
+}
+
+# Number of trading days per timeframe for return calculations
+_RETURN_DAYS: dict[str, int] = {
+    "1d": 1, "1w": 5, "1m": 21, "3m": 63, "6m": 126, "1y": 252,
+}
+
+
+class SectorReturn(BaseModel):
+    """Return percentages at multiple timeframes."""
+    d1: float | None = Field(None, alias="1d")
+    w1: float | None = Field(None, alias="1w")
+    m1: float | None = Field(None, alias="1m")
+    m3: float | None = Field(None, alias="3m")
+    m6: float | None = Field(None, alias="6m")
+    y1: float | None = Field(None, alias="1y")
+
+    model_config = {"populate_by_name": True}
+
+
+class SectorItem(BaseModel):
+    """Single sector ETF summary."""
+    name: str
+    etf: str
+    price: float | None = None
+    market_cap: float | None = None
+    returns: SectorReturn
+
+
+class SectorsResponse(BaseModel):
+    sectors: list[SectorItem]
+
+
+class SectorHistoryResponse(BaseModel):
+    """Aligned daily close prices for all sector ETFs."""
+    dates: list[str]
+    series: dict[str, list[float]]
+
+
+def _compute_return(closes: list[float], days: int) -> float | None:
+    """Compute simple return over the last *days* trading days.
+
+    Returns percentage (e.g. 5.0 for +5%) or None if insufficient data.
+    """
+    if len(closes) <= days:
+        return None
+    end_price = closes[-1]
+    start_price = closes[-(days + 1)]
+    if start_price <= 0 or end_price <= 0:
+        return None
+    return round((end_price / start_price - 1) * 100, 2)
+
+
+@router.get("/research/sectors", response_model=SectorsResponse)
+async def get_sectors(
+    yf=Depends(get_yfinance_dep),
+):
+    """Batch fetch all S&P 500 sector ETF data with multi-timeframe returns."""
+    etf_list = list(SECTOR_ETFS.values())
+
+    # Fetch info and 1y history for all ETFs concurrently
+    info_coros = [yf.get_info(etf) for etf in etf_list]
+    history_coros = [yf.get_history(etf, period="1y", interval="1d") for etf in etf_list]
+
+    all_results = await asyncio.gather(*info_coros, *history_coros, return_exceptions=True)
+    infos = all_results[: len(etf_list)]
+    histories = all_results[len(etf_list) :]
+
+    sectors: list[SectorItem] = []
+    for (sector_name, etf), info_result, hist_result in zip(
+        SECTOR_ETFS.items(), infos, histories
+    ):
+        if isinstance(info_result, Exception):
+            logger.warning("Failed to fetch info for %s: %s", etf, info_result)
+            info_result = {}
+        if isinstance(hist_result, Exception):
+            logger.warning("Failed to fetch history for %s: %s", etf, hist_result)
+            hist_result = []
+
+        closes = [h["close"] for h in hist_result if h.get("close") and h["close"] > 0]
+
+        returns_dict: dict[str, float | None] = {}
+        for tf, days in _RETURN_DAYS.items():
+            returns_dict[tf] = _compute_return(closes, days)
+
+        sectors.append(SectorItem(
+            name=sector_name,
+            etf=etf,
+            price=info_result.get("current_price"),
+            market_cap=info_result.get("market_cap"),
+            returns=SectorReturn(**returns_dict),
+        ))
+
+    return SectorsResponse(sectors=sectors)
+
+
+@router.get("/research/sectors/history", response_model=SectorHistoryResponse)
+async def get_sectors_history(
+    period: str = Query(default="1m", pattern="^(1mo|3mo|6mo|1y|1m|3m|6m)$"),
+    yf=Depends(get_yfinance_dep),
+):
+    """Aligned daily close prices for all sector ETFs (cumulative returns chart)."""
+    # Normalise shorthand periods to yfinance format
+    period_map = {"1m": "1mo", "3m": "3mo", "6m": "6mo"}
+    yf_period = period_map.get(period, period)
+
+    etf_list = list(SECTOR_ETFS.values())
+    sector_names = list(SECTOR_ETFS.keys())
+
+    history_coros = [yf.get_history(etf, period=yf_period, interval="1d") for etf in etf_list]
+    all_histories = await asyncio.gather(*history_coros, return_exceptions=True)
+
+    # Build date -> close lookup per sector
+    date_sets: list[set[str]] = []
+    lookups: list[dict[str, float]] = []
+    for hist_result in all_histories:
+        if isinstance(hist_result, Exception) or not hist_result:
+            date_sets.append(set())
+            lookups.append({})
+            continue
+        lookup = {h["date"]: h["close"] for h in hist_result if h.get("close") and h["close"] > 0}
+        date_sets.append(set(lookup.keys()))
+        lookups.append(lookup)
+
+    # Find common dates across all sectors that have data
+    non_empty = [ds for ds in date_sets if ds]
+    if not non_empty:
+        return SectorHistoryResponse(dates=[], series={})
+
+    common_dates = sorted(set.intersection(*non_empty))
+    if not common_dates:
+        return SectorHistoryResponse(dates=[], series={})
+
+    # Build series: cumulative return from first date
+    series: dict[str, list[float]] = {}
+    for name, lookup in zip(sector_names, lookups):
+        if not lookup or common_dates[0] not in lookup:
+            continue
+        base_price = lookup[common_dates[0]]
+        if base_price <= 0:
+            continue
+        series[name] = [
+            round((lookup[d] / base_price - 1) * 100, 2)
+            for d in common_dates
+            if d in lookup
+        ]
+
+    return SectorHistoryResponse(dates=common_dates, series=series)
 
 
 # =============================================================================

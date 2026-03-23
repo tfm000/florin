@@ -402,6 +402,245 @@ class TestIVSpread:
         assert len(data["available_expiries"]) == 3
 
 
+class TestSectors:
+    """Tests for GET /api/research/sectors batch endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_sectors_returns_all_11_sectors(self, client):
+        resp = await client.get("/api/research/sectors")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "sectors" in data
+        assert len(data["sectors"]) == 11
+
+    @pytest.mark.asyncio
+    async def test_sector_item_has_correct_fields(self, client):
+        resp = await client.get("/api/research/sectors")
+        data = resp.json()
+        sector = data["sectors"][0]
+        assert "name" in sector
+        assert "etf" in sector
+        assert "price" in sector
+        assert "market_cap" in sector
+        assert "returns" in sector
+        returns = sector["returns"]
+        for tf in ["1d", "1w", "1m", "3m", "6m", "1y"]:
+            assert tf in returns, f"Missing timeframe {tf}"
+
+    @pytest.mark.asyncio
+    async def test_sector_names_and_etfs_match(self, client):
+        resp = await client.get("/api/research/sectors")
+        data = resp.json()
+        expected_etfs = {"XLK", "XLV", "XLF", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE", "XLC"}
+        actual_etfs = {s["etf"] for s in data["sectors"]}
+        assert actual_etfs == expected_etfs
+
+    @pytest.mark.asyncio
+    async def test_sector_returns_are_numeric_or_null(self, client):
+        resp = await client.get("/api/research/sectors")
+        data = resp.json()
+        for sector in data["sectors"]:
+            for tf, val in sector["returns"].items():
+                assert val is None or isinstance(val, (int, float)), (
+                    f"Sector {sector['name']} timeframe {tf}: expected numeric or null, got {type(val)}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_sectors_with_rich_history(self, client):
+        """With enough history data, all return timeframes should compute."""
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+
+        # Provide 300 days of history (enough for 1y = 252 days)
+        history_300 = [
+            {"date": f"2024-{(i // 30) + 1:02d}-{(i % 28) + 1:02d}", "open": 100.0 + i * 0.1,
+             "high": 101.0 + i * 0.1, "low": 99.0 + i * 0.1,
+             "close": 100.0 + i * 0.1, "volume": 1000000}
+            for i in range(300)
+        ]
+        yf_mock.get_history.return_value = history_300
+
+        resp = await client.get("/api/research/sectors")
+        data = resp.json()
+        sector = data["sectors"][0]
+        # With 300 data points, all timeframes should be non-null
+        for tf in ["1d", "1w", "1m", "3m", "6m", "1y"]:
+            assert sector["returns"][tf] is not None, f"Expected non-null return for {tf}"
+            assert isinstance(sector["returns"][tf], (int, float))
+
+        # Restore default mock
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
+            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_sectors_handles_empty_history(self, client):
+        """Sectors with empty history should still return with null returns."""
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+        original = yf_mock.get_history.return_value
+
+        yf_mock.get_history.return_value = []
+        resp = await client.get("/api/research/sectors")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["sectors"]) == 11
+        for sector in data["sectors"]:
+            for tf in ["1d", "1w", "1m", "3m", "6m", "1y"]:
+                assert sector["returns"][tf] is None
+
+        yf_mock.get_history.return_value = original
+
+    @pytest.mark.asyncio
+    async def test_sectors_handles_provider_exception(self, client):
+        """If yfinance raises on a single ETF, endpoint still returns all sectors."""
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+        original_info = yf_mock.get_info.return_value
+
+        # Make get_info raise for any call — sectors should still have empty price/mcap
+        yf_mock.get_info.side_effect = Exception("yfinance down")
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
+            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+        ]
+
+        resp = await client.get("/api/research/sectors")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["sectors"]) == 11
+        # price/market_cap should be None when get_info fails
+        for sector in data["sectors"]:
+            assert sector["price"] is None
+            assert sector["market_cap"] is None
+
+        yf_mock.get_info.side_effect = None
+        yf_mock.get_info.return_value = original_info
+
+
+class TestSectorsHistory:
+    """Tests for GET /api/research/sectors/history endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_returns_dates_and_series(self, client):
+        resp = await client.get("/api/research/sectors/history?period=1m")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dates" in data
+        assert "series" in data
+        assert isinstance(data["dates"], list)
+        assert isinstance(data["series"], dict)
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_series_values_are_cumulative_returns(self, client):
+        """First value in each series should be 0.0 (return relative to base date)."""
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+
+        history = [
+            {"date": "2024-01-01", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1000000},
+            {"date": "2024-01-02", "open": 100.0, "high": 102.0, "low": 99.5, "close": 105.0, "volume": 1100000},
+            {"date": "2024-01-03", "open": 105.0, "high": 106.0, "low": 104.0, "close": 110.0, "volume": 1200000},
+        ]
+        yf_mock.get_history.return_value = history
+
+        resp = await client.get("/api/research/sectors/history?period=1m")
+        data = resp.json()
+
+        assert len(data["dates"]) == 3
+        for sector_name, values in data["series"].items():
+            assert len(values) == 3
+            # First point: cumulative return = 0% (base)
+            assert values[0] == 0.0
+            # Second point: (105/100 - 1) * 100 = 5.0%
+            assert values[1] == 5.0
+            # Third point: (110/100 - 1) * 100 = 10.0%
+            assert values[2] == 10.0
+
+        # Restore
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
+            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_invalid_period_rejected(self, client):
+        resp = await client.get("/api/research/sectors/history?period=invalid")
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_accepts_shorthand_periods(self, client):
+        """Should accept both yfinance (1mo) and shorthand (1m) period formats."""
+        for period in ["1m", "3m", "6m", "1mo", "3mo", "6mo", "1y"]:
+            resp = await client.get(f"/api/research/sectors/history?period={period}")
+            assert resp.status_code == 200, f"Period {period} should be accepted"
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_empty_when_no_data(self, client):
+        from dashboard.deps import _state
+        yf_mock = _state["yfinance_provider"]
+        original = yf_mock.get_history.return_value
+
+        yf_mock.get_history.return_value = []
+        resp = await client.get("/api/research/sectors/history?period=1m")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["dates"] == []
+        assert data["series"] == {}
+
+        yf_mock.get_history.return_value = original
+
+    @pytest.mark.asyncio
+    async def test_sectors_history_all_series_same_length_as_dates(self, client):
+        """Every series array must have exactly len(dates) entries."""
+        resp = await client.get("/api/research/sectors/history?period=1m")
+        data = resp.json()
+        n_dates = len(data["dates"])
+        for name, values in data["series"].items():
+            assert len(values) == n_dates, (
+                f"Series '{name}' has {len(values)} values but expected {n_dates} (len(dates))"
+            )
+
+
+class TestComputeReturn:
+    """Unit tests for the _compute_return helper."""
+
+    def test_positive_return(self):
+        from dashboard.routes.research import _compute_return
+        # 10 closes, return over last 5 days: start = closes[-(5+1)] = closes[-6] = 104
+        closes = [100, 101, 102, 103, 104, 105, 106, 107, 108, 110]
+        result = _compute_return(closes, 5)
+        expected = round((110 / 104 - 1) * 100, 2)
+        assert result == expected
+
+    def test_negative_return(self):
+        from dashboard.routes.research import _compute_return
+        closes = [100, 99, 98, 97, 96, 95]
+        result = _compute_return(closes, 5)
+        expected = round((95 / 100 - 1) * 100, 2)
+        assert result == expected
+
+    def test_insufficient_data_returns_none(self):
+        from dashboard.routes.research import _compute_return
+        closes = [100, 101]
+        assert _compute_return(closes, 5) is None
+
+    def test_exact_boundary_returns_none(self):
+        from dashboard.routes.research import _compute_return
+        # len(closes) == days → insufficient (need days + 1)
+        closes = [100, 101, 102, 103, 104]
+        assert _compute_return(closes, 5) is None
+
+    def test_zero_start_price_returns_none(self):
+        from dashboard.routes.research import _compute_return
+        closes = [0, 100, 101]
+        assert _compute_return(closes, 1) is not None  # start=100, end=101
+        closes = [100, 0, 101]
+        # days=2 → start = closes[-3] = 100, end = 101 → valid
+        assert _compute_return(closes, 2) is not None
+
+
 class TestQuotesEndpoint:
     @pytest.mark.asyncio
     async def test_quotes_returns_ohlcv_with_bid_ask(self, client):
