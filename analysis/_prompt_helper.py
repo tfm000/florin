@@ -1,7 +1,7 @@
 """
 Shared prompt building and response parsing for LLM analysers.
 
-All cloud LLM analysers (Groq, Gemini, Claude, Ollama) use the same
+All cloud LLM analysers (Groq, Gemini, Claude) use the same
 prompt template from config/constants.py and expect the same JSON output.
 This module centralises that logic.
 """
@@ -20,8 +20,6 @@ from config.constants import (
 )
 from core.models import (
     AlertSignal,
-    FraudRisk,
-    FraudRiskScore,
     LLMAnalysis,
     Recommendation,
     SentimentData,
@@ -33,10 +31,9 @@ logger = logging.getLogger(__name__)
 def build_user_prompt(
     alert: AlertSignal,
     sentiment: SentimentData,
-    fraud_risk: FraudRiskScore,
     user_context: str = "",
 ) -> str:
-    """Build the user prompt from alert, sentiment, and fraud data."""
+    """Build the user prompt from alert and sentiment data."""
     # SEC summary from filings
     sec_lines = []
     for filing in sentiment.sec_filings[:5]:
@@ -55,7 +52,6 @@ def build_user_prompt(
         avg_volume=alert.avg_volume,
         sentiment_summary=sentiment.to_summary(),
         sec_summary=sec_summary,
-        fraud_summary=fraud_risk.to_summary(),
         user_context=user_context or "No additional context provided.",
     )
 
@@ -84,12 +80,6 @@ def parse_llm_response(
         except ValueError:
             recommendation = Recommendation.HOLD
 
-        fraud_str = parsed.get("fraud_risk", "LOW")
-        try:
-            fraud_risk = FraudRisk(fraud_str)
-        except ValueError:
-            fraud_risk = FraudRisk.LOW
-
         return LLMAnalysis(
             provider=provider,
             model=model,
@@ -98,7 +88,6 @@ def parse_llm_response(
             bullish_signals=parsed.get("bullish_signals", []),
             bearish_signals=parsed.get("bearish_signals", []),
             risk_level=int(parsed.get("risk_level", 3)),
-            fraud_risk=fraud_risk,
             recommendation=recommendation,
             summary=parsed.get("summary", ""),
             key_factors=parsed.get("key_factors", []),

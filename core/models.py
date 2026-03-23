@@ -56,13 +56,6 @@ class Recommendation(str, Enum):
     STRONG_AVOID = "STRONG_AVOID"
 
 
-class FraudRisk(str, Enum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
-
-
 class AgreementLevel(str, Enum):
     STRONG = "STRONG"
     MODERATE = "MODERATE"
@@ -271,42 +264,18 @@ class SentimentData(BaseModel):
 
 
 # =============================================================================
-# Fraud / Risk Models
-# =============================================================================
-
-class FraudRiskScore(BaseModel):
-    """Pump-and-dump / fraud risk assessment."""
-    ticker: str
-    score: float = Field(default=0.0, ge=0.0, le=10.0)  # 0 = safe, 10 = extreme risk
-    risk_level: FraudRisk = FraudRisk.LOW
-    flags: list[str] = Field(default_factory=list)
-    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    assessed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-    def to_summary(self) -> str:
-        lines = [f"Fraud Risk: {self.risk_level.value} (score: {self.score:.1f}/10, "
-                 f"confidence: {self.confidence:.0%})"]
-        for flag in self.flags:
-            lines.append(f"  ⚠ {flag}")
-        if not self.flags:
-            lines.append("  ✓ No fraud indicators detected")
-        return "\n".join(lines)
-
-
-# =============================================================================
 # LLM Analysis Models
 # =============================================================================
 
 class LLMAnalysis(BaseModel):
     """Output from a single LLM analyser."""
-    provider: str  # "ollama", "groq", "gemini", "claude", "finbert"
+    provider: str  # "groq", "gemini", "claude", "openai", "openrouter"
     model: str = ""
     sentiment_score: float = Field(default=0.0, ge=-10.0, le=10.0)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     bullish_signals: list[str] = Field(default_factory=list)
     bearish_signals: list[str] = Field(default_factory=list)
     risk_level: int = Field(default=3, ge=1, le=5)
-    fraud_risk: FraudRisk = FraudRisk.LOW
     recommendation: Recommendation = Recommendation.HOLD
     summary: str = ""
     key_factors: list[str] = Field(default_factory=list)
@@ -321,7 +290,6 @@ class AnalysisReport(BaseModel):
     ticker: str
     alert: AlertSignal
     sentiment: SentimentData
-    fraud_risk: FraudRiskScore
 
     # Single-mode fields
     primary_analysis: Optional[LLMAnalysis] = None

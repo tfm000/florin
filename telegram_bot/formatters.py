@@ -9,7 +9,6 @@ from __future__ import annotations
 from core.models import (
     AccountSummary,
     AnalysisReport,
-    FraudRisk,
     LLMAnalysis,
     Position,
     Recommendation,
@@ -69,12 +68,6 @@ def format_alert_message(
     if s.news_articles:
         sources.append(f"News\\({escape_md(str(len(s.news_articles)))}\\)")
     lines.append(f"🔍 *Sources:* {', '.join(sources) if sources else 'None'}")
-
-    # Fraud risk
-    fraud = report.fraud_risk
-    fraud_emoji = _fraud_emoji(fraud.risk_level)
-    fraud_str = escape_md(f"{fraud.risk_level.value} ({fraud.score:.1f}/10)")
-    lines.append(f"{fraud_emoji} *Fraud Risk:* {fraud_str}")
 
     # Recommendation
     rec_str = escape_md(rec.value.replace("_", " "))
@@ -270,10 +263,3 @@ def _recommendation_emoji(rec: Recommendation) -> str:
     }.get(rec, "❓")
 
 
-def _fraud_emoji(risk: FraudRisk) -> str:
-    return {
-        FraudRisk.LOW: "✅",
-        FraudRisk.MEDIUM: "⚠️",
-        FraudRisk.HIGH: "🔴",
-        FraudRisk.CRITICAL: "🚨",
-    }.get(risk, "❓")

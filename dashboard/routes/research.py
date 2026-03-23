@@ -459,19 +459,18 @@ async def analyse_asset(
 
     analyser = analysers.get(default_provider)
     if not analyser:
-        # Try any non-finbert analyser
-        for name, a in analysers.items():
-            if name != "finbert":
-                analyser = a
-                break
+        # Try any available analyser
+        for _name, a in analysers.items():
+            analyser = a
+            break
 
     if not analyser:
         raise ServiceUnavailableError(
-            "No LLM analysers available. Configure Groq, Claude, Gemini, or start Ollama."
+            "No LLM analysers available. Configure Groq, Claude, or Gemini API keys in Settings."
         )
 
     # Build a minimal AlertSignal and fetch real sentiment data
-    from core.models import AlertSignal, FraudRiskScore, SentimentData
+    from core.models import AlertSignal, SentimentData
 
     alert = AlertSignal(
         ticker=ticker,
@@ -497,10 +496,8 @@ async def analyse_asset(
     else:
         sentiment = SentimentData(ticker=ticker)
 
-    fraud_risk = FraudRiskScore(ticker=ticker)
-
     try:
-        analysis = await analyser.analyse(alert, sentiment, fraud_risk)
+        analysis = await analyser.analyse(alert, sentiment)
     except Exception as e:
         logger.exception("LLM analysis failed for %s", ticker)
         # Return error in response body rather than 502, so the frontend can show it

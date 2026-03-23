@@ -16,7 +16,7 @@ from analysis._prompt_helper import build_user_prompt, parse_llm_response
 from analysis.base import LLMAnalyser
 from config.constants import ANALYSIS_SYSTEM_PROMPT
 from config.settings import Settings
-from core.models import AlertSignal, FraudRiskScore, LLMAnalysis, SentimentData
+from core.models import AlertSignal, LLMAnalysis, SentimentData
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +52,11 @@ class ClaudeAnalyser(LLMAnalyser):
         self,
         alert: AlertSignal,
         sentiment: SentimentData,
-        fraud_risk: FraudRiskScore,
     ) -> LLMAnalysis:
         start = time.monotonic()
 
         try:
-            user_prompt = build_user_prompt(alert, sentiment, fraud_risk, self._settings.llm_user_context)
+            user_prompt = build_user_prompt(alert, sentiment, self._settings.llm_user_context)
 
             response = await self._client.messages.create(
                 model=self._model,

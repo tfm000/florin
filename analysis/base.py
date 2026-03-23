@@ -1,7 +1,7 @@
 """
 Abstract interface for LLM analysis providers.
 
-Implementations: OllamaAnalyser, GroqAnalyser, GeminiAnalyser, ClaudeAnalyser, FinBERTAnalyser
+Implementations: GroqAnalyser, GeminiAnalyser, ClaudeAnalyser
 All produce the same LLMAnalysis output — fully interchangeable.
 """
 
@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from core.models import AlertSignal, FraudRiskScore, LLMAnalysis, SentimentData
+from core.models import AlertSignal, LLMAnalysis, SentimentData
 
 
 class LLMAnalyser(ABC):
     """
     Interface for any LLM-based stock analysis provider.
-    
-    Given an alert + sentiment data + fraud assessment, produces
-    a structured LLMAnalysis with recommendation and reasoning.
+
+    Given an alert + sentiment data, produces a structured LLMAnalysis
+    with recommendation and reasoning.
     """
 
     @property
@@ -37,11 +37,10 @@ class LLMAnalyser(ABC):
         self,
         alert: AlertSignal,
         sentiment: SentimentData,
-        fraud_risk: FraudRiskScore,
     ) -> LLMAnalysis:
         """
         Generate analysis for a stock alert.
-        
+
         Must return LLMAnalysis even on failure (with error field set).
         Should never raise — errors are captured in the response.
         """

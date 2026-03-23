@@ -58,7 +58,6 @@ _SECTIONS = [
         "id": "llm",
         "label": "LLM Providers",
         "keys": [
-            "ollama_base_url", "ollama_model",
             "groq_api_key", "groq_model",
             "gemini_api_key", "gemini_model",
             "anthropic_api_key", "claude_model",
@@ -104,8 +103,8 @@ _CHOICES: dict[str, list[str]] = {
     "t212_environment": ["demo", "live", "readonly"],
     "alpaca_feed": ["iex", "sip"],
     "llm_mode": ["single", "consensus"],
-    "llm_default_provider": ["ollama", "groq", "gemini", "claude", "finbert"],
-    "llm_consensus_meta_provider": ["ollama", "groq", "gemini", "claude"],
+    "llm_default_provider": ["groq", "gemini", "claude"],
+    "llm_consensus_meta_provider": ["groq", "gemini", "claude"],
     "position_size_unit": ["gbp", "usd", "shares"],
     "market_cap_source": ["yfinance", "inferred"],
 }

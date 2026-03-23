@@ -29,11 +29,9 @@ class LLMMode(str, Enum):
 
 
 class LLMProvider(str, Enum):
-    OLLAMA = "ollama"
     GROQ = "groq"
     GEMINI = "gemini"
     CLAUDE = "claude"
-    FINBERT = "finbert"
 
 
 class T212Environment(str, Enum):
@@ -95,10 +93,6 @@ class Settings(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
     reddit_user_agent: str = "florin-terminal/0.2"
-
-    # --- LLM: Ollama ---
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:8b"
 
     # --- LLM: Groq ---
     groq_api_key: str = ""
@@ -166,10 +160,6 @@ class Settings(BaseSettings):
     def get_enabled_llm_providers(self) -> list[LLMProvider]:
         """Return list of LLM providers that have valid credentials configured."""
         providers = []
-        # Ollama is always available if the server is running (no API key needed)
-        providers.append(LLMProvider.OLLAMA)
-        # FinBERT is always available (local model)
-        providers.append(LLMProvider.FINBERT)
         if self.groq_api_key:
             providers.append(LLMProvider.GROQ)
         if self.gemini_api_key:

@@ -123,10 +123,6 @@ class Florin:
         report_gen = ReportGenerator(analysers, self.settings)
         consensus_gen = ConsensusGenerator(analysers, self.settings)
 
-        # Fraud detector
-        from analysis.fraud_detector import FraudDetector
-        fraud_detector = FraudDetector()
-
         # Telegram bot
         telegram_bot = None
         if self.settings.telegram_configured:
@@ -145,7 +141,6 @@ class Florin:
         set_state("analysers", analysers)
         set_state("report_generator", report_gen)
         set_state("consensus_generator", consensus_gen)
-        set_state("fraud_detector", fraud_detector)
         set_state("sentiment_aggregator", sentiment_agg)
         from stats.risk_free import RiskFreeRateFetcher
         rf_fetcher = RiskFreeRateFetcher(self.db)
@@ -178,7 +173,7 @@ class Florin:
         # Alert pipeline
         services.append(asyncio.create_task(
             self._alert_pipeline(
-                sentiment_agg, report_gen, consensus_gen, fraud_detector
+                sentiment_agg, report_gen, consensus_gen,
             ),
             name="alert-pipeline",
         ))
@@ -316,14 +311,6 @@ class Florin:
         analysers: dict[str, Any] = {}
         enabled = self.settings.get_enabled_llm_providers()
 
-        if LLMProvider.FINBERT in enabled:
-            from analysis.finbert_analyser import FinBERTAnalyser
-            analysers["finbert"] = FinBERTAnalyser()
-
-        if LLMProvider.OLLAMA in enabled:
-            from analysis.ollama_analyser import OllamaAnalyser
-            analysers["ollama"] = OllamaAnalyser(self.settings)
-
         if LLMProvider.GROQ in enabled:
             from analysis.groq_analyser import GroqAnalyser
             analysers["groq"] = GroqAnalyser(self.settings)
@@ -366,12 +353,11 @@ class Florin:
         sentiment_agg: Any,
         report_gen: Any,
         consensus_gen: Any,
-        fraud_detector: Any,
     ) -> None:
         """
         React to momentum alerts.
 
-        Flow: MOMENTUM_ALERT → scrape sentiment → assess fraud
+        Flow: MOMENTUM_ALERT → scrape sentiment
               → generate report (single or consensus) → save to DB
               → publish REPORT_READY
         """
@@ -383,14 +369,11 @@ class Florin:
                 # 1. Scrape sentiment
                 sentiment = await sentiment_agg.fetch(alert.ticker)
 
-                # 2. Assess fraud risk
-                fraud_risk = await fraud_detector.assess(alert, sentiment)
-
-                # 3. Generate report
+                # 2. Generate report
                 if self.settings.llm_mode.value == "consensus":
-                    report = await consensus_gen.generate(alert, sentiment, fraud_risk)
+                    report = await consensus_gen.generate(alert, sentiment)
                 else:
-                    report = await report_gen.generate(alert, sentiment, fraud_risk)
+                    report = await report_gen.generate(alert, sentiment)
 
                 # 4. Save to database
                 await self._save_report(report)
@@ -459,9 +442,9 @@ class Florin:
             final_recommendation=report.final_recommendation.value,
             final_score=report.final_score,
             final_confidence=report.final_confidence,
-            fraud_risk_level=report.fraud_risk.risk_level.value,
-            fraud_risk_score=report.fraud_risk.score,
-            fraud_flags=json.dumps(report.fraud_risk.flags),
+            fraud_risk_level="LOW",
+            fraud_risk_score=0.0,
+            fraud_flags="[]",
             reddit_mentions=report.sentiment.reddit_mention_count,
             stocktwits_bullish=report.sentiment.stocktwits_bullish_count,
             stocktwits_bearish=report.sentiment.stocktwits_bearish_count,

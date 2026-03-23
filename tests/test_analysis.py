@@ -1,4 +1,4 @@
-"""Tests for Phase 4: LLM analysis engine."""
+"""Tests for LLM analysis engine."""
 
 from __future__ import annotations
 
@@ -10,14 +10,11 @@ import pytest
 
 from analysis._prompt_helper import build_user_prompt, parse_llm_response
 from analysis.consensus_generator import ConsensusGenerator
-from analysis.fraud_detector import FraudDetector
 from analysis.report_generator import ReportGenerator
 from analysis.base import LLMAnalyser
 from config.settings import Settings
 from core.models import (
     AlertSignal,
-    FraudRisk,
-    FraudRiskScore,
     LLMAnalysis,
     NewsArticle,
     Recommendation,
@@ -48,12 +45,6 @@ def make_sentiment(**kwargs) -> SentimentData:
     defaults = {"ticker": "TEST"}
     defaults.update(kwargs)
     return SentimentData(**defaults)
-
-
-def make_fraud_risk(**kwargs) -> FraudRiskScore:
-    defaults = {"ticker": "TEST", "score": 1.0, "risk_level": FraudRisk.LOW}
-    defaults.update(kwargs)
-    return FraudRiskScore(**defaults)
 
 
 def make_mock_analyser(
@@ -94,9 +85,8 @@ class TestPromptHelper:
             reddit_mention_count=5,
             stocktwits_bullish_count=3,
         )
-        fraud = make_fraud_risk()
 
-        prompt = build_user_prompt(alert, sentiment, fraud)
+        prompt = build_user_prompt(alert, sentiment)
 
         assert "TEST" in prompt
         assert "$2.5" in prompt
@@ -110,7 +100,6 @@ class TestPromptHelper:
             "bullish_signals": ["Strong momentum"],
             "bearish_signals": ["Low volume"],
             "risk_level": 2,
-            "fraud_risk": "LOW",
             "recommendation": "BUY",
             "summary": "Looks promising",
             "key_factors": ["Momentum", "Sentiment"],
@@ -121,13 +110,12 @@ class TestPromptHelper:
         assert result.sentiment_score == 6.5
         assert result.confidence == 0.8
         assert result.recommendation == Recommendation.BUY
-        assert result.fraud_risk == FraudRisk.LOW
         assert len(result.bullish_signals) == 1
         assert result.latency_ms == 100
         assert result.error is None
 
     def test_parse_json_with_code_fences(self) -> None:
-        raw = '```json\n{"sentiment_score": 3.0, "confidence": 0.5, "recommendation": "HOLD", "risk_level": 3, "fraud_risk": "MEDIUM", "bullish_signals": [], "bearish_signals": [], "summary": "Neutral", "key_factors": []}\n```'
+        raw = '```json\n{"sentiment_score": 3.0, "confidence": 0.5, "recommendation": "HOLD", "risk_level": 3, "bullish_signals": [], "bearish_signals": [], "summary": "Neutral", "key_factors": []}\n```'
 
         result = parse_llm_response(raw, "test", "model")
         assert result.sentiment_score == 3.0
@@ -144,7 +132,6 @@ class TestPromptHelper:
             "confidence": 0.5,
             "recommendation": "MAYBE",
             "risk_level": 3,
-            "fraud_risk": "LOW",
             "bullish_signals": [],
             "bearish_signals": [],
             "summary": "",
@@ -153,90 +140,6 @@ class TestPromptHelper:
 
         result = parse_llm_response(raw, "test", "model")
         assert result.recommendation == Recommendation.HOLD  # Default fallback
-
-
-# =============================================================================
-# Fraud detector tests
-# =============================================================================
-
-
-class TestFraudDetector:
-    @pytest.mark.asyncio
-    async def test_clean_stock(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert(price=2.50, volume=15_000, avg_volume=10_000)
-        from core.models import SECFiling, NewsArticle
-        sentiment = make_sentiment(
-            sec_filings=[SECFiling(form_type="10-Q", filed_date=datetime.now(UTC))],
-            news_articles=[NewsArticle(title="Test news")],
-        )
-
-        result = await detector.assess(alert, sentiment)
-
-        assert result.risk_level == FraudRisk.LOW
-        assert result.score < 3.0
-
-    @pytest.mark.asyncio
-    async def test_volume_spike_no_news(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert(price=2.50, volume=200_000, avg_volume=10_000)
-        sentiment = make_sentiment()  # No news or filings
-
-        result = await detector.assess(alert, sentiment)
-
-        assert any("Volume spike" in f for f in result.flags)
-        assert result.score > 0
-
-    @pytest.mark.asyncio
-    async def test_sub_dollar_stock(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert(price=0.05)
-        sentiment = make_sentiment()
-
-        result = await detector.assess(alert, sentiment)
-
-        assert any("Sub-dime" in f for f in result.flags)
-        assert result.score >= 3.0
-
-    @pytest.mark.asyncio
-    async def test_new_reddit_accounts(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert()
-        sentiment = make_sentiment(
-            reddit_posts=[
-                RedditPost(subreddit="pennystocks", title="BUY NOW",
-                           account_age_days=5, author_karma=10, score=1),
-                RedditPost(subreddit="pennystocks", title="MOON",
-                           account_age_days=3, author_karma=5, score=2),
-            ],
-        )
-
-        result = await detector.assess(alert, sentiment)
-
-        assert any("new/low-karma" in f for f in result.flags)
-
-    @pytest.mark.asyncio
-    async def test_no_sec_filings(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert()
-        sentiment = make_sentiment()  # Empty filings
-
-        result = await detector.assess(alert, sentiment)
-
-        assert any("No SEC filings" in f for f in result.flags)
-
-    @pytest.mark.asyncio
-    async def test_high_social_no_fundamentals(self) -> None:
-        detector = FraudDetector()
-        alert = make_alert()
-        sentiment = make_sentiment(
-            reddit_mention_count=15,
-            stocktwits_bullish_count=10,
-        )
-
-        result = await detector.assess(alert, sentiment)
-
-        assert any("social buzz" in f.lower() for f in result.flags)
 
 
 # =============================================================================
@@ -253,9 +156,8 @@ class TestReportGenerator:
 
         alert = make_alert()
         sentiment = make_sentiment()
-        fraud = make_fraud_risk()
 
-        report = await gen.generate(alert, sentiment, fraud)
+        report = await gen.generate(alert, sentiment)
 
         assert report.ticker == "TEST"
         assert report.mode == "single"
@@ -265,14 +167,14 @@ class TestReportGenerator:
 
     @pytest.mark.asyncio
     async def test_fallback_to_other_provider(self) -> None:
-        # Default provider "groq" not available, should fall back to "ollama"
-        analyser = make_mock_analyser("ollama", Recommendation.HOLD, 2.0)
+        # Default provider "groq" not available, should fall back to "gemini"
+        analyser = make_mock_analyser("gemini", Recommendation.HOLD, 2.0)
         settings = Settings(llm_default_provider="groq")
-        gen = ReportGenerator({"ollama": analyser}, settings)
+        gen = ReportGenerator({"gemini": analyser}, settings)
 
-        report = await gen.generate(make_alert(), make_sentiment(), make_fraud_risk())
+        report = await gen.generate(make_alert(), make_sentiment())
 
-        assert report.primary_analysis.provider == "ollama"
+        assert report.primary_analysis.provider == "gemini"
 
 
 # =============================================================================
@@ -285,20 +187,19 @@ class TestConsensusGenerator:
     async def test_consensus_with_multiple_llms(self) -> None:
         analysers = {
             "groq": make_mock_analyser("groq", Recommendation.BUY, 6.0),
-            "ollama": make_mock_analyser("ollama", Recommendation.BUY, 5.0),
             "gemini": make_mock_analyser("gemini", Recommendation.HOLD, 3.0),
-            "finbert": make_mock_analyser("finbert"),  # Should be excluded
+            "claude": make_mock_analyser("claude", Recommendation.BUY, 5.0),
         }
 
         settings = Settings(llm_consensus_meta_provider="claude")
         gen = ConsensusGenerator(analysers, settings)
 
-        report = await gen.generate(make_alert(), make_sentiment(), make_fraud_risk())
+        report = await gen.generate(make_alert(), make_sentiment())
 
         assert report.mode == "consensus"
-        # FinBERT excluded, so 3 individual analyses
+        # All 3 analysers should produce individual analyses
         assert len(report.individual_analyses) == 3
-        # Consensus should exist (simple average fallback since claude not available)
+        # Consensus should exist (simple average fallback since claude mock doesn't have _client)
         assert report.consensus is not None
 
     @pytest.mark.asyncio

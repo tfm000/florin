@@ -23,7 +23,7 @@ class TestMask:
         assert len(result) == 10
 
     def test_non_secret_key_not_masked(self):
-        assert _mask("ollama_model", "llama3.2:8b") == "llama3.2:8b"
+        assert _mask("groq_model", "llama-4-scout") == "llama-4-scout"
 
 
 class TestApplySetting:
@@ -38,9 +38,9 @@ class TestApplySetting:
         assert s.scan_price_max == 3.5
 
     def test_apply_string(self):
-        s = Settings(ollama_model="old")
-        _apply_setting(s, "ollama_model", "new_model")
-        assert s.ollama_model == "new_model"
+        s = Settings(groq_model="old")
+        _apply_setting(s, "groq_model", "new_model")
+        assert s.groq_model == "new_model"
 
     def test_apply_enum(self):
         s = Settings(llm_mode=LLMMode.SINGLE)
@@ -70,7 +70,7 @@ class TestNeedsRestart:
         assert _needs_restart(["scan_interval_seconds"]) is False
 
     def test_no_restart_for_llm_model(self):
-        assert _needs_restart(["ollama_model", "groq_model"]) is False
+        assert _needs_restart(["groq_model", "gemini_model"]) is False
 
     def test_mixed_keys(self):
         assert _needs_restart(["scan_interval_seconds", "t212_api_key"]) is True

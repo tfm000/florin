@@ -9,7 +9,6 @@ meta-analyser LLM which synthesises a consensus view.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from uuid import uuid4
@@ -17,11 +16,10 @@ from uuid import uuid4
 from analysis._prompt_helper import parse_llm_response
 from analysis.base import LLMAnalyser
 from config.constants import ANALYSIS_SYSTEM_PROMPT, CONSENSUS_META_PROMPT
-from config.settings import LLMProvider, Settings
+from config.settings import Settings
 from core.models import (
     AlertSignal,
     AnalysisReport,
-    FraudRiskScore,
     LLMAnalysis,
     Recommendation,
     SentimentData,
@@ -52,19 +50,16 @@ class ConsensusGenerator:
         self,
         alert: AlertSignal,
         sentiment: SentimentData,
-        fraud_risk: FraudRiskScore,
     ) -> AnalysisReport:
         """
         Generate a multi-LLM consensus report.
 
         Queries all available LLMs concurrently, then synthesises results.
         """
-        # Step 1: Run all analysers concurrently (excluding finbert for consensus)
+        # Step 1: Run all analysers concurrently
         analysis_tasks = {}
         for name, analyser in self._analysers.items():
-            if name == "finbert":
-                continue
-            analysis_tasks[name] = analyser.analyse(alert, sentiment, fraud_risk)
+            analysis_tasks[name] = analyser.analyse(alert, sentiment)
 
         logger.info(
             "Running consensus analysis for %s across %d LLMs: %s",
@@ -96,7 +91,6 @@ class ConsensusGenerator:
                 ticker=alert.ticker,
                 alert=alert,
                 sentiment=sentiment,
-                fraud_risk=fraud_risk,
                 individual_analyses=individual_analyses,
                 mode="consensus",
             )
@@ -112,7 +106,6 @@ class ConsensusGenerator:
             ticker=alert.ticker,
             alert=alert,
             sentiment=sentiment,
-            fraud_risk=fraud_risk,
             individual_analyses=individual_analyses,
             consensus=consensus,
             final_recommendation=consensus.recommendation if consensus else Recommendation.HOLD,

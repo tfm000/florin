@@ -48,11 +48,10 @@ class TestSettingsProperties:
 
 
 class TestGetEnabledLLMProviders:
-    def test_always_includes_ollama_and_finbert(self):
+    def test_empty_when_no_keys(self):
         s = Settings()
         providers = s.get_enabled_llm_providers()
-        assert LLMProvider.OLLAMA in providers
-        assert LLMProvider.FINBERT in providers
+        assert len(providers) == 0
 
     def test_includes_groq_when_configured(self):
         s = Settings(groq_api_key="test")
