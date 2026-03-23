@@ -191,9 +191,11 @@ class TestSettingsRoutes:
         data = resp.json()
         assert "sections" in data
         section_ids = [s["id"] for s in data["sections"]]
-        assert "scanner" in section_ids
         assert "llm" in section_ids
         assert "broker" in section_ids
+        assert "trading" in section_ids
+        # Scanner section was removed (replaced by per-screener configs)
+        assert "scanner" not in section_ids
 
     @pytest.mark.asyncio
     async def test_settings_masks_secrets(self, client):
@@ -216,14 +218,14 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_persists(self, client):
         await client.put("/api/settings", json={
-            "settings": [{"key": "scan_min_volume", "value": "5000"}]
+            "settings": [{"key": "default_position_size", "value": "250.0"}]
         })
         resp = await client.get("/api/settings")
         data = resp.json()
-        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
-        vol_field = next(f for f in scanner["fields"] if f["key"] == "scan_min_volume")
-        assert vol_field["value"] == "5000"
-        assert vol_field["has_db_override"] is True
+        trading = next(s for s in data["sections"] if s["id"] == "trading")
+        size_field = next(f for f in trading["fields"] if f["key"] == "default_position_size")
+        assert size_field["value"] == "250.0"
+        assert size_field["has_db_override"] is True
 
     @pytest.mark.asyncio
     async def test_delete_setting(self, client):
@@ -285,9 +287,9 @@ class TestSettingsRoutes:
         """Number fields should have type='number', enum fields type='select'."""
         resp = await client.get("/api/settings")
         data = resp.json()
-        scanner = next(s for s in data["sections"] if s["id"] == "scanner")
-        interval_field = next(f for f in scanner["fields"] if f["key"] == "scan_interval_seconds")
-        assert interval_field["type"] == "number"
+        trading = next(s for s in data["sections"] if s["id"] == "trading")
+        size_field = next(f for f in trading["fields"] if f["key"] == "default_position_size")
+        assert size_field["type"] == "number"
 
         analysis = next(s for s in data["sections"] if s["id"] == "analysis")
         mode_field = next(f for f in analysis["fields"] if f["key"] == "llm_mode")

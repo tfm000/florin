@@ -7,7 +7,7 @@ export default function TradeHistory() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Trade History</h1>
+        <h2 className="text-lg font-semibold text-gray-300">Trade History</h2>
         <div className="flex items-center gap-3">
           {trades && <span className="text-gray-400 text-sm">{trades.length} trades</span>}
           {trades?.length > 0 && <ExportButton data={trades} filename="trades" />}
