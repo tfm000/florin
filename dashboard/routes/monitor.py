@@ -21,7 +21,7 @@ from dashboard.dependencies import (
     get_event_bus_dep,
     get_yfinance_dep,
 )
-from dashboard.deps import get_data_provider
+from dashboard.deps import get_data_provider, get_yfinance_provider
 from dashboard.schemas import PaginatedResponse, SuccessResponse
 from db.models import MonitoredAssetORM
 
@@ -80,26 +80,52 @@ async def list_monitored(
     result = await session.execute(query)
     rows = result.scalars().all()
 
-    # Join with live price data from Alpaca cache
+    # Join with live price data from Alpaca cache, falling back to yfinance
     data_provider = get_data_provider()
     price_cache = {}
     if data_provider and hasattr(data_provider, "cache"):
         price_cache = data_provider.cache
 
+    # Collect tickers that need yfinance fallback
+    tickers_needing_price = []
+    for r in rows:
+        if not price_cache.get(r.ticker):
+            tickers_needing_price.append(r.ticker)
+
+    # Fetch from yfinance for tickers not in Alpaca cache
+    yf_prices: dict[str, dict] = {}
+    if tickers_needing_price:
+        yf_provider = get_yfinance_provider()
+        if yf_provider:
+            batch = await yf_provider.get_info_batch(tickers_needing_price, max_concurrent=5)
+            for ticker, info in batch.items():
+                price = info.get("current_price")
+                prev = info.get("previous_close")
+                change_pct = None
+                if price and prev and prev > 0:
+                    change_pct = round((price / prev - 1) * 100, 2)
+                yf_prices[ticker] = {
+                    "price": price,
+                    "change_pct": change_pct,
+                    "volume": info.get("average_volume"),
+                    "name": info.get("name", ""),
+                }
+
     items = []
     for r in rows:
         cached = price_cache.get(r.ticker)
+        yf_quote = yf_prices.get(r.ticker, {})
         items.append(MonitoredAssetResponse(
             id=r.id,
             ticker=r.ticker,
-            name=r.name,
+            name=r.name or yf_quote.get("name", ""),
             source=r.source,
             asset_type=r.asset_type,
             is_active=r.is_active,
             added_at=r.added_at,
-            current_price=getattr(cached, "price", None) if cached else None,
-            change_pct=getattr(cached, "change_pct", None) if cached else None,
-            volume=getattr(cached, "volume", None) if cached else None,
+            current_price=getattr(cached, "price", None) if cached else yf_quote.get("price"),
+            change_pct=getattr(cached, "change_pct", None) if cached else yf_quote.get("change_pct"),
+            volume=getattr(cached, "volume", None) if cached else yf_quote.get("volume"),
         ))
 
     return PaginatedResponse(

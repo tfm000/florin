@@ -2,10 +2,13 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi, apiDelete } from '../hooks/useApi'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
 
 export default function LiveMonitor() {
   const navigate = useNavigate()
-  const { data, loading, refetch } = useApi('/monitor')
+  const colors = useChartColors()
+  const { data, loading, refetch } = useApi('/monitor', { interval: 30000 })
   const [livePrices, setLivePrices] = useState({})
   const items = data?.items || []
 
@@ -96,7 +99,7 @@ export default function LiveMonitor() {
                     <td className="px-3 py-2 text-right font-mono text-white">
                       {price != null ? `$${price.toFixed(2)}` : '—'}
                     </td>
-                    <td className={`px-3 py-2 text-right font-mono ${changePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <td className="px-3 py-2 text-right font-mono" style={{ color: changePct != null ? valueColor(changePct, colors) : undefined }}>
                       {changePct != null ? `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%` : '—'}
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-gray-400">

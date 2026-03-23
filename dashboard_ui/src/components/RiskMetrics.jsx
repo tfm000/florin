@@ -1,12 +1,14 @@
 import { useApi } from '../hooks/useApi'
 import { useChartColors } from '../hooks/useChartColors'
 import { valueColor } from '../utils/colors'
+import { INTRADAY_TO_HISTORY } from './PeriodSelector'
 
 export default function RiskMetrics({ ticker, period = '1y', customStart = '', customEnd = '' }) {
   const colors = useChartColors()
+  const effectivePeriod = INTRADAY_TO_HISTORY[period]?.period || period
   const queryStr = customStart && customEnd
-    ? `period=${period}&start=${customStart}&end=${customEnd}`
-    : `period=${period}`
+    ? `period=${effectivePeriod}&start=${customStart}&end=${customEnd}`
+    : `period=${effectivePeriod}`
 
   const { data, loading } = useApi(`/risk/${ticker}?${queryStr}`)
 

@@ -314,8 +314,8 @@ def _fill_bid_ask(points: list[dict]) -> list[dict]:
 @router.get("/research/asset/{ticker}/quotes", response_model=list[QuotePoint])
 async def get_asset_quotes(
     ticker: str,
-    period: str = Query(default="1y"),
-    interval: str = Query(default="1d"),
+    period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
+    interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
     start: str = Query(default=""),
     end: str = Query(default=""),
     yf=Depends(get_yfinance_dep),

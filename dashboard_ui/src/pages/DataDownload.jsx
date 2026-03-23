@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import SearchBar from '../components/SearchBar'
-import PeriodSelector from '../components/PeriodSelector'
+import PeriodSelector, { INTRADAY_TO_HISTORY } from '../components/PeriodSelector'
 import { exportCSV, exportJSON } from '../utils/export'
 
 const FREQUENCIES = [
@@ -69,9 +69,11 @@ export default function DataDownload() {
       setProgress(`Fetching ${sym} (${i + 1}/${tickers.length})...`)
 
       try {
+        const intradayMap = INTRADAY_TO_HISTORY[period]
+        const effectivePeriod = intradayMap ? intradayMap.period : period
         const params = customStart && customEnd
           ? `start=${customStart}&end=${customEnd}&interval=${frequency}`
-          : `period=${period}&interval=${frequency}`
+          : `period=${effectivePeriod}&interval=${frequency}`
 
         // Use quotes endpoint when bid/ask fields are selected
         const needsBidAsk = fields.has('bid') || fields.has('ask')

@@ -8,6 +8,7 @@ export default function RegimeOverlay({
   loading = false,
   nRegimes = 2,
   source = '',
+  isIntraday = false,
   onNRegimesChange,
   onSourceChange,
 }) {
@@ -19,11 +20,19 @@ export default function RegimeOverlay({
   const stats = regimeData?.stats || []
 
   // Build chart data — show regime as colored bars over time
-  const chartData = regimes.map(r => ({
-    date: new Date(r.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', year: 'numeric' }),
-    regime: r.regime,
-    probability: r.probability,
-  }))
+  const chartData = regimes.map(r => {
+    let label
+    if (isIntraday) {
+      const d = new Date(r.date)
+      label = isNaN(d)
+        ? r.date.slice(5, 16).replace('T', ' ')
+        : d.toLocaleDateString('en', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })
+    } else {
+      const d = new Date(r.date + 'T00:00:00')
+      label = d.toLocaleDateString('en', { month: 'short', year: 'numeric' })
+    }
+    return { date: label, regime: r.regime, probability: r.probability }
+  })
 
   // Stats for selected view
   const displayStats = statsView === 'full'
@@ -127,7 +136,7 @@ export default function RegimeOverlay({
                 <th className="text-left px-2 py-1">Regime</th>
                 <th className="text-right px-2 py-1">Ann. Return</th>
                 <th className="text-right px-2 py-1">Ann. Vol</th>
-                <th className="text-right px-2 py-1">Days</th>
+                <th className="text-right px-2 py-1">{isIntraday ? 'Bars' : 'Days'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700/50">
@@ -138,7 +147,7 @@ export default function RegimeOverlay({
                       style={{ backgroundColor: REGIME_COLORS[s.regime % REGIME_COLORS.length] }} />
                     Regime {s.regime}
                   </td>
-                  <td className={`px-2 py-1 text-right ${s.mean_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className="px-2 py-1 text-right" style={{ color: s.mean_return >= 0 ? colors.positive : colors.negative }}>
                     {s.mean_return >= 0 ? '+' : ''}{s.mean_return}%
                   </td>
                   <td className="px-2 py-1 text-right text-white">{s.volatility}%</td>
