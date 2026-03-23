@@ -290,7 +290,7 @@ class Florin:
         from sentiment.news_source import NewsSource
 
         sources = [
-            StockTwitsSource(),
+            StockTwitsSource(access_token=self.settings.stocktwits_access_token),
             SECEdgarSource(),
             NewsSource(self.settings),
         ]
@@ -303,6 +303,14 @@ class Florin:
             from sentiment.reddit_json_source import RedditJsonSource
             sources.append(RedditJsonSource())
             logger.info("Reddit: using public .json fallback (no API key)")
+
+        # Google Custom Search: only add if API key is configured
+        if self.settings.google_search_api_key:
+            from sentiment.google_search_source import GoogleSearchSource
+            sources.append(GoogleSearchSource(self.settings))
+            logger.info("Google Search: enabled (API key configured)")
+        else:
+            logger.info("Google Search: disabled (no API key)")
 
         return SentimentAggregator(sources)
 
@@ -322,6 +330,14 @@ class Florin:
         if LLMProvider.CLAUDE in enabled:
             from analysis.claude_analyser import ClaudeAnalyser
             analysers["claude"] = ClaudeAnalyser(self.settings)
+
+        if LLMProvider.OPENAI in enabled:
+            from analysis.openai_analyser import OpenAIAnalyser
+            analysers["openai"] = OpenAIAnalyser(self.settings)
+
+        if LLMProvider.OPENROUTER in enabled:
+            from analysis.openrouter_analyser import OpenRouterAnalyser
+            analysers["openrouter"] = OpenRouterAnalyser(self.settings)
 
         logger.info("LLM analysers initialised", analysers=list(analysers.keys()))
         return analysers

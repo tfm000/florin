@@ -32,6 +32,8 @@ class LLMProvider(str, Enum):
     GROQ = "groq"
     GEMINI = "gemini"
     CLAUDE = "claude"
+    OPENAI = "openai"
+    OPENROUTER = "openrouter"
 
 
 class T212Environment(str, Enum):
@@ -106,6 +108,21 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-haiku-4-5-20251001"
 
+    # --- LLM: OpenAI ---
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
+    # --- LLM: OpenRouter ---
+    openrouter_api_key: str = ""
+    openrouter_model: str = ""
+
+    # --- Google Custom Search ---
+    google_search_api_key: str = ""
+    google_search_cx: str = ""  # Custom Search Engine ID
+
+    # --- StockTwits ---
+    stocktwits_access_token: str = ""
+
     # --- Telegram ---
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -166,6 +183,10 @@ class Settings(BaseSettings):
             providers.append(LLMProvider.GEMINI)
         if self.anthropic_api_key:
             providers.append(LLMProvider.CLAUDE)
+        if self.openai_api_key:
+            providers.append(LLMProvider.OPENAI)
+        if self.openrouter_api_key:
+            providers.append(LLMProvider.OPENROUTER)
         return providers
 
     @field_validator("log_level")

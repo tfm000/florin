@@ -28,14 +28,10 @@ dependencies = [
     # Sentiment
     "praw>=7.7",
 
-    # LLM - FinBERT
-    "transformers>=4.40",
-    "torch>=2.2",
-
     # LLM - Cloud APIs
-    "ollama>=0.3",
     "anthropic>=0.30",
     "google-genai>=1.0",
+    "openai>=1.0",
     "groq>=0.9",
 
     # Telegram

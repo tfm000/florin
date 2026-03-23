@@ -193,6 +193,36 @@ class NewsArticle(BaseModel):
     relevance_score: float = 0.0
 
 
+class GoogleSearchResult(BaseModel):
+    """Single Google Custom Search result.
+
+    Represents one item returned by the Google Custom Search JSON API,
+    used to supplement news/sentiment data with web search results.
+    """
+    title: str
+    snippet: str = ""
+    url: str = ""
+    source: str = ""  # Domain name (displayLink from the API)
+
+
+class Form8KFiling(BaseModel):
+    """SEC Form 8-K filing with extracted text content.
+
+    Material event disclosures required by the SEC when significant
+    corporate events occur (earnings, acquisitions, leadership changes, etc.).
+    The text_content field holds the extracted plain text, truncated to a
+    reasonable length for LLM consumption.
+    """
+    ticker: str
+    filed_date: datetime
+    form_type: str = "8-K"
+    description: str = ""
+    items: list[str] = Field(default_factory=list)  # 8-K item numbers
+    text_content: str = ""  # Extracted plain text (truncated)
+    url: str = ""
+    accession_number: str = ""
+
+
 class SentimentData(BaseModel):
     """Aggregated sentiment from all sources for a single ticker."""
     ticker: str
@@ -214,6 +244,9 @@ class SentimentData(BaseModel):
 
     # News
     news_articles: list[NewsArticle] = Field(default_factory=list)
+
+    # Google Search
+    google_results: list[GoogleSearchResult] = Field(default_factory=list)
 
     # Metadata
     sources_queried: int = 0
@@ -259,6 +292,14 @@ class SentimentData(BaseModel):
         if self.news_articles:
             for a in self.news_articles[:3]:
                 lines.append(f"  - [{a.source}] {a.title[:100]}")
+
+        # Google Search results
+        if self.google_results:
+            lines.append(f"Google Search: {len(self.google_results)} results")
+            for g in self.google_results[:5]:
+                lines.append(f"  - [{g.source}] {g.title[:100]}")
+                if g.snippet:
+                    lines.append(f"    {g.snippet[:150]}")
 
         return "\n".join(lines)
 

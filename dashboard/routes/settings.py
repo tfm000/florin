@@ -27,7 +27,10 @@ _SECRET_KEYS = frozenset({
     "openfigi_api_key",
     "reddit_client_id", "reddit_client_secret",
     "groq_api_key", "gemini_api_key", "anthropic_api_key",
+    "openai_api_key", "openrouter_api_key",
     "telegram_bot_token",
+    "google_search_api_key",
+    "stocktwits_access_token",
 })
 
 # Settings grouped by section for the UI
@@ -52,6 +55,8 @@ _SECTIONS = [
         "label": "Sentiment Sources",
         "keys": [
             "reddit_client_id", "reddit_client_secret", "reddit_user_agent",
+            "google_search_api_key", "google_search_cx",
+            "stocktwits_access_token",
         ],
     },
     {
@@ -61,6 +66,8 @@ _SECTIONS = [
             "groq_api_key", "groq_model",
             "gemini_api_key", "gemini_model",
             "anthropic_api_key", "claude_model",
+            "openai_api_key", "openai_model",
+            "openrouter_api_key", "openrouter_model",
         ],
     },
     {
@@ -103,8 +110,8 @@ _CHOICES: dict[str, list[str]] = {
     "t212_environment": ["demo", "live", "readonly"],
     "alpaca_feed": ["iex", "sip"],
     "llm_mode": ["single", "consensus"],
-    "llm_default_provider": ["groq", "gemini", "claude"],
-    "llm_consensus_meta_provider": ["groq", "gemini", "claude"],
+    "llm_default_provider": ["groq", "gemini", "claude", "openai", "openrouter"],
+    "llm_consensus_meta_provider": ["groq", "gemini", "claude", "openai", "openrouter"],
     "position_size_unit": ["gbp", "usd", "shares"],
     "market_cap_source": ["yfinance", "inferred"],
 }
