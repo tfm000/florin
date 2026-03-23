@@ -1,4 +1,6 @@
 import { useNavigate } from 'react-router-dom'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
 
 function formatValue(value, format) {
   if (value == null) return '—'
@@ -16,6 +18,7 @@ function formatValue(value, format) {
 
 export default function MetricsGrid({ metrics }) {
   const navigate = useNavigate()
+  const colors = useChartColors()
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -30,11 +33,11 @@ export default function MetricsGrid({ metrics }) {
             }`}
           >
             <p className="text-gray-400 text-xs uppercase">{m.label}</p>
-            <p className={`font-mono text-lg ${m.color || 'text-white'}`}>
+            <p className="font-mono text-lg" style={{ color: m.color || '#fff' }}>
               {formatValue(m.value, m.format)}
             </p>
             {m.changePct != null && (
-              <p className={`font-mono text-xs ${m.changePct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <p className="font-mono text-xs" style={{ color: valueColor(m.changePct, colors) }}>
                 {m.changePct >= 0 ? '+' : ''}{m.changePct.toFixed(2)}%
               </p>
             )}

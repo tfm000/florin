@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useChartColors } from '../hooks/useChartColors'
+import { valueColor } from '../utils/colors'
 
 const fmtShares = (n) => {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
@@ -16,6 +18,7 @@ const fmtValue = (n) => {
 }
 
 export default function TopHolders({ ticker }) {
+  const colors = useChartColors()
   const { data, loading, error } = useApi(`/research/holders/${ticker}`)
   const [tab, setTab] = useState('institutional')
 
@@ -134,9 +137,10 @@ export default function TopHolders({ ticker }) {
                   <td className="px-3 py-2 text-right font-mono text-gray-300 text-xs">
                     {h.pct_held.toFixed(2)}%
                   </td>
-                  <td className={`px-3 py-2 text-right font-mono text-xs ${
-                    h.pct_change > 0 ? 'text-green-400' : h.pct_change < 0 ? 'text-red-400' : 'text-gray-400'
-                  }`}>
+                  <td
+                    className="px-3 py-2 text-right font-mono text-xs"
+                    style={{ color: valueColor(h.pct_change, colors) }}
+                  >
                     {h.pct_change > 0 ? '+' : ''}{h.pct_change.toFixed(2)}%
                   </td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">

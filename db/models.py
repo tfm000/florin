@@ -101,7 +101,9 @@ class ReportORM(Base):
 
     # User action
     user_action: Mapped[str] = mapped_column(String(10), default="PENDING")  # BUY | DENY | PENDING
-    trade_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    trade_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("trades.id", ondelete="SET NULL"), nullable=True,
+    )
 
     generated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), index=True
@@ -121,7 +123,9 @@ class AlertORM(Base):
     change_pct: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(20), default="MOMENTUM")
-    report_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    report_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True,
+    )
     triggered_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), index=True
     )
@@ -173,7 +177,9 @@ class TelegramMessageORM(Base):
     message_id: Mapped[int] = mapped_column(Integer)
     message_type: Mapped[str] = mapped_column(String(20))  # alert | position | status
     ticker: Mapped[str] = mapped_column(String(20), default="", index=True)
-    report_id: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    report_id: Mapped[Optional[str]] = mapped_column(
+        String(16), ForeignKey("reports.id", ondelete="SET NULL"), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     last_updated: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 

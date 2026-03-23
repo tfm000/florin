@@ -13,9 +13,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
+
+
+@runtime_checkable
+class MarketDataProvider(Protocol):
+    """Protocol for market data providers used by the screener engine."""
+
+    async def get_history(
+        self, ticker: str, period: str = "1y",
+    ) -> list[dict] | None: ...
 
 logger = logging.getLogger(__name__)
 
@@ -162,10 +171,10 @@ async def run_screen(
 
 async def apply_momentum_filter(
     results: list[ScreenerResult],
-    momentum_min: float,
-    momentum_max: float,
+    momentum_min: float | None,
+    momentum_max: float | None,
     period: str,
-    yf: Any,
+    yf: MarketDataProvider,
 ) -> list[ScreenerResult]:
     """
     Post-filter screener results by return momentum over a given period.
@@ -175,10 +184,10 @@ async def apply_momentum_filter(
 
     Args:
         results: Pre-filtered screener results.
-        momentum_min: Minimum return % (0 = no minimum).
-        momentum_max: Maximum return % (0 = no limit).
+        momentum_min: Minimum return % (None = no minimum).
+        momentum_max: Maximum return % (None = no limit).
         period: One of: 1d, 5d, 1w, 1mo, 3mo, 1y.
-        yf: YFinanceProvider instance for fetching history.
+        yf: Market data provider for fetching history.
 
     Returns:
         Filtered list of results within momentum bounds.
@@ -214,6 +223,7 @@ async def apply_momentum_filter(
             ret = (closes[-1] / closes[-(days + 1)] - 1) * 100
             return item, ret
         except Exception:
+            logger.debug("Momentum fetch failed for %s", item.ticker, exc_info=True)
             return item, None
 
     pairs = await asyncio.gather(*[_get_return(r) for r in candidates])
@@ -222,9 +232,9 @@ async def apply_momentum_filter(
     for item, ret in pairs:
         if ret is None:
             continue
-        if momentum_min > 0 and ret < momentum_min:
+        if momentum_min is not None and ret < momentum_min:
             continue
-        if momentum_max > 0 and ret > momentum_max:
+        if momentum_max is not None and ret > momentum_max:
             continue
         filtered.append(item)
 

@@ -32,10 +32,9 @@ const VIEWS = [
   { value: 'line', label: 'Line' },
 ]
 
-// Period param for the /sectors/history endpoint per timeframe
+// Period param for the /sectors/history endpoint per timeframe.
+// Only periods with dedicated history data are mapped here.
 const HISTORY_PERIOD = {
-  '1d': '1m',
-  '1w': '1m',
   '1m': '1m',
   '3m': '3m',
   '6m': '6m',
@@ -55,7 +54,28 @@ function hexToRgb(hex) {
   return `${r}, ${g}, ${b}`
 }
 
-/** Treemap cell renderer — reused from the old SectorHeatMap. */
+/** Shared toggle button group for view/timeframe selectors. */
+function ToggleButtonGroup({ options, value, onChange }) {
+  return (
+    <div className="flex rounded overflow-hidden border border-gray-600">
+      {options.map(opt => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`px-2 py-1 text-xs transition-colors ${
+            value === opt.value
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-400 hover:text-white'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Treemap cell renderer for the sector heatmap view. */
 function TreemapContent({ x, y, width, height, name, returnVal, colors }) {
   if (width < 30 || height < 20) return null
   const isPositive = (returnVal || 0) >= 0
@@ -254,64 +274,19 @@ export default function SectorPerformanceChart() {
     }
   }, [timeframe])
 
+  // Filter timeframes based on current view
+  const visibleTimeframes = view === 'line'
+    ? TIMEFRAMES.filter(tf => LINE_VALID_TIMEFRAMES.has(tf.value))
+    : TIMEFRAMES
+
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       {/* Header with controls */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="text-white font-semibold">Sector Performance</h3>
         <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <div className="flex rounded overflow-hidden border border-gray-600">
-            {VIEWS.map(v => (
-              <button
-                key={v.value}
-                onClick={() => handleViewChange(v.value)}
-                className={`px-2 py-1 text-xs transition-colors ${
-                  view === v.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-400 hover:text-white'
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-          {/* Timeframe selector (not shown for line view — it uses its own period) */}
-          {view !== 'line' && (
-            <div className="flex rounded overflow-hidden border border-gray-600">
-              {TIMEFRAMES.map(tf => (
-                <button
-                  key={tf.value}
-                  onClick={() => setTimeframe(tf.value)}
-                  className={`px-2 py-1 text-xs transition-colors ${
-                    timeframe === tf.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {tf.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {/* Period selector for line view */}
-          {view === 'line' && (
-            <div className="flex rounded overflow-hidden border border-gray-600">
-              {TIMEFRAMES.filter(tf => LINE_VALID_TIMEFRAMES.has(tf.value)).map(tf => (
-                <button
-                  key={tf.value}
-                  onClick={() => setTimeframe(tf.value)}
-                  className={`px-2 py-1 text-xs transition-colors ${
-                    timeframe === tf.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  {tf.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <ToggleButtonGroup options={VIEWS} value={view} onChange={handleViewChange} />
+          <ToggleButtonGroup options={visibleTimeframes} value={timeframe} onChange={setTimeframe} />
         </div>
       </div>
 

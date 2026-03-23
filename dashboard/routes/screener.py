@@ -46,8 +46,8 @@ async def screen_stocks(
     sector: str = Query(default="", description="Filter by sector name"),
     exchange: str = Query(default="", description="NMS, NGM, NCM, NYQ, ASE or comma-separated"),
     asset_type: str = Query(default="", description="EQUITY, ETF, INDEX, COMMODITY, CRYPTOCURRENCY"),
-    momentum_min: float = Query(default=0, description="Min return % for momentum filter"),
-    momentum_max: float = Query(default=0, description="Max return % (0 = no limit)"),
+    momentum_min: float | None = Query(default=None, description="Min return % for momentum filter"),
+    momentum_max: float | None = Query(default=None, description="Max return % (None = no limit)"),
     momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
     sort_by: str = Query(default="intradaymarketcap", description="Sort field"),
     sort_asc: bool = Query(default=False),
@@ -65,7 +65,7 @@ async def screen_stocks(
     )
 
     # Apply momentum post-filter if requested
-    if momentum_period and (momentum_min > 0 or momentum_max > 0):
+    if momentum_period and (momentum_min is not None or momentum_max is not None):
         results = await apply_momentum_filter(
             results, momentum_min, momentum_max, momentum_period, yf,
         )

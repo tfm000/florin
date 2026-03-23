@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { useChartColors } from '../hooks/useChartColors'
 
 export default function AlertFeed() {
+  const colors = useChartColors()
   const [alerts, setAlerts] = useState([])
 
   const handleMessage = useCallback((msg) => {
@@ -16,7 +18,13 @@ export default function AlertFeed() {
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-white font-bold">Live Alerts</h3>
-        <span className={`text-xs px-2 py-1 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+        <span
+          className="text-xs px-2 py-1 rounded font-medium"
+          style={{
+            backgroundColor: connected ? `${colors.positive}20` : `${colors.negative}20`,
+            color: connected ? colors.positive : colors.negative,
+          }}
+        >
           {connected ? 'LIVE' : 'DISCONNECTED'}
         </span>
       </div>

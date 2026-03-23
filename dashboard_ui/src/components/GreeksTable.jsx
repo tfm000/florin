@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { allGreeks } from '../utils/blackscholes'
+import { useChartColors } from '../hooks/useChartColors'
 
 /**
  * Greeks calculator and display table.
@@ -8,6 +9,8 @@ import { allGreeks } from '../utils/blackscholes'
  * Black-Scholes Greeks for each strike.
  */
 export default function GreeksTable({ skew, spot, expiry, riskFreeRate = 0.045 }) {
+  const colors = useChartColors()
+
   // Compute time to expiry in years
   const T = useMemo(() => {
     if (!expiry) return 0
@@ -38,6 +41,14 @@ export default function GreeksTable({ skew, spot, expiry, riskFreeRate = 0.045 }
   if (rows.length === 0) return null
 
   const fmt = (v, dp = 4) => v != null ? v.toFixed(dp) : '—'
+
+  // Semantic colors for Greeks:
+  // Delta = positive (directional exposure)
+  // Theta = negative (time decay cost)
+  // Vega = series color (volatility sensitivity)
+  const deltaColor = colors.positive
+  const thetaColor = colors.negative
+  const vegaColor = colors.series[1] // indigo/teal
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -82,17 +93,17 @@ export default function GreeksTable({ skew, spot, expiry, riskFreeRate = 0.045 }
                   {/* Call Greeks */}
                   <td className="px-2 py-0.5 text-right text-gray-400">{r.callIV ? (r.callIV * 100).toFixed(1) + '%' : '—'}</td>
                   <td className="px-2 py-0.5 text-right text-white">{fmt(r.callGreeks?.price, 2)}</td>
-                  <td className="px-2 py-0.5 text-right text-green-400">{fmt(r.callGreeks?.delta)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: deltaColor }}>{fmt(r.callGreeks?.delta)}</td>
                   <td className="px-2 py-0.5 text-right text-gray-300">{fmt(r.callGreeks?.gamma)}</td>
-                  <td className="px-2 py-0.5 text-right text-blue-400">{fmt(r.callGreeks?.vega)}</td>
-                  <td className="px-2 py-0.5 text-right text-red-400">{fmt(r.callGreeks?.theta)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: vegaColor }}>{fmt(r.callGreeks?.vega)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: thetaColor }}>{fmt(r.callGreeks?.theta)}</td>
                   {/* Put Greeks */}
                   <td className="px-2 py-0.5 text-right text-gray-400">{r.putIV ? (r.putIV * 100).toFixed(1) + '%' : '—'}</td>
                   <td className="px-2 py-0.5 text-right text-white">{fmt(r.putGreeks?.price, 2)}</td>
-                  <td className="px-2 py-0.5 text-right text-green-400">{fmt(r.putGreeks?.delta)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: deltaColor }}>{fmt(r.putGreeks?.delta)}</td>
                   <td className="px-2 py-0.5 text-right text-gray-300">{fmt(r.putGreeks?.gamma)}</td>
-                  <td className="px-2 py-0.5 text-right text-blue-400">{fmt(r.putGreeks?.vega)}</td>
-                  <td className="px-2 py-0.5 text-right text-red-400">{fmt(r.putGreeks?.theta)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: vegaColor }}>{fmt(r.putGreeks?.vega)}</td>
+                  <td className="px-2 py-0.5 text-right" style={{ color: thetaColor }}>{fmt(r.putGreeks?.theta)}</td>
                 </tr>
               )
             })}

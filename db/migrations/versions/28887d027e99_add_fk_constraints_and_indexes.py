@@ -1,7 +1,7 @@
 """add_fk_constraints_and_indexes
 
 Revision ID: 28887d027e99
-Revises: portfolio_cache
+Revises: 77f433bbe71f
 Create Date: 2026-03-23 02:08:02.381587
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '28887d027e99'
-down_revision: Union[str, Sequence[str], None] = 'portfolio_cache'
+down_revision: Union[str, Sequence[str], None] = '77f433bbe71f'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,7 +1,7 @@
 """add portfolio cache tables
 
-Revision ID: portfolio_cache
-Revises: portfolio_description
+Revision ID: 77f433bbe71f
+Revises: d7e1d7f29e54
 Create Date: 2026-03-22 18:30:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'portfolio_cache'
-down_revision: Union[str, Sequence[str], None] = 'portfolio_description'
+revision: str = '77f433bbe71f'
+down_revision: Union[str, Sequence[str], None] = 'd7e1d7f29e54'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

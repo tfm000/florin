@@ -1,5 +1,8 @@
+import { useChartColors } from '../hooks/useChartColors'
+
 export default function PositionCard({ position, onSell }) {
-  const pnlColor = position.unrealised_pnl >= 0 ? 'text-green-400' : 'text-red-400'
+  const colors = useChartColors()
+  const pnlColor = position.unrealised_pnl >= 0 ? colors.positive : colors.negative
   const pnlSign = position.unrealised_pnl >= 0 ? '+' : ''
 
   return (
@@ -11,7 +14,7 @@ export default function PositionCard({ position, onSell }) {
         </div>
         <div className="text-right">
           <p className="text-white font-mono">${position.current_price.toFixed(2)}</p>
-          <p className={`font-mono text-sm ${pnlColor}`}>
+          <p className="font-mono text-sm" style={{ color: pnlColor }}>
             {pnlSign}${position.unrealised_pnl.toFixed(2)} ({pnlSign}{position.unrealised_pnl_pct.toFixed(1)}%)
           </p>
         </div>

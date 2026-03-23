@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useApi } from '../hooks/useApi'
 import { corrColor } from '../utils/colors'
 
@@ -21,10 +22,20 @@ export default function PresetCorrelationMatrix({
   method = 'pearson',
   period = '1y',
 }) {
-  const tickerStr = encodeURIComponent(tickers.join(','))
-  const { data, loading, error } = useApi(
-    `/correlation?tickers=${tickerStr}&method=${method}&period=${period}`
-  )
+  if (process.env.NODE_ENV !== 'production' && labels.length !== tickers.length) {
+    console.warn(`PresetCorrelationMatrix "${title}": labels (${labels.length}) and tickers (${tickers.length}) length mismatch`)
+  }
+
+  const apiUrl = useMemo(() => {
+    const params = new URLSearchParams({
+      tickers: tickers.join(','),
+      method,
+      period,
+    })
+    return `/correlation?${params}`
+  }, [tickers, method, period])
+
+  const { data, loading, error } = useApi(apiUrl)
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
