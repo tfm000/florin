@@ -39,7 +39,7 @@ export default function LiveMonitor() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-white">Live Monitor</h1>
+          <h2 className="text-lg font-semibold text-gray-300">Live Monitor</h2>
           <span className={`text-xs px-2 py-1 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
             {connected ? 'LIVE' : 'DISCONNECTED'}
           </span>
@@ -85,7 +85,7 @@ export default function LiveMonitor() {
                 return (
                   <tr
                     key={item.ticker}
-                    onClick={() => navigate(`/monitor/${item.ticker}`)}
+                    onClick={() => navigate(`/monitoring/live/${item.ticker}`)}
                     className="hover:bg-gray-800/50 cursor-pointer"
                   >
                     <td className="px-3 py-2">

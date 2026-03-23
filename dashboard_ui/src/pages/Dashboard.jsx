@@ -45,8 +45,8 @@ export default function Dashboard() {
       {/* Quick Links */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <QuickLink to="/research" label="Research" description="Search & analyse any asset" />
-        <QuickLink to="/watchlist" label="Watchlist" count={watchlist?.total} />
-        <QuickLink to="/monitor" label="Live Monitor" count={monitor?.total} />
+        <QuickLink to="/monitoring/watchlist" label="Watchlist" count={watchlist?.total} />
+        <QuickLink to="/monitoring/live" label="Live Monitor" count={monitor?.total} />
         <QuickLink to="/penny-stocks" label="Penny Stocks" count={universe?.total} />
       </div>
 

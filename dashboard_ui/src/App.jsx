@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useParams } from 'react-router-dom'
 import { useApi } from './hooks/useApi'
 import { ChartColorProvider } from './hooks/useChartColors'
 import Dashboard from './pages/Dashboard'
@@ -12,6 +12,7 @@ import HoldersTab from './pages/HoldersTab'
 import BrokerTab from './pages/BrokerTab'
 import Watchlist from './pages/Watchlist'
 import LiveMonitor from './pages/LiveMonitor'
+import MonitoringLayout from './pages/MonitoringLayout'
 import Universe from './pages/Universe'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
@@ -30,8 +31,7 @@ import PortfolioDetail from './pages/PortfolioDetail'
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard' },
   { path: '/research', label: 'Research' },
-  { path: '/watchlist', label: 'Watchlist' },
-  { path: '/monitor', label: 'Live Monitor' },
+  { path: '/monitoring', label: 'Monitoring' },
   { path: '/penny-stocks', label: 'Penny Stocks' },
   { path: '/screener', label: 'Screener' },
   { path: '/13f', label: '13F' },
@@ -57,6 +57,12 @@ function TradingModeBadge() {
       {isPaper ? 'PAPER' : 'LIVE'}
     </span>
   )
+}
+
+/** Redirect preserving the :ticker param from the old /monitor/:ticker path. */
+function RedirectWithParams({ to }) {
+  const { ticker } = useParams()
+  return <Navigate to={`${to}/${ticker}`} replace />
 }
 
 export default function App() {
@@ -120,9 +126,16 @@ export default function App() {
               <Route path="holders" element={<HoldersTab />} />
               <Route path="broker" element={<BrokerTab />} />
             </Route>
-            <Route path="/watchlist" element={<Watchlist />} />
-            <Route path="/monitor" element={<LiveMonitor />} />
-            <Route path="/monitor/:ticker" element={<MonitorAsset />} />
+            <Route path="/monitoring" element={<MonitoringLayout />}>
+              <Route index element={<Navigate to="watchlist" replace />} />
+              <Route path="watchlist" element={<Watchlist />} />
+              <Route path="live" element={<LiveMonitor />} />
+            </Route>
+            <Route path="/monitoring/live/:ticker" element={<MonitorAsset />} />
+            {/* Redirects for old paths */}
+            <Route path="/watchlist" element={<Navigate to="/monitoring/watchlist" replace />} />
+            <Route path="/monitor" element={<Navigate to="/monitoring/live" replace />} />
+            <Route path="/monitor/:ticker" element={<RedirectWithParams to="/monitoring/live" />} />
             <Route path="/penny-stocks" element={<Universe />} />
             <Route path="/screener" element={<Screener />} />
             <Route path="/13f" element={<Filings13F />} />
