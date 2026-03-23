@@ -69,7 +69,7 @@ echo Initialising database...
 %PYTHON% -c "import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./florin.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')"
 echo [OK] Database initialised
 
-:: ── 7. Desktop launcher ─────────────────────────────────
+:: ── 6. Desktop launcher ─────────────────────────────────
 (
 echo @echo off
 echo cd /d "%%~dp0"

@@ -112,15 +112,16 @@ def _build_equity_operands(
 
     operands = []
 
-    # Region filter (multi-select)
-    if len(regions) == 1:
-        operands.append(EquityQuery("eq", ["region", regions[0]]))
-    elif len(regions) > 1:
-        operands.append(EquityQuery("or", [
-            EquityQuery("eq", ["region", r]) for r in regions
-        ]))
-    else:
-        operands.append(EquityQuery("eq", ["region", "us"]))
+    # Region filter — skip if exchanges are explicitly selected (exchange implies region)
+    if not exchanges:
+        if len(regions) == 1:
+            operands.append(EquityQuery("eq", ["region", regions[0]]))
+        elif len(regions) > 1:
+            operands.append(EquityQuery("or", [
+                EquityQuery("eq", ["region", r]) for r in regions
+            ]))
+        else:
+            operands.append(EquityQuery("eq", ["region", "us"]))
 
     if price_min > 0:
         operands.append(EquityQuery("gt", ["intradayprice", price_min]))
@@ -164,7 +165,7 @@ async def run_screen(
     pe_min: float = 0,
     pe_max: float = 0,
     dividend_yield_min: float = 0,
-    region: str = "us",
+    region: str = "",
     sector: str = "",
     exchange: str = "",
     asset_type: str = "",
@@ -199,7 +200,7 @@ async def run_screen(
     Returns:
         List of ScreenerResult matching the criteria.
     """
-    regions = [r.strip() for r in (region or "us").split(",") if r.strip()]
+    regions = [r.strip() for r in region.split(",") if r.strip()] if region else []
     exchanges = [e.strip() for e in exchange.split(",") if e.strip()] if exchange else []
     at = (asset_type or "").upper()
 
@@ -411,7 +412,7 @@ def parse_filters_to_kwargs(filters: dict) -> dict:
         "pe_min": float(filters.get("pe_min") or 0),
         "pe_max": float(filters.get("pe_max") or 0),
         "dividend_yield_min": float(filters.get("dividend_yield_min") or 0),
-        "region": str(filters.get("region") or "us"),
+        "region": str(filters.get("region") or ""),
         "sector": str(filters.get("sector") or ""),
         "exchange": str(filters.get("exchange") or ""),
         "asset_type": str(filters.get("asset_type") or ""),

@@ -83,7 +83,7 @@ asyncio.run(init())
 "
 info "Database initialised (florin.db)"
 
-# ── 7. Ollama model (optional) ──────────────────────────
+# ── 6. Ollama model (optional) ──────────────────────────
 if command -v ollama &>/dev/null; then
     info "Ollama found"
     read -p "Pull Ollama model (llama3.2:8b) for local LLM analysis? [y/N] " -n 1 -r
@@ -99,7 +99,7 @@ else
     echo ""
 fi
 
-# ── 8. Desktop launcher ─────────────────────────────────
+# ── 7. Desktop launcher ─────────────────────────────────
 LAUNCHER="Florin.command"
 cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/usr/bin/env bash
