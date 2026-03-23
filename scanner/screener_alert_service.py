@@ -136,7 +136,7 @@ class ScreenerAlertService:
         kwargs["sort_asc"] = screener.sort_asc
         kwargs["limit"] = 100
 
-        results = await run_screen(**kwargs)
+        results, _total = await run_screen(**kwargs)
 
         # Apply momentum filter if configured
         momentum_period = str(filters.get("momentum_period") or "")
@@ -327,4 +327,6 @@ class ScreenerAlertService:
                 filters["exchange"], filters["exchange"],
             )
             parts.append(label)
+        if filters.get("currency"):
+            parts.append(filters["currency"])
         return " | ".join(parts) if parts else "All US assets"

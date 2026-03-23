@@ -171,9 +171,10 @@ async def run_screen(
     asset_type: str = "",
     sort_by: str = "intradaymarketcap",
     sort_asc: bool = False,
+    offset: int = 0,
     limit: int = 100,
     yf: Any = None,
-) -> list[ScreenerResult]:
+) -> tuple[list[ScreenerResult], int]:
     """
     Execute a stock screen query via yfinance.
 
@@ -194,11 +195,12 @@ async def run_screen(
         asset_type: EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY (empty = EQUITY).
         sort_by: yfinance sort field name.
         sort_asc: Sort ascending if True.
+        offset: Number of results to skip (for pagination).
         limit: Maximum results to return.
         yf: MarketDataProvider instance (unused by screen, kept for API compat).
 
     Returns:
-        List of ScreenerResult matching the criteria.
+        Tuple of (results list, total matching count from Yahoo).
     """
     regions = [r.strip() for r in region.split(",") if r.strip()] if region else []
     exchanges = [e.strip() for e in exchange.split(",") if e.strip()] if exchange else []
@@ -209,29 +211,29 @@ async def run_screen(
     if at in _SORT_FIELD_DEFAULTS and sort_by == "intradaymarketcap":
         effective_sort = _SORT_FIELD_DEFAULTS[at]
 
-    def _screen() -> list[ScreenerResult]:
+    def _screen() -> tuple[list[ScreenerResult], int]:
         try:
             if at == "MUTUALFUND":
-                return _screen_funds(regions, sector, effective_sort, sort_asc, limit)
+                return _screen_funds(regions, sector, effective_sort, sort_asc, offset, limit)
             elif at in _DIRECT_POST_TYPES:
                 return _screen_direct(at, regions, exchanges, price_min, price_max,
                                       market_cap_min, market_cap_max, pe_min, pe_max,
-                                      dividend_yield_min, sector, effective_sort, sort_asc, limit)
+                                      dividend_yield_min, sector, effective_sort, sort_asc, offset, limit)
             else:
                 return _screen_equity(regions, exchanges, price_min, price_max,
                                       market_cap_min, market_cap_max, pe_min, pe_max,
-                                      dividend_yield_min, sector, at, effective_sort, sort_asc, limit)
+                                      dividend_yield_min, sector, at, effective_sort, sort_asc, offset, limit)
         except Exception:
             logger.exception("Screener query failed")
-            return []
+            return [], 0
 
     return await asyncio.to_thread(_screen)
 
 
 def _screen_equity(
     regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-    pe_min, pe_max, dividend_yield_min, sector, asset_type, sort_by, sort_asc, limit,
-) -> list[ScreenerResult]:
+    pe_min, pe_max, dividend_yield_min, sector, asset_type, sort_by, sort_asc, offset, limit,
+) -> tuple[list[ScreenerResult], int]:
     """Screen equities via yfinance's EquityQuery + screen()."""
     from yfinance import EquityQuery, screen
 
@@ -240,16 +242,19 @@ def _screen_equity(
         pe_min, pe_max, dividend_yield_min, sector,
     )
     query = EquityQuery("and", operands)
-    resp = screen(query, size=limit, offset=0, sortField=sort_by, sortAsc=sort_asc)
+    resp = screen(query, size=limit, offset=offset, sortField=sort_by, sortAsc=sort_asc)
 
-    quotes = resp.get("quotes", []) if resp else []
-    return [_quote_to_result(q) for q in quotes]
+    if not resp:
+        return [], 0
+    quotes = resp.get("quotes", [])
+    total = resp.get("total", len(quotes))
+    return [_quote_to_result(q) for q in quotes], total
 
 
 def _screen_direct(
     quote_type, regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-    pe_min, pe_max, dividend_yield_min, sector, sort_by, sort_asc, limit,
-) -> list[ScreenerResult]:
+    pe_min, pe_max, dividend_yield_min, sector, sort_by, sort_asc, offset, limit,
+) -> tuple[list[ScreenerResult], int]:
     """Screen ETFs, indices, or crypto via direct Yahoo POST with custom quoteType."""
     from yfinance import EquityQuery
     from yfinance.const import _QUERY1_URL_
@@ -272,7 +277,7 @@ def _screen_direct(
         query = EquityQuery("and", operands)
 
     body = {
-        "offset": 0,
+        "offset": offset,
         "size": limit,
         "sortField": sort_by,
         "sortType": "ASC" if sort_asc else "DESC",
@@ -293,13 +298,15 @@ def _screen_direct(
 
     result = resp.json().get("finance", {}).get("result")
     if not result or not isinstance(result, list) or len(result) == 0:
-        return []
+        return [], 0
 
-    quotes = result[0].get("quotes", [])
-    return [_quote_to_result(q) for q in quotes]
+    data = result[0]
+    quotes = data.get("quotes", [])
+    total = data.get("total", len(quotes))
+    return [_quote_to_result(q) for q in quotes], total
 
 
-def _screen_funds(regions, sector, sort_by, sort_asc, limit) -> list[ScreenerResult]:
+def _screen_funds(regions, sector, sort_by, sort_asc, offset, limit) -> tuple[list[ScreenerResult], int]:
     """Screen mutual funds via yfinance's FundQuery."""
     from yfinance import FundQuery, screen
 
@@ -315,10 +322,13 @@ def _screen_funds(regions, sector, sort_by, sort_asc, limit) -> list[ScreenerRes
         operands.append(FundQuery("eq", ["sector", sector]))
 
     query = FundQuery("and", operands)
-    resp = screen(query, size=limit, offset=0, sortField=sort_by, sortAsc=sort_asc)
+    resp = screen(query, size=limit, offset=offset, sortField=sort_by, sortAsc=sort_asc)
 
-    quotes = resp.get("quotes", []) if resp else []
-    return [_quote_to_result(q) for q in quotes]
+    if not resp:
+        return [], 0
+    quotes = resp.get("quotes", [])
+    total = resp.get("total", len(quotes))
+    return [_quote_to_result(q) for q in quotes], total
 
 
 async def apply_momentum_filter(

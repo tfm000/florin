@@ -85,7 +85,23 @@ const ASSET_TYPES = [
   { value: 'CRYPTOCURRENCY', label: 'Crypto' },
 ]
 
-const ASSET_TYPE_LABELS = { '': 'Equity', EQUITY: 'Equity', ETF: 'ETF', MUTUALFUND: 'Fund', INDEX: 'Index', CRYPTOCURRENCY: 'Crypto' }
+const ASSET_TYPE_LABELS = {
+  '': 'Stocks', EQUITY: 'Stocks', ETF: 'ETFs',
+  MUTUALFUND: 'Mutual Funds', INDEX: 'Indices', CRYPTOCURRENCY: 'Crypto',
+}
+
+const CURRENCIES = [
+  '', 'USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'HKD',
+  'SGD', 'SEK', 'NOK', 'DKK', 'KRW', 'TWD', 'INR', 'BRL', 'MXN',
+  'NZD', 'ZAR', 'CNY',
+]
+
+const CURRENCY_SYMBOLS = {
+  USD: '$', EUR: '\u20AC', GBP: '\u00A3', JPY: '\u00A5', CNY: '\u00A5',
+  CHF: 'Fr', CAD: 'CA$', AUD: 'A$', HKD: 'HK$', SGD: 'S$',
+  SEK: 'kr', NOK: 'kr', DKK: 'kr', KRW: '\u20A9', TWD: 'NT$',
+  INR: '\u20B9', BRL: 'R$', MXN: 'Mex$', NZD: 'NZ$', ZAR: 'R',
+}
 
 const ADR_OPTIONS = [
   { value: '', label: 'All' },
@@ -103,6 +119,11 @@ const MOMENTUM_PERIODS = [
   { value: '1y', label: '1 Year' },
 ]
 
+const PAGE_SIZES = [25, 50, 100, 250]
+
+// Keys that are client-side only and should not be sent to the API
+const CLIENT_ONLY_KEYS = new Set(['adr_filter', 'currency'])
+
 const DEFAULT_FILTERS = {
   price_min: '', price_max: '',
   market_cap_min: '', market_cap_max: '',
@@ -113,6 +134,7 @@ const DEFAULT_FILTERS = {
   exchange: '',
   asset_type: '',
   adr_filter: '',
+  currency: '',
   momentum_min: '', momentum_max: '',
   momentum_period: '',
   sort_by: 'intradaymarketcap',
@@ -178,6 +200,10 @@ function MultiSelect({ label, options, value, onChange }) {
   )
 }
 
+function currencySymbol(code) {
+  return CURRENCY_SYMBOLS[code] || code || '$'
+}
+
 export default function Screener() {
   const navigate = useNavigate()
   const colors = useChartColors()
@@ -187,7 +213,9 @@ export default function Screener() {
   const [sortDir, setSortDir] = useState('desc')
   const [saveName, setSaveName] = useState('')
   const [showSaveInput, setShowSaveInput] = useState(false)
-  const [saveMessage, setSaveMessage] = useState(null) // { type: 'success' | 'error', text }
+  const [saveMessage, setSaveMessage] = useState(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(250)
 
   // Load preset from URL if present
   const presetId = searchParams.get('preset')
@@ -200,29 +228,49 @@ export default function Screener() {
             ...DEFAULT_FILTERS,
             ...data.filters,
             sort_by: data.sort_by || 'intradaymarketcap',
-            sort_asc: data.sort_asc || false,
+            sort_asc: data.sort_asc ?? false,
           }))
+          setPage(1)
         }
       })
       .catch(() => {})
   }, [presetId])
 
-  // adr_filter is client-side only — exclude from API params
-  const queryParams = Object.entries(filters)
-    .filter(([k, v]) => v !== '' && v !== false && k !== 'adr_filter')
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-    .join('&')
+  // Reset page when filters change
+  const filterKey = useMemo(() => {
+    const { sort_by, sort_asc, ...rest } = filters
+    return JSON.stringify(rest)
+  }, [filters])
+
+  useEffect(() => { setPage(1) }, [filterKey, pageSize])
+
+  // Build API query params — exclude client-side-only keys, keep booleans and zero values
+  const offset = (page - 1) * pageSize
+  const hasMomentum = filters.momentum_period && (filters.momentum_min !== '' || filters.momentum_max !== '')
+
+  const queryParams = useMemo(() => {
+    const params = Object.entries(filters)
+      .filter(([k, v]) => !CLIENT_ONLY_KEYS.has(k) && v !== '')
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    params.push(`offset=${offset}`)
+    params.push(`limit=${pageSize}`)
+    return params.join('&')
+  }, [filters, offset, pageSize])
 
   const { data, loading } = useApi(`/screener?${queryParams}`)
   const rawResults = data?.results || []
+  const serverTotal = data?.total ?? 0
 
-  // Client-side ADR filter + sorting
+  // Client-side ADR + currency filter + sorting
   const results = useMemo(() => {
     let filtered = rawResults
     if (filters.adr_filter === 'adr') {
-      filtered = rawResults.filter(r => r.is_adr)
+      filtered = filtered.filter(r => r.is_adr)
     } else if (filters.adr_filter === 'domestic') {
-      filtered = rawResults.filter(r => !r.is_adr)
+      filtered = filtered.filter(r => !r.is_adr)
+    }
+    if (filters.currency) {
+      filtered = filtered.filter(r => r.currency === filters.currency)
     }
     if (!sortCol) return filtered
     const sorted = [...filtered].sort((a, b) => {
@@ -232,7 +280,7 @@ export default function Screener() {
       return sortDir === 'asc' ? av - bv : bv - av
     })
     return sorted
-  }, [rawResults, sortCol, sortDir, filters.adr_filter])
+  }, [rawResults, sortCol, sortDir, filters.adr_filter, filters.currency])
 
   const update = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
@@ -271,6 +319,12 @@ export default function Screener() {
     ? EXCHANGES
     : EXCHANGES.filter(e => selectedRegions.has(e.region))
 
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(serverTotal / pageSize))
+  const showingFrom = serverTotal > 0 ? offset + 1 : 0
+  const showingTo = Math.min(offset + pageSize, serverTotal)
+  const canPaginate = !hasMomentum
+
   function formatMcap(val) {
     if (!val) return '\u2014'
     if (val >= 1e12) return `$${(val / 1e12).toFixed(1)}T`
@@ -285,6 +339,12 @@ export default function Screener() {
     if (val >= 1e6) return `${(val / 1e6).toFixed(1)}M`
     if (val >= 1e3) return `${(val / 1e3).toFixed(0)}K`
     return val.toLocaleString()
+  }
+
+  function formatPrice(price, currency) {
+    if (price == null) return '\u2014'
+    const sym = currencySymbol(currency)
+    return `${sym}${price.toFixed(2)}`
   }
 
   function SortHeader({ col, label, align = 'left' }) {
@@ -307,10 +367,9 @@ export default function Screener() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-white">Screener</h1>
         <div className="flex items-center gap-3">
-          {data && <span className="text-gray-400 text-sm">{data.total} matching</span>}
+          {data && <span className="text-gray-400 text-sm">{serverTotal.toLocaleString()} matching</span>}
           {results.length > 0 && <ExportButton data={results} filename="screener_results" />}
 
-          {/* Save screener */}
           {showSaveInput ? (
             <div className="flex items-center gap-2">
               <input
@@ -372,6 +431,13 @@ export default function Screener() {
             />
           </div>
           <div>
+            <label className="text-gray-400 block mb-1">Currency</label>
+            <select value={filters.currency} onChange={e => update('currency', e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
+              {CURRENCIES.map(c => <option key={c} value={c}>{c || 'All'}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="text-gray-400 block mb-1">ADR / Domestic</label>
             <select value={filters.adr_filter} onChange={e => update('adr_filter', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white">
@@ -386,22 +452,22 @@ export default function Screener() {
             </select>
           </div>
           <div>
-            <label className="text-gray-400 block mb-1">Price Min ($)</label>
+            <label className="text-gray-400 block mb-1">Price Min</label>
             <input type="number" value={filters.price_min} onChange={e => update('price_min', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0" />
           </div>
           <div>
-            <label className="text-gray-400 block mb-1">Price Max ($)</label>
+            <label className="text-gray-400 block mb-1">Price Max</label>
             <input type="number" value={filters.price_max} onChange={e => update('price_max', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="No limit" />
           </div>
           <div>
-            <label className="text-gray-400 block mb-1">Market Cap Min ($)</label>
+            <label className="text-gray-400 block mb-1">Market Cap Min</label>
             <input type="number" value={filters.market_cap_min} onChange={e => update('market_cap_min', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0" />
           </div>
           <div>
-            <label className="text-gray-400 block mb-1">Market Cap Max ($)</label>
+            <label className="text-gray-400 block mb-1">Market Cap Max</label>
             <input type="number" value={filters.market_cap_max} onChange={e => update('market_cap_max', e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="No limit" />
           </div>
@@ -477,7 +543,7 @@ export default function Screener() {
                     {r.is_adr && <span className="ml-1 px-1 py-0.5 bg-indigo-900/50 text-indigo-300 rounded text-[10px]">ADR</span>}
                   </td>
                   <td className="px-3 py-2 text-gray-500 text-xs font-mono">{r.currency}{r.financial_currency && r.financial_currency !== r.currency ? `/${r.financial_currency}` : ''}</td>
-                  <td className="px-3 py-2 text-right font-mono text-white">{r.price != null ? `$${r.price.toFixed(2)}` : '\u2014'}</td>
+                  <td className="px-3 py-2 text-right font-mono text-white">{formatPrice(r.price, r.currency)}</td>
                   <td className="px-3 py-2 text-right font-mono text-gray-400">{formatVolume(r.volume || r.avg_volume)}</td>
                   <td className="px-3 py-2 text-right font-mono" style={{ color: r.change_pct != null ? valueColor(r.change_pct, colors) : undefined }}>
                     {r.change_pct != null ? `${r.change_pct >= 0 ? '+' : ''}${r.change_pct.toFixed(2)}%` : '\u2014'}
@@ -496,6 +562,58 @@ export default function Screener() {
 
       {!loading && results.length === 0 && (
         <p className="text-gray-500 text-center py-8">No results match your criteria</p>
+      )}
+
+      {/* Pagination */}
+      {canPaginate && serverTotal > 0 && (
+        <div className="flex items-center justify-between text-sm text-gray-400 bg-gray-800 rounded-lg px-4 py-3 border border-gray-700">
+          <div className="flex items-center gap-3">
+            <span>Rows:</span>
+            <select
+              value={pageSize}
+              onChange={e => setPageSize(Number(e.target.value))}
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-xs"
+            >
+              {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <span>
+            {showingFrom}{'\u2013'}{showingTo} of {serverTotal.toLocaleString()}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page <= 1}
+              className="px-2 py-1 rounded text-xs hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              First
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-2 py-1 rounded text-xs hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+            <span className="text-white text-xs px-2">
+              Page {page} of {totalPages.toLocaleString()}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded text-xs hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded text-xs hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Last
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
