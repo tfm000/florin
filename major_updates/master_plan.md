@@ -22,7 +22,7 @@ This plan covers a 10-phase transformation of "Penny Stock Sentinel" into "Flori
 | 3 | `03_research_improvements.md` | Correlation matrices, sector chart enhancements | **COMPLETE** | Phase 2 |
 | 4 | `04_monitoring_consolidation.md` | Merge Watchlist + Live Monitor into "Monitoring" tab | **COMPLETE** | Phase 2 |
 | 5 | `05_trading_consolidation.md` | Merge Dashboard/Account/Trades/Stats under "Trading" tab | **COMPLETE** | Phase 4 |
-| 6 | `06_screener_redesign.md` | Enhanced screener with momentum, volume, save functionality | Not started | Phase 5 |
+| 6 | `06_screener_redesign.md` | Enhanced screener with momentum, volume, save functionality | **COMPLETE** | Phase 5 |
 | 7 | `07_live_alerts.md` | Screener-based Telegram alerts with optional LLM reports | Not started | Phase 6 |
 | 8 | `08_rename_to_florin.md` | Rebrand: Sentinel → Florin, new logos, remove penny-stock refs | Not started | Phase 7 |
 | 9 | `09_final_audit.md` | Second codebase audit post-changes | Not started | Phase 8 |
