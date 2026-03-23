@@ -28,7 +28,7 @@ export default function PresetCorrelationMatrix({
   method = 'pearson',
   period = '1y',
 }) {
-  const tickerStr = tickers.join(',')
+  const tickerStr = encodeURIComponent(tickers.join(','))
   const { data, loading, error } = useApi(
     `/correlation?tickers=${tickerStr}&method=${method}&period=${period}`
   )
