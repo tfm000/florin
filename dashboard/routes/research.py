@@ -633,7 +633,7 @@ class SectorReturn(BaseModel):
     m6: float | None = Field(None, alias="6m")
     y1: float | None = Field(None, alias="1y")
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "serialize_by_alias": True}
 
 
 class SectorItem(BaseModel):
