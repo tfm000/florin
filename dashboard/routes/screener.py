@@ -52,17 +52,18 @@ async def screen_stocks(
     momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
     sort_by: str = Query(default="intradaymarketcap", description="Sort field"),
     sort_asc: bool = Query(default=False),
-    limit: int = Query(default=100, ge=1, le=250),
+    offset: int = Query(default=0, ge=0, description="Results to skip (pagination)"),
+    limit: int = Query(default=25, ge=1, le=250),
     yf=Depends(get_yfinance_dep),
 ):
     """General-purpose multi-factor stock screener with momentum filtering."""
-    results = await run_screen(
+    results, total = await run_screen(
         price_min=price_min, price_max=price_max,
         market_cap_min=market_cap_min, market_cap_max=market_cap_max,
         pe_min=pe_min, pe_max=pe_max,
         dividend_yield_min=dividend_yield_min,
         region=region, sector=sector, exchange=exchange, asset_type=asset_type,
-        sort_by=sort_by, sort_asc=sort_asc, limit=limit, yf=yf,
+        sort_by=sort_by, sort_asc=sort_asc, offset=offset, limit=limit, yf=yf,
     )
 
     # Apply momentum post-filter if requested
@@ -70,8 +71,9 @@ async def screen_stocks(
         results = await apply_momentum_filter(
             results, momentum_min, momentum_max, momentum_period, yf,
         )
+        total = len(results)
 
-    return ScreenerResponse(total=len(results), results=results)
+    return ScreenerResponse(total=total, results=results)
 
 
 # ── Saved screener CRUD ──────────────────────────────────────────────────────

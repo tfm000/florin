@@ -268,6 +268,7 @@ function _summarizeFilters(filters) {
   if (filters.sector) parts.push(filters.sector)
   if (filters.asset_type) parts.push(ASSET_TYPE_LABELS[filters.asset_type] || filters.asset_type)
   if (filters.exchange) parts.push(EXCHANGE_LABELS[filters.exchange] || filters.exchange)
+  if (filters.currency) parts.push(filters.currency)
   if (filters.momentum_period) parts.push(`Momentum: ${filters.momentum_period}`)
   return parts.length > 0 ? parts.join(' \u00B7 ') : 'All US assets'
 }

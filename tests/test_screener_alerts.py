@@ -237,7 +237,7 @@ class TestScreenerAlertService:
             ScreenerResult(ticker="AAPL", name="Apple", price=180.0, change_pct=1.5),
         ]
 
-        with patch("scanner.screener_alert_service.run_screen", return_value=mock_results):
+        with patch("scanner.screener_alert_service.run_screen", return_value=(mock_results, len(mock_results))):
             # Subscribe before running
             events = []
 
@@ -289,7 +289,7 @@ class TestScreenerAlertService:
             ScreenerResult(ticker="MSFT", name="Microsoft", price=400.0),
         ]
 
-        with patch("scanner.screener_alert_service.run_screen", return_value=mock_results):
+        with patch("scanner.screener_alert_service.run_screen", return_value=(mock_results, len(mock_results))):
             async with db.session() as session:
                 from sqlalchemy import select
                 result = await session.execute(
