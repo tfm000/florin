@@ -22,12 +22,12 @@ const PALETTES = {
   },
   colorblind: {
     positive: '#2563EB',    // blue — gains, good ratios, low risk
-    negative: '#EA580C',    // orange — losses, bad ratios, high risk
+    negative: '#EF4444',    // red — losses, bad ratios, high risk
     warning: '#F59E0B',     // amber — medium risk, caution
     neutral: '#9CA3AF',     // gray — no signal
-    series: ['#2563EB', '#14B8A6', '#F59E0B', '#EA580C', '#EC4899'],
-    regime: ['#2563EB', '#EA580C', '#F59E0B'],  // low vol (blue), high vol (orange), mid (amber)
-    putIv: '#EA580C',       // orange
+    series: ['#2563EB', '#14B8A6', '#F59E0B', '#EF4444', '#EC4899'],
+    regime: ['#2563EB', '#EF4444', '#F59E0B'],  // low vol (blue), high vol (red), mid (amber)
+    putIv: '#EF4444',       // red
     callIv: '#2563EB',      // blue
     compositeVol: '#14B8A6', // teal (distinct from blue)
     atm: '#F59E0B',         // amber

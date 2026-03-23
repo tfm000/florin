@@ -79,10 +79,9 @@ function ToggleButtonGroup({ options, value, onChange }) {
 function TreemapContent({ x, y, width, height, name, returnVal, colors }) {
   if (width < 30 || height < 20) return null
   const isPositive = (returnVal || 0) >= 0
-  const intensity = Math.min(Math.abs(returnVal || 0) / 3, 1)
   const bg = isPositive
-    ? `rgba(${hexToRgb(colors.positive)}, ${0.2 + intensity * 0.6})`
-    : `rgba(${hexToRgb(colors.negative)}, ${0.2 + intensity * 0.6})`
+    ? `rgba(${hexToRgb(colors.positive)}, 0.55)`
+    : `rgba(${hexToRgb(colors.negative)}, 0.55)`
 
   return (
     <g>

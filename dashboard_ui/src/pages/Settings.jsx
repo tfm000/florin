@@ -101,7 +101,7 @@ export default function Settings() {
             <div className="flex items-center gap-3 text-xs text-gray-400">
               <span>Active palette:</span>
               <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#2563EB' }} /> Blue (positive)</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#EA580C' }} /> Orange (negative)</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#EF4444' }} /> Red (negative)</span>
               <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#14B8A6' }} /> Teal</span>
               <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{ background: '#F59E0B' }} /> Amber</span>
             </div>
