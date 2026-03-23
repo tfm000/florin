@@ -131,6 +131,9 @@ class YFinanceProvider:
     # Semaphore for throttling concurrent per-ticker calls (e.g. get_info).
     _info_semaphore = asyncio.Semaphore(10)
 
+    def __init__(self, policy_rate_fetcher=None):
+        self._policy_rate_fetcher = policy_rate_fetcher
+
     async def get_histories_batch(
         self,
         tickers: list[str],
@@ -1068,8 +1071,15 @@ class YFinanceProvider:
         return result
 
     async def get_g10_rates(self) -> list[dict]:
-        """G10 central bank policy rates (semi-static)."""
-        # These are updated on central bank decisions, not real-time
+        """G10 central bank policy rates.
+
+        Delegates to PolicyRateFetcher if available (fetches from BIS API).
+        Falls back to hardcoded values if no fetcher is configured.
+        """
+        if self._policy_rate_fetcher is not None:
+            return await self._policy_rate_fetcher.get_rates()
+
+        # Fallback: hardcoded values (only used if fetcher not configured)
         return [
             {"country": "United States", "central_bank": "Federal Reserve", "rate": 4.50, "currency": "USD"},
             {"country": "Eurozone", "central_bank": "ECB", "rate": 2.65, "currency": "EUR"},

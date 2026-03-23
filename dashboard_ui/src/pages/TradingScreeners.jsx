@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useApi, apiDelete, apiPut } from '../hooks/useApi'
 import { useChartColors } from '../hooks/useChartColors'
 import { valueColor } from '../utils/colors'
+import { EXCHANGE_LABELS } from '../utils/exchanges'
 
 const INTERVAL_OPTIONS = [
   { value: 60, label: '1 min' },
@@ -242,19 +243,6 @@ function AlertLog({ screenerId }) {
 const ASSET_TYPE_LABELS = {
   EQUITY: 'Stocks', ETF: 'ETFs', MUTUALFUND: 'Mutual Funds',
   INDEX: 'Indices', CRYPTOCURRENCY: 'Crypto',
-}
-
-const EXCHANGE_LABELS = {
-  'NMS,NGM,NCM': 'NASDAQ', NYQ: 'NYSE', PCX: 'NYSE Arca',
-  ASE: 'NYSE American', BTS: 'BATS', 'PNK,OQB,OQX': 'OTC',
-  PAR: 'Euronext Paris', AMS: 'Euronext Amsterdam', BRU: 'Euronext Brussels',
-  LIS: 'Euronext Lisbon', MIL: 'Borsa Italiana', MAD: 'BME Madrid',
-  STO: 'Nasdaq Stockholm', EBS: 'SIX Swiss', SES: 'SGX',
-  KSC: 'KOSPI', KOE: 'KOSDAQ', SAO: 'B3', MEX: 'BMV',
-  TAI: 'TWSE', TWO: 'TPEx', NZE: 'NZX',
-  LSE: 'London', IOB: 'IOB', TOR: 'TSX', VAN: 'TSX-V', CNQ: 'CSE',
-  GER: 'XETRA', FRA: 'Frankfurt', JPX: 'Tokyo', HKG: 'HKEX',
-  ASX: 'ASX', NSI: 'NSE', BSE: 'BSE',
 }
 
 function _summarizeFilters(filters) {

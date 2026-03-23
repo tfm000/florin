@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useApi, apiPost, apiFetch } from '../hooks/useApi'
 import { useChartColors } from '../hooks/useChartColors'
 import { valueColor } from '../utils/colors'
+import { EXCHANGES } from '../utils/exchanges'
 import ExportButton from '../components/ExportButton'
 
 const SECTORS = [
@@ -34,47 +35,6 @@ const REGIONS = [
   { value: 'nz', label: 'New Zealand' },
   { value: 'be', label: 'Belgium' },
   { value: 'pt', label: 'Portugal' },
-]
-
-const EXCHANGES = [
-  { value: 'NMS', label: 'NASDAQ GS', region: 'us' },
-  { value: 'NGM', label: 'NASDAQ GM', region: 'us' },
-  { value: 'NCM', label: 'NASDAQ CM', region: 'us' },
-  { value: 'NYQ', label: 'NYSE', region: 'us' },
-  { value: 'PCX', label: 'NYSE Arca', region: 'us' },
-  { value: 'ASE', label: 'NYSE American', region: 'us' },
-  { value: 'BTS', label: 'BATS', region: 'us' },
-  { value: 'PNK', label: 'OTC (Pink/ADRs)', region: 'us' },
-  { value: 'OQB', label: 'OTC (QB Tier)', region: 'us' },
-  { value: 'OQX', label: 'OTC (QX Tier)', region: 'us' },
-  { value: 'LSE', label: 'London', region: 'gb' },
-  { value: 'IOB', label: 'Intl. Order Book', region: 'gb' },
-  { value: 'TOR', label: 'Toronto (TSX)', region: 'ca' },
-  { value: 'VAN', label: 'TSX Venture', region: 'ca' },
-  { value: 'CNQ', label: 'CSE', region: 'ca' },
-  { value: 'GER', label: 'XETRA', region: 'de' },
-  { value: 'FRA', label: 'Frankfurt', region: 'de' },
-  { value: 'JPX', label: 'Tokyo (JPX)', region: 'jp' },
-  { value: 'HKG', label: 'HKEX', region: 'hk' },
-  { value: 'ASX', label: 'ASX', region: 'au' },
-  { value: 'NSI', label: 'NSE India', region: 'in' },
-  { value: 'BSE', label: 'BSE India', region: 'in' },
-  { value: 'PAR', label: 'Euronext Paris', region: 'fr' },
-  { value: 'AMS', label: 'Euronext Amsterdam', region: 'nl' },
-  { value: 'BRU', label: 'Euronext Brussels', region: 'be' },
-  { value: 'LIS', label: 'Euronext Lisbon', region: 'pt' },
-  { value: 'MIL', label: 'Borsa Italiana', region: 'it' },
-  { value: 'MAD', label: 'BME Madrid', region: 'es' },
-  { value: 'STO', label: 'Nasdaq Stockholm', region: 'se' },
-  { value: 'EBS', label: 'SIX Swiss', region: 'ch' },
-  { value: 'SES', label: 'SGX', region: 'sg' },
-  { value: 'KSC', label: 'KOSPI', region: 'kr' },
-  { value: 'KOE', label: 'KOSDAQ', region: 'kr' },
-  { value: 'SAO', label: 'B3 (Bovespa)', region: 'br' },
-  { value: 'MEX', label: 'BMV Mexico', region: 'mx' },
-  { value: 'TAI', label: 'TWSE', region: 'tw' },
-  { value: 'TWO', label: 'TPEx', region: 'tw' },
-  { value: 'NZE', label: 'NZX', region: 'nz' },
 ]
 
 const ASSET_TYPES = [

@@ -1,11 +1,11 @@
 """
-Market breadth scanner — tracks advance/decline across the Russell 3000.
+Market breadth scanner — tracks advance/decline across configurable exchanges.
 
 Runs hourly during market hours:
-1. Discovers ~3000 tickers via yfinance screener (all major US equities)
-2. Fetches live prices via Alpaca snapshots (15 batched requests)
+1. Discovers tickers via yfinance screener (configurable exchanges)
+2. Fetches live prices via Alpaca snapshots (batched) when available
 3. Computes advance/decline and stores in DB
-4. Falls back to yfinance if Alpaca not available
+4. Falls back to paginated yfinance screener if Alpaca not available
 
 The ticker list is cached for 24 hours (constituents don't change intraday).
 """
@@ -29,43 +29,65 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Cache: (timestamp, ticker_list)
-_ticker_cache: tuple[float, list[str]] = (0.0, [])
+# Default US exchange codes used by the background scanner
+DEFAULT_EXCHANGES = "NMS,NGM,NCM,NYQ,ASE"
+
+# Cache: (timestamp, exchange_key, ticker_list)
+_ticker_cache: tuple[float, str, list[str]] = (0.0, "", [])
 _TICKER_CACHE_TTL = 86400  # 24 hours
 
 
-async def discover_russell3000_tickers(yf: YFinanceProvider) -> list[str]:
-    """Discover ~3000 large/mid-cap US equities via yfinance screener.
+async def discover_tickers(
+    yf: YFinanceProvider,
+    exchange: str = DEFAULT_EXCHANGES,
+) -> list[str]:
+    """Discover large/mid-cap equities via yfinance screener.
 
-    Filters: US region, major exchanges, market cap > $300M.
-    This approximates the Russell 3000 index.
+    Args:
+        yf: YFinance provider (unused directly; screener runs via yfinance).
+        exchange: Comma-separated exchange codes (e.g. "NMS,NGM,NCM,NYQ").
     """
     global _ticker_cache
     now = time.time()
-    if now - _ticker_cache[0] < _TICKER_CACHE_TTL and _ticker_cache[1]:
-        return _ticker_cache[1]
+    cache_key = exchange
+    if (
+        now - _ticker_cache[0] < _TICKER_CACHE_TTL
+        and _ticker_cache[1] == cache_key
+        and _ticker_cache[2]
+    ):
+        return _ticker_cache[2]
+
+    exchange_codes = [e.strip() for e in exchange.split(",") if e.strip()]
 
     def _screen():
         try:
             from yfinance import EquityQuery, screen
 
-            query = EquityQuery("and", [
-                EquityQuery("eq", ["region", "us"]),
-                EquityQuery("or", [
-                    EquityQuery("eq", ["exchange", "NMS"]),
-                    EquityQuery("eq", ["exchange", "NGM"]),
-                    EquityQuery("eq", ["exchange", "NCM"]),
-                    EquityQuery("eq", ["exchange", "NYQ"]),
-                    EquityQuery("eq", ["exchange", "ASE"]),
-                ]),
-                EquityQuery("gt", ["intradaymarketcap", 300_000_000]),  # > $300M
-            ])
+            operands = [
+                EquityQuery("gt", ["intradaymarketcap", 300_000_000]),
+            ]
+
+            if exchange_codes:
+                if len(exchange_codes) == 1:
+                    operands.append(EquityQuery("eq", ["exchange", exchange_codes[0]]))
+                else:
+                    operands.append(EquityQuery("or", [
+                        EquityQuery("eq", ["exchange", e]) for e in exchange_codes
+                    ]))
+            else:
+                operands.append(EquityQuery("eq", ["region", "us"]))
+
+            # EquityQuery AND requires at least 2 operands
+            if len(operands) < 2:
+                operands.append(EquityQuery("gt", ["intradayprice", 0]))
+
+            query = EquityQuery("and", operands)
 
             all_tickers = []
             offset = 0
             page_size = 250
 
-            while offset < 4000:  # Safety cap
+            while offset < 10000:  # Safety cap
                 resp = screen(query, size=page_size, offset=offset,
                               sortField="intradaymarketcap", sortAsc=False)
                 quotes = resp.get("quotes", []) if resp else []
@@ -87,15 +109,15 @@ async def discover_russell3000_tickers(yf: YFinanceProvider) -> list[str]:
                     seen.add(t)
                     unique.append(t)
 
-            logger.info("Breadth scanner: discovered %d large/mid-cap US equities", len(unique))
+            logger.info("Breadth scanner: discovered %d equities for exchanges %s", len(unique), exchange)
             return unique
 
         except Exception:
-            logger.exception("Failed to discover Russell 3000 tickers")
+            logger.exception("Failed to discover tickers for exchanges %s", exchange)
             return []
 
     tickers = await asyncio.to_thread(_screen)
-    _ticker_cache = (now, tickers)
+    _ticker_cache = (now, cache_key, tickers)
     return tickers
 
 
@@ -103,11 +125,12 @@ async def compute_breadth(
     tickers: list[str],
     alpaca: AlpacaProvider | None = None,
     yf: YFinanceProvider | None = None,
+    exchange: str = DEFAULT_EXCHANGES,
 ) -> dict:
     """Compute advance/decline from live price data.
 
     Uses Alpaca snapshots if available (fast, batched).
-    Falls back to yfinance for a smaller sample if not.
+    Falls back to paginated yfinance screener results if not.
     """
     advancing = 0
     declining = 0
@@ -127,24 +150,30 @@ async def compute_breadth(
         except Exception:
             logger.exception("Alpaca breadth snapshot failed")
 
-    # Fallback: if no Alpaca data, sample via yfinance (slower, limited)
-    if advancing + declining + unchanged == 0 and yf:
-        sample = tickers[:100]  # yfinance is slow, sample only
-        for sym in sample:
-            try:
-                info = await yf.get_info(sym)
-                price = info.get("current_price")
-                prev = info.get("previous_close")
-                if price and prev and prev > 0:
-                    change = ((price - prev) / prev) * 100
-                    if change > 0.01:
-                        advancing += 1
-                    elif change < -0.01:
-                        declining += 1
-                    else:
-                        unchanged += 1
-            except Exception:
-                continue
+    # Fallback: paginate through yfinance screener for all matching stocks
+    if advancing + declining + unchanged == 0:
+        from dashboard.services.screener_engine import run_screen
+
+        offset = 0
+        page_size = 250
+        while True:
+            results, total = await run_screen(
+                exchange=exchange,
+                market_cap_min=300_000_000,
+                limit=page_size,
+                offset=offset,
+            )
+            for r in results:
+                change = r.change_pct or 0
+                if change > 0.01:
+                    advancing += 1
+                elif change < -0.01:
+                    declining += 1
+                else:
+                    unchanged += 1
+            offset += page_size
+            if not results or offset >= total:
+                break
 
     total = advancing + declining + unchanged
     ad_ratio = advancing / declining if declining > 0 else float(advancing) if advancing > 0 else 0
@@ -203,7 +232,7 @@ async def breadth_scan_loop(
     while True:
         try:
             if is_market_open():
-                tickers = await discover_russell3000_tickers(yf)
+                tickers = await discover_tickers(yf)
                 if tickers:
                     data = await compute_breadth(tickers, alpaca=alpaca, yf=yf)
                     if data["total"] > 0:
