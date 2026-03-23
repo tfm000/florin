@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -110,7 +110,11 @@ class ScreenerAlertService:
         """Check if enough time has passed since the screener's last run."""
         if screener.last_run_at is None:
             return True
-        elapsed = (datetime.now(UTC) - screener.last_run_at).total_seconds()
+        last_run = screener.last_run_at
+        # Ensure timezone-aware comparison (DB may store naive datetimes)
+        if last_run.tzinfo is None:
+            last_run = last_run.replace(tzinfo=UTC)
+        elapsed = (datetime.now(UTC) - last_run).total_seconds()
         return elapsed >= screener.run_interval_seconds
 
     async def _run_screener(self, screener: SavedScreenerORM) -> None:
@@ -189,9 +193,8 @@ class ScreenerAlertService:
 
             await self._log_alert(screener.id, result)
 
-        # Update counters
-        await self._increment_alerts_sent(screener.id, len(to_alert))
-        await self._update_last_run(screener.id)
+        # Update counters and last_run_at in a single DB call
+        await self._update_after_alerts(screener.id, len(to_alert))
 
         logger.info(
             "Screener '%s': %d new alerts from %d matches",
@@ -234,7 +237,7 @@ class ScreenerAlertService:
                     sent_at=datetime.now(UTC),
                 ))
                 await session.commit()
-        except (OSError, ValueError) as e:
+        except Exception as e:
             logger.error(
                 "Failed to log screener alert for %s: %s", result.ticker, e,
             )
@@ -250,14 +253,15 @@ class ScreenerAlertService:
                 orm.last_run_at = datetime.now(UTC)
                 await session.commit()
 
-    async def _increment_alerts_sent(self, screener_id: str, count: int) -> None:
-        """Increment the alerts_sent_today counter for a screener."""
+    async def _update_after_alerts(self, screener_id: str, count: int) -> None:
+        """Update last_run_at and increment alerts_sent_today in a single transaction."""
         async with self._db.session() as session:
             result = await session.execute(
                 select(SavedScreenerORM).where(SavedScreenerORM.id == screener_id)
             )
             orm = result.scalar()
             if orm:
+                orm.last_run_at = datetime.now(UTC)
                 orm.alerts_sent_today += count
                 await session.commit()
 

@@ -114,7 +114,8 @@ def downgrade() -> None:
 
     with op.batch_alter_table('portfolio_cache_returns', schema=None) as batch_op:
         batch_op.drop_constraint('fk_cache_returns_portfolio', type_='foreignkey')
-        batch_op.drop_index('ix_cache_returns_lookup')
+        # Note: ix_cache_returns_lookup was created in portfolio_cache_tables migration,
+        # not here — do not drop it in this downgrade.
         batch_op.drop_index(batch_op.f('ix_portfolio_cache_returns_portfolio_id'))
         batch_op.alter_column('prorated',
                existing_type=sa.BOOLEAN(),

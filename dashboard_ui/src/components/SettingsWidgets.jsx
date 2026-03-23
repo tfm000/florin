@@ -114,12 +114,3 @@ export function SettingField({ field, editValue, onChange }) {
   )
 }
 
-/**
- * Shared settings save logic — handles loading, editing, saving, and message display.
- * Used by both the system Settings page and TradingSettings page.
- */
-export function useSettingsState(filterSectionIds = null) {
-  // This is a pattern helper, not a hook — the actual hook calls remain in the consuming component.
-  // filterSectionIds: if provided, only show sections with matching IDs.
-  return { filterSectionIds }
-}

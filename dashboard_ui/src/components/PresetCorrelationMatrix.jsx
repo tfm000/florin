@@ -1,12 +1,5 @@
 import { useApi } from '../hooks/useApi'
-
-function corrColor(val) {
-  if (val == null) return 'transparent'
-  const abs = Math.min(Math.abs(val), 1)
-  if (val > 0) return `rgba(59, 130, 246, ${abs * 0.8})`
-  if (val < 0) return `rgba(239, 68, 68, ${abs * 0.8})`
-  return 'transparent'
-}
+import { corrColor } from '../utils/colors'
 
 /**
  * Read-only correlation matrix with fixed ticker lists and display labels.
