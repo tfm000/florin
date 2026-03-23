@@ -64,3 +64,7 @@ def get_sentiment_aggregator():
 
 def get_rf_fetcher():
     return _state.get("rf_fetcher")
+
+
+def get_policy_rate_fetcher():
+    return _state.get("policy_rate_fetcher")

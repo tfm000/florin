@@ -4,7 +4,7 @@ import { corrColor } from '../utils/colors'
 import SearchBar from './SearchBar'
 import ExportButton from './ExportButton'
 
-const METHODS = [
+export const CORR_METHODS = [
   { value: 'pearson', label: 'Pearson' },
   { value: 'spearman', label: 'Spearman' },
   { value: 'kendall', label: 'Kendall' },
@@ -19,10 +19,29 @@ const METHODS = [
   { value: 'laloux_pp_kendall', label: 'Laloux PP Kendall' },
 ]
 
-export default function CorrelationMatrix() {
+export const CORR_PERIODS = [
+  { value: '1mo', label: '1M' },
+  { value: '3mo', label: '3M' },
+  { value: '1y', label: '1Y' },
+  { value: '3y', label: '3Y' },
+  { value: 'max', label: 'Max' },
+]
+
+/**
+ * User-driven correlation matrix.
+ *
+ * Props:
+ *   method      — external correlation method (overrides internal state)
+ *   period      — external period (overrides internal state)
+ *   hideControls — hide method/period selectors when controlled externally
+ */
+export default function CorrelationMatrix({ method: extMethod, period: extPeriod, hideControls = false }) {
   const [tickers, setTickers] = useState(['SPY', 'QQQ', 'IWM', 'GLD', 'TLT'])
-  const [method, setMethod] = useState('pearson')
-  const [period, setPeriod] = useState('1y')
+  const [intMethod, setIntMethod] = useState('pearson')
+  const [intPeriod, setIntPeriod] = useState('1y')
+
+  const method = extMethod ?? intMethod
+  const period = extPeriod ?? intPeriod
 
   const tickerStr = tickers.join(',')
   const { data, loading } = useApi(
@@ -54,17 +73,18 @@ export default function CorrelationMatrix() {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-white font-semibold">Correlation Matrix</h3>
         <div className="flex items-center gap-2">
-          <select value={method} onChange={e => setMethod(e.target.value)}
-            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
-            {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-          <select value={period} onChange={e => setPeriod(e.target.value)}
-            className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
-            <option value="3mo">3M</option>
-            <option value="6mo">6M</option>
-            <option value="1y">1Y</option>
-            <option value="3y">3Y</option>
-          </select>
+          {!hideControls && (
+            <>
+              <select value={method} onChange={e => setIntMethod(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
+                {CORR_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+              <select value={period} onChange={e => setIntPeriod(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white">
+                {CORR_PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </>
+          )}
           {exportData.length > 0 && <ExportButton data={exportData} filename={`corr_${method}`} />}
         </div>
       </div>

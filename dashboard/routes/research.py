@@ -156,6 +156,7 @@ class PolicyRate(BaseModel):
     central_bank: str
     rate: float
     currency: str
+    effective_date: str = ""
 
 
 class YieldCurveHistoryResponse(BaseModel):

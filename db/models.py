@@ -456,3 +456,24 @@ class ScreenerAlertLogORM(Base):
     change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     alert_data_json: Mapped[str] = mapped_column(Text, default="{}")
     sent_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Central Bank Policy Rates
+# =============================================================================
+
+class PolicyRateORM(Base):
+    """G10 central bank policy rates fetched from BIS CBPOL API."""
+    __tablename__ = "policy_rates"
+    __table_args__ = (
+        UniqueConstraint("country_code", name="uq_policy_rate_country"),
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    country_code: Mapped[str] = mapped_column(String(3), index=True)  # US, XM, GB, ...
+    country: Mapped[str] = mapped_column(String(50))
+    central_bank: Mapped[str] = mapped_column(String(50))
+    currency: Mapped[str] = mapped_column(String(3))
+    rate: Mapped[float] = mapped_column(Float)
+    effective_date: Mapped[str] = mapped_column(String(10), default="")  # YYYY-MM-DD
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

@@ -97,9 +97,13 @@ class Florin:
             await data_provider.connect()
             logger.info("Alpaca data provider connected")
 
+        # Policy rate fetcher (BIS API)
+        from data.policy_rates import PolicyRateFetcher
+        policy_rate_fetcher = PolicyRateFetcher(self.db)
+
         # yfinance provider (always available, no API key needed)
         from data.yfinance_provider import YFinanceProvider
-        yfinance_provider = YFinanceProvider()
+        yfinance_provider = YFinanceProvider(policy_rate_fetcher=policy_rate_fetcher)
 
         # Screener alert service (replaces old MomentumScanner + UniverseManager)
         from scanner.screener_alert_service import ScreenerAlertService
@@ -146,6 +150,7 @@ class Florin:
         from stats.risk_free import RiskFreeRateFetcher
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
+        set_state("policy_rate_fetcher", policy_rate_fetcher)
 
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
