@@ -402,3 +402,29 @@ class PortfolioCacheReturnORM(Base):
     date: Mapped[str] = mapped_column(String(10))          # YYYY-MM-DD
     cumulative_return: Mapped[float] = mapped_column(Float)
     prorated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# =============================================================================
+# Saved Screeners (user-configured filter presets)
+# =============================================================================
+
+class SavedScreenerORM(Base):
+    """Saved screener filter configuration."""
+    __tablename__ = "saved_screeners"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    filters_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON blob of all filter params
+    sort_by: Mapped[str] = mapped_column(String(50), default="intradaymarketcap")
+    sort_asc: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Phase 7: live alert fields (pre-created for migration efficiency)
+    is_alert_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_alerts_per_day: Mapped[int] = mapped_column(Integer, default=10)
+    alerts_sent_today: Mapped[int] = mapped_column(Integer, default=0)
+    include_llm_report: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    run_interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
