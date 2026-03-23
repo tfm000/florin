@@ -1,5 +1,5 @@
 """
-FastAPI Depends() callables for the Sentinel Terminal dashboard.
+FastAPI Depends() callables for the Florin Terminal dashboard.
 
 These provide idiomatic FastAPI dependency injection for new routes,
 wrapping the existing service locator in dashboard/deps.py.

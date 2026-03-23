@@ -91,7 +91,8 @@ export default function App() {
         {/* Nav Bar */}
         <nav className="bg-gray-800 border-b border-gray-700 px-4 py-3">
           <div className="max-w-7xl mx-auto flex items-center gap-4">
-            <span className="text-white font-bold text-lg tracking-tight font-mono">Sentinel Terminal</span>
+            <img src="/florin.png" alt="Florin" className="h-7 w-auto" />
+            <span className="text-white font-bold text-lg tracking-tight font-mono">Florin Terminal</span>
             <TradingModeBadge />
             <div className="flex gap-1 flex-1 overflow-x-auto">
               {NAV_ITEMS.map(item => (

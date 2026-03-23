@@ -46,7 +46,7 @@ async def alert_listener(
         try:
             # Gather account context if broker available
             broker_summary = None
-            penny_position_count = 0
+            open_position_count = 0
             default_order_size = ""
 
             if broker:
@@ -57,11 +57,7 @@ async def alert_listener(
 
                 try:
                     positions = await broker.get_positions()
-                    price_max = settings.scan_price_max if settings else 5.0
-                    penny_position_count = sum(
-                        1 for p in positions
-                        if p.current_price and p.current_price < price_max
-                    )
+                    open_position_count = len(positions)
                 except Exception:
                     logger.debug("Could not fetch positions for alert context")
 
@@ -71,7 +67,7 @@ async def alert_listener(
             message = format_alert_message(
                 report,
                 broker_summary=broker_summary,
-                penny_position_count=penny_position_count,
+                open_position_count=open_position_count,
                 default_order_size=default_order_size,
             )
             await bot.send_alert(message)

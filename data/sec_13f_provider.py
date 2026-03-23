@@ -21,7 +21,7 @@ SEC_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions"
 SEC_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data"
 OPENFIGI_URL = "https://api.openfigi.com/v3/mapping"
-USER_AGENT = "SentinelTerminal admin@example.com"
+USER_AGENT = "FlorinTerminal admin@example.com"
 
 # Cache: CUSIP → ticker (hydrated from DB on startup, updated by OpenFIGI)
 _cusip_cache: dict[str, str] = {}

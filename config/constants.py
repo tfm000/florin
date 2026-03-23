@@ -10,7 +10,7 @@ SUPPORTED_EXCHANGES = {"NASDAQ", "NYSE", "NYSE ARCA", "NYSE MKT"}
 T212_TICKER_SUFFIX = "_US_EQ"
 
 # --- Reddit subreddits to monitor ---
-PENNY_STOCK_SUBREDDITS = [
+STOCK_SUBREDDITS = [
     "pennystocks",
     "wallstreetbets",
     "stocks",
@@ -26,7 +26,7 @@ STOCKTWITS_API_BASE = "https://api.stocktwits.com/api/2"
 # --- SEC EDGAR ---
 SEC_EDGAR_BASE = "https://efts.sec.gov/LATEST"
 SEC_EDGAR_SUBMISSIONS = "https://data.sec.gov/submissions"
-SEC_EDGAR_USER_AGENT = "SentinelTerminal admin@example.com"
+SEC_EDGAR_USER_AGENT = "FlorinTerminal admin@example.com"
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data"
 
@@ -50,17 +50,17 @@ FRAUD_COORDINATED_POST_WINDOW_MINUTES = 60
 FRAUD_COORDINATED_POST_THRESHOLD = 5  # 5+ posts in window from new accounts
 
 # --- LLM prompt templates ---
-ANALYSIS_SYSTEM_PROMPT = """You are a senior financial analyst specialising in US penny stocks 
-(stocks trading under $5 on NASDAQ/NYSE). You are cautious, data-driven, and particularly alert 
-to pump-and-dump schemes and market manipulation.
+ANALYSIS_SYSTEM_PROMPT = """You are a senior financial analyst specialising in US equities.
+You are cautious, data-driven, and particularly alert to pump-and-dump schemes and market
+manipulation, especially for small-cap and micro-cap stocks.
 
-Your task is to analyse a penny stock that has shown significant price momentum and provide a 
+Your task is to analyse a stock that has shown significant price momentum and provide a
 structured assessment based on the sentiment data, SEC filings, and fraud risk indicators provided.
 
 Always respond with valid JSON matching the requested schema. Be specific and cite the data 
 provided. If data is insufficient, say so explicitly rather than speculating."""
 
-SINGLE_REPORT_PROMPT = """Analyse the following penny stock alert and sentiment data.
+SINGLE_REPORT_PROMPT = """Analyse the following stock alert and sentiment data.
 
 ## Stock Alert
 - Ticker: {ticker}
@@ -94,8 +94,8 @@ Respond with ONLY valid JSON in this exact schema:
     "key_factors": ["<most important factor 1>", "<factor 2>", "<factor 3>"]
 }}"""
 
-CONSENSUS_META_PROMPT = """You are a senior portfolio manager reviewing reports from multiple 
-AI analysts about the same penny stock. Each analyst has independently assessed the stock. 
+CONSENSUS_META_PROMPT = """You are a senior portfolio manager reviewing reports from multiple
+AI analysts about the same stock. Each analyst has independently assessed the stock.
 Your job is to synthesise their views into a consensus report.
 
 ## Individual Analyst Reports
@@ -115,7 +115,7 @@ Analyse the reports and respond with ONLY valid JSON:
     "dissenting_view": "<brief note on any outlier opinion, or null>"
 }}"""
 
-# --- Research analysis prompt (for any asset, not just penny stocks) ---
+# --- Research analysis prompt (for any asset) ---
 RESEARCH_ANALYSIS_SYSTEM_PROMPT = """You are a senior financial analyst. You provide data-driven
 analysis of any publicly traded asset. You have access to macro context, recent news, and
 performance metrics. Always respond with valid JSON matching the requested schema.

@@ -76,7 +76,7 @@ class MarketDataProvider(ABC):
     async def get_instruments(self) -> list[StockInfo]:
         """
         Get list of all tradeable instruments with metadata.
-        Used for building the penny stock universe.
+        Used for building the stock universe.
         """
         ...
 

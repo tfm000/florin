@@ -1,7 +1,7 @@
 """
 Yahoo Finance data provider via yfinance.
 
-Powers research, enrichment, and penny stock screening.
+Powers research, enrichment, and stock screening.
 All yfinance calls are synchronous — wrapped in asyncio.to_thread().
 Results are cached with TTL to reduce API load.
 """
@@ -654,7 +654,7 @@ class YFinanceProvider:
         logger.info("yfinance: enriched %d/%d tickers", len(results), len(tickers[:max_calls]))
         return results
 
-    async def filter_penny_stocks(
+    async def filter_stocks(
         self,
         price_min: float,
         price_max: float,
@@ -662,7 +662,7 @@ class YFinanceProvider:
         market_cap_max: float = 0,
     ) -> list[StockInfo]:
         """
-        Screen for penny stocks using yfinance screener.
+        Screen for stocks using yfinance screener.
         No return-based filtering — just price/market_cap.
         Uses yf.EquityQuery + yf.screen() (yfinance >= 1.0).
         """
@@ -701,7 +701,7 @@ class YFinanceProvider:
                 all_quotes = resp.get("quotes", []) if resp else []
 
                 # Paginate through ALL results — yfinance is free with no rate limit.
-                # This ensures we don't miss any penny stock opportunities.
+                # This ensures we don't miss any matching stocks.
                 # Typically ~1700 results = 7 pages = ~2 seconds.
                 offset = PAGE_SIZE
                 while offset < total:
@@ -735,12 +735,12 @@ class YFinanceProvider:
                     ))
 
                 logger.info(
-                    "yfinance screener: %d/%d penny stocks on NASDAQ/NYSE/AMEX",
+                    "yfinance screener: %d/%d stocks on NASDAQ/NYSE/AMEX",
                     len(stocks), total,
                 )
                 return stocks
             except Exception:
-                logger.exception("yfinance penny stock screening failed")
+                logger.exception("yfinance stock screening failed")
                 return []
 
         return await asyncio.to_thread(_screen)

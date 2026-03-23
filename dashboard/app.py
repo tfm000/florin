@@ -16,12 +16,12 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from config.settings import Settings
 from core.events import EventBus
-from core.exceptions import SentinelError
+from core.exceptions import FlorinError
 from db.database import Database
 from dashboard.deps import set_state
 from dashboard.middleware import (
     RequestIdMiddleware,
-    sentinel_exception_handler,
+    florin_exception_handler,
 )
 from dashboard.ws import ConnectionManager
 
@@ -43,14 +43,14 @@ def create_app(
     set_state("ws_manager", ConnectionManager())
 
     app = FastAPI(
-        title="Sentinel Terminal",
+        title="Florin Terminal",
         version="0.2.0",
         docs_url="/api/docs",
         redoc_url=None,
     )
 
     # Exception handler for domain exceptions
-    app.add_exception_handler(SentinelError, sentinel_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)
 
     # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
     # In production the frontend is served from the same origin, so CORS

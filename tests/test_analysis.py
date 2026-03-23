@@ -188,7 +188,7 @@ class TestFraudDetector:
         assert result.score > 0
 
     @pytest.mark.asyncio
-    async def test_sub_penny_stock(self) -> None:
+    async def test_sub_dollar_stock(self) -> None:
         detector = FraudDetector()
         alert = make_alert(price=0.05)
         sentiment = make_sentiment()

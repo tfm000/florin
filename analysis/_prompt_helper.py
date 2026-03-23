@@ -155,7 +155,7 @@ def build_research_prompt(
     news: list[dict],
     user_context: str = "",
 ) -> str:
-    """Build prompt for research analysis (any asset, not just penny stocks)."""
+    """Build prompt for research analysis (any asset)."""
     # Format performance metrics
     perf_lines = []
     if performance:

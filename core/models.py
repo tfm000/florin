@@ -117,7 +117,7 @@ class StockInfo(BaseModel):
     inferred_market_cap: Optional[float] = None  # shares_outstanding × price
     avg_volume: int = 0
     last_price: float = 0.0
-    in_universe: bool = True  # Still qualifies as penny stock
+    in_universe: bool = True  # Still qualifies for the universe
 
 
 class BarData(BaseModel):

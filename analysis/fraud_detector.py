@@ -218,7 +218,7 @@ class FraudDetector:
             flags.append(f"Sub-dime stock: ${alert.price:.4f} — extreme manipulation risk")
             return 3.0
         elif alert.price < 1.00:
-            flags.append(f"Sub-penny stock: ${alert.price:.4f} — high manipulation risk")
+            flags.append(f"Sub-dollar stock: ${alert.price:.4f} — high manipulation risk")
             return 1.5
 
         return 0.0
