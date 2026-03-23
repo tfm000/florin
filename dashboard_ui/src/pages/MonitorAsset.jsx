@@ -41,7 +41,7 @@ export default function MonitorAsset() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <Link to="/monitor" className="text-gray-400 hover:text-white text-sm">&larr; Monitor</Link>
+            <Link to="/monitoring/live" className="text-gray-400 hover:text-white text-sm">&larr; Monitor</Link>
             <Link to={`/research/${ticker}`} className="text-indigo-400 hover:text-indigo-300 text-sm">Full Research &rarr;</Link>
             <span className={`text-xs px-2 py-1 rounded ${connected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
               {connected ? 'LIVE' : 'DISCONNECTED'}

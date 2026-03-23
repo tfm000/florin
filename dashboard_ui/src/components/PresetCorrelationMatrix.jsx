@@ -75,7 +75,7 @@ export default function PresetCorrelationMatrix({
                       className="px-2 py-1 text-center text-white"
                       style={{ background: corrColor(val), minWidth: 50 }}
                     >
-                      {val.toFixed(2)}
+                      {val != null && isFinite(val) ? val.toFixed(2) : '—'}
                     </td>
                   ))}
                 </tr>

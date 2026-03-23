@@ -18,7 +18,7 @@ export default function Watchlist() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Watchlist</h1>
+        <h2 className="text-lg font-semibold text-gray-300">Watchlist</h2>
         <div className="flex items-center gap-3">
           {data && <span className="text-gray-400 text-sm">{data.total} assets</span>}
           {items.length > 0 && <ExportButton data={items} filename="watchlist" />}
