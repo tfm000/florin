@@ -11,11 +11,11 @@ export default function OverviewTab() {
   const [analysing, setAnalysing] = useState(false)
   const [analysisMode, setAnalysisMode] = useState(null)
 
-  const handleAnalyse = async (mode) => {
+  const handleAnalyse = async (type, mode = 'all') => {
     setAnalysing(true)
-    setAnalysisMode(mode)
+    setAnalysisMode(type)
     try {
-      const res = await apiPost(`/research/asset/${ticker}/analyse?mode=${mode}`, {})
+      const res = await apiPost(`/research/asset/${ticker}/analyse?type=${type}&mode=${mode}`, {})
       setAnalysis(res)
     } catch (e) {
       setAnalysis({ error: e.message })
@@ -277,72 +277,74 @@ export default function OverviewTab() {
       {/* LLM Analysis */}
       <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-3">
         <h3 className="text-white font-semibold">LLM Analysis</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => handleAnalyse('all')}
+            onClick={() => handleAnalyse('sentiment', 'all')}
             disabled={analysing}
             className="px-3 py-1.5 rounded text-sm bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 text-white"
           >
-            {analysing && analysisMode === 'all' ? 'Analysing...' : 'Analyse (All Sources)'}
+            {analysing && analysisMode === 'sentiment' ? 'Analysing...' : 'Sentiment'}
           </button>
           <button
-            onClick={() => handleAnalyse('legitimate')}
+            onClick={() => handleAnalyse('announcement', 'all')}
+            disabled={analysing}
+            className="px-3 py-1.5 rounded text-sm bg-amber-700 hover:bg-amber-600 disabled:bg-gray-600 text-white"
+          >
+            {analysing && analysisMode === 'announcement' ? 'Analysing...' : 'Announcements'}
+          </button>
+          <button
+            onClick={() => handleAnalyse('both', 'all')}
             disabled={analysing}
             className="px-3 py-1.5 rounded text-sm bg-emerald-700 hover:bg-emerald-600 disabled:bg-gray-600 text-white"
           >
-            {analysing && analysisMode === 'legitimate' ? 'Analysing...' : 'Analyse (Legitimate Only)'}
+            {analysing && analysisMode === 'both' ? 'Analysing...' : 'Both'}
           </button>
         </div>
         <p className="text-gray-500 text-xs">
-          "All Sources" includes Reddit, StockTwits, SEC filings, and news.
-          "Legitimate Only" uses SEC filings and news only.
+          Sentiment analyses social media, news, and web data.
+          Announcements analyses Form 8-K SEC filings. Both runs them concurrently.
         </p>
       </div>
 
-      {/* Analysis result */}
+      {/* Analysis results — show typed results if available */}
       {analysis && (
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-3">
-          <div className="flex items-center gap-3">
-            <h3 className="text-white font-semibold">Analysis Result</h3>
-            {analysis.recommendation && (
-              <span className={`px-2 py-0.5 rounded text-xs text-white ${recColor[analysis.recommendation] || 'bg-gray-600'}`}>
-                {analysis.recommendation}
-              </span>
-            )}
-            {analysis.provider && (
-              <span className="text-xs text-gray-500">via {analysis.provider}</span>
-            )}
-          </div>
-          {analysis.error && <p className="text-red-400 text-sm">{analysis.error}</p>}
-          {analysis.summary && <p className="text-gray-300 text-sm">{analysis.summary}</p>}
-          {analysis.bullish_signals?.length > 0 && (
-            <div>
-              <p className="text-green-400 text-xs uppercase font-semibold mb-1">Bullish Signals</p>
-              <ul className="text-sm text-gray-300 space-y-1">
-                {analysis.bullish_signals.map((s, i) => <li key={i}>+ {s}</li>)}
-              </ul>
+        <div className="space-y-3">
+          {/* Top-level error (no analysis ran) */}
+          {analysis.error && !analysis.announcement && !analysis.sentiment && (
+            <div className="bg-gray-800 rounded-lg p-4 border border-red-700">
+              <p className="text-red-400 text-sm">{analysis.error}</p>
             </div>
           )}
-          {analysis.bearish_signals?.length > 0 && (
-            <div>
-              <p className="text-red-400 text-xs uppercase font-semibold mb-1">Bearish Signals</p>
-              <ul className="text-sm text-gray-300 space-y-1">
-                {analysis.bearish_signals.map((s, i) => <li key={i}>- {s}</li>)}
-              </ul>
-            </div>
+
+          {/* Announcement result */}
+          {analysis.announcement && (
+            <AnalysisResultCard
+              title="Announcement Analysis"
+              icon="📄"
+              result={analysis.announcement}
+              recColor={recColor}
+            />
           )}
-          {analysis.key_factors?.length > 0 && (
-            <div>
-              <p className="text-gray-400 text-xs uppercase font-semibold mb-1">Key Factors</p>
-              <ul className="text-sm text-gray-300 space-y-1">
-                {analysis.key_factors.map((f, i) => <li key={i}>{f}</li>)}
-              </ul>
-            </div>
+
+          {/* Sentiment result */}
+          {analysis.sentiment && (
+            <AnalysisResultCard
+              title="Sentiment Analysis"
+              icon="📱"
+              result={analysis.sentiment}
+              recColor={recColor}
+            />
           )}
-          <div className="flex gap-4 text-xs text-gray-500">
-            {analysis.sentiment_score != null && <span>Score: {analysis.sentiment_score.toFixed(1)}</span>}
-            {analysis.confidence != null && <span>Confidence: {(analysis.confidence * 100).toFixed(0)}%</span>}
-          </div>
+
+          {/* Fallback: legacy single-result display (backward compat) */}
+          {!analysis.announcement && !analysis.sentiment && !analysis.error && (
+            <AnalysisResultCard
+              title="Analysis Result"
+              icon="📊"
+              result={analysis}
+              recColor={recColor}
+            />
+          )}
         </div>
       )}
 
@@ -357,6 +359,62 @@ export default function OverviewTab() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+
+/** Reusable card for displaying a single analysis result (announcement or sentiment). */
+function AnalysisResultCard({ title, icon, result, recColor }) {
+  if (!result) return null
+
+  const scoreColor = result.score >= 7 ? 'text-green-400'
+    : result.score >= 4 ? 'text-yellow-400'
+    : 'text-red-400'
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-3">
+      <div className="flex items-center gap-3">
+        <h3 className="text-white font-semibold">{icon} {title}</h3>
+        {result.recommendation && (
+          <span className={`px-2 py-0.5 rounded text-xs text-white ${recColor[result.recommendation] || 'bg-gray-600'}`}>
+            {result.recommendation}
+          </span>
+        )}
+        {result.provider && (
+          <span className="text-xs text-gray-500">via {result.provider}</span>
+        )}
+      </div>
+      {result.error && <p className="text-red-400 text-sm">{result.error}</p>}
+      {result.summary && <p className="text-gray-300 text-sm">{result.summary}</p>}
+      {result.bullish_signals?.length > 0 && (
+        <div>
+          <p className="text-green-400 text-xs uppercase font-semibold mb-1">Bullish Signals</p>
+          <ul className="text-sm text-gray-300 space-y-1">
+            {result.bullish_signals.map((s, i) => <li key={i}>+ {s}</li>)}
+          </ul>
+        </div>
+      )}
+      {result.bearish_signals?.length > 0 && (
+        <div>
+          <p className="text-red-400 text-xs uppercase font-semibold mb-1">Bearish Signals</p>
+          <ul className="text-sm text-gray-300 space-y-1">
+            {result.bearish_signals.map((s, i) => <li key={i}>- {s}</li>)}
+          </ul>
+        </div>
+      )}
+      {result.key_points?.length > 0 && (
+        <div>
+          <p className="text-gray-400 text-xs uppercase font-semibold mb-1">Key Points</p>
+          <ul className="text-sm text-gray-300 space-y-1">
+            {result.key_points.map((f, i) => <li key={i}>{f}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="flex gap-4 text-xs text-gray-500">
+        {result.score != null && <span className={scoreColor}>Score: {result.score.toFixed(1)}/10</span>}
+        {result.confidence != null && <span>Confidence: {(result.confidence * 100).toFixed(0)}%</span>}
+      </div>
     </div>
   )
 }

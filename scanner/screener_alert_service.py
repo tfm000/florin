@@ -184,6 +184,7 @@ class ScreenerAlertService:
                 "sector": result.sector,
                 "exchange": result.exchange,
                 "include_llm_report": screener.include_llm_report,
+                "analysis_types": self._parse_analysis_types(screener),
                 "filters_summary": self._summarize_filters(filters),
             }
 
@@ -304,6 +305,31 @@ class ScreenerAlertService:
         "JPX": "Tokyo", "HKG": "HKEX", "ASX": "ASX",
         "NSI": "NSE", "BSE": "BSE",
     }
+
+    @staticmethod
+    def _parse_analysis_types(screener: SavedScreenerORM) -> list[str]:
+        """Parse the analysis_types JSON field from a screener.
+
+        Returns a list of analysis type strings. Falls back to both
+        types if the field is missing or unparseable (backward compat).
+
+        Args:
+            screener: The saved screener ORM instance.
+
+        Returns:
+            List of analysis type strings, e.g. ["announcement", "sentiment"].
+        """
+        default = ["announcement", "sentiment"]
+        raw = getattr(screener, "analysis_types", None)
+        if not raw:
+            return default
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and all(isinstance(t, str) for t in parsed):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return default
 
     @staticmethod
     def _summarize_filters(filters: dict) -> str:

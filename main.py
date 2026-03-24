@@ -182,10 +182,16 @@ class Florin:
         ))
         logger.info("Screener alert service started")
 
-        # Alert pipeline (uses self._report_gen / self._consensus_gen for hot-reload)
+        # Alert pipeline — MOMENTUM_ALERT → LLM analysis
         services.append(asyncio.create_task(
             self._alert_pipeline(sentiment_agg, sec_8k_source),
             name="alert-pipeline",
+        ))
+
+        # Screener alert LLM pipeline — SCREENER_ALERT with include_llm_report
+        services.append(asyncio.create_task(
+            self._screener_llm_pipeline(sentiment_agg, sec_8k_source),
+            name="screener-llm-pipeline",
         ))
 
         # Position monitor
@@ -633,6 +639,104 @@ class Florin:
                     {"ticker": alert.ticker, "error": str(e)},
                     source="alert_pipeline",
                 )
+
+    async def _screener_llm_pipeline(
+        self,
+        sentiment_agg: Any,
+        sec_8k_source: Any,
+    ) -> None:
+        """React to screener alerts that have LLM analysis enabled.
+
+        Flow: SCREENER_ALERT (with include_llm_report=True)
+              → build AlertSignal from screener data
+              → fetch only the requested data sources (based on analysis_types)
+              → generate report → save to DB → publish REPORT_READY
+
+        Respects per-screener analysis_types configuration.
+        """
+        async for event in self.event_bus.subscribe(EventType.SCREENER_ALERT):
+            data = event.data
+            if not isinstance(data, dict):
+                continue
+            if not data.get("include_llm_report"):
+                continue
+
+            ticker = data.get("ticker", "")
+            analysis_types = data.get("analysis_types", ["announcement", "sentiment"])
+
+            if not self._analysers:
+                logger.warning(
+                    "Screener LLM report requested for %s but no analysers configured",
+                    ticker,
+                )
+                continue
+
+            logger.info(
+                "Screener LLM analysis for %s (types=%s)",
+                ticker, analysis_types,
+            )
+
+            try:
+                # Build an AlertSignal from the screener data
+                alert = AlertSignal(
+                    ticker=ticker,
+                    price=data.get("price", 0.0),
+                    change_pct=data.get("change_pct", 0.0),
+                    volume=data.get("volume", 0),
+                    source="MOMENTUM",
+                    metadata={"screener_id": data.get("screener_id", "")},
+                )
+
+                # Fetch only the data needed for the requested analysis types
+                from core.models import SentimentData
+
+                sentiment = SentimentData(ticker=ticker)
+                filings = []
+
+                fetch_tasks = {}
+                if "sentiment" in analysis_types:
+                    fetch_tasks["sentiment"] = sentiment_agg.fetch(ticker)
+                if "announcement" in analysis_types:
+                    fetch_tasks["filings"] = sec_8k_source.fetch(ticker)
+
+                if fetch_tasks:
+                    results = await asyncio.gather(
+                        *fetch_tasks.values(), return_exceptions=True,
+                    )
+                    for key, result in zip(fetch_tasks.keys(), results):
+                        if isinstance(result, Exception):
+                            logger.error("Fetch %s failed for %s: %s", key, ticker, result)
+                        elif key == "sentiment":
+                            sentiment = result
+                        elif key == "filings":
+                            filings = result
+
+                # Generate report with only the requested analysis types
+                if self.settings.llm_mode.value == "consensus":
+                    report = await self._consensus_gen.generate(
+                        alert, sentiment,
+                        filings=filings if "announcement" in analysis_types else None,
+                        analysis_types=analysis_types,
+                    )
+                else:
+                    report = await self._report_gen.generate(
+                        alert, sentiment,
+                        filings=filings if "announcement" in analysis_types else None,
+                        analysis_types=analysis_types,
+                    )
+
+                await self._save_report(report)
+
+                await self.event_bus.publish(
+                    EventType.REPORT_READY, report, source="screener_llm_pipeline",
+                )
+
+                logger.info(
+                    "Screener LLM report for %s: rec=%s",
+                    ticker, report.final_recommendation.value,
+                )
+            except Exception as e:
+                logger.error("Screener LLM pipeline failed for %s: %s", ticker, e)
 
     async def _position_monitor(self, broker: Any) -> None:
         """Poll broker positions and publish updates."""

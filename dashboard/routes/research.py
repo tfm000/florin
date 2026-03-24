@@ -201,8 +201,28 @@ class MacroSummary(BaseModel):
     indicators: dict[str, MacroIndicator]
 
 
+class LLMAnalysisResultDetail(BaseModel):
+    """Single analysis result detail (announcement or sentiment)."""
+    analysis_type: str = ""  # "announcement" or "sentiment"
+    provider: str = ""
+    model: str = ""
+    score: float = 5.0  # 0–10 scale
+    confidence: float = 0.5
+    bullish_signals: list[str] = []
+    bearish_signals: list[str] = []
+    recommendation: str = "HOLD"
+    summary: str = ""
+    key_points: list[str] = []
+    error: str | None = None
+
+
 class LLMAnalysisResponse(BaseModel):
-    """Response model for the LLM analysis endpoint."""
+    """Response model for the LLM analysis endpoint.
+
+    Supports returning one or both analysis types. For backward compat,
+    top-level fields reflect the primary analysis result (sentiment if
+    available, else announcement).
+    """
     ticker: str
     provider: str = ""
     model: str = ""
@@ -214,6 +234,9 @@ class LLMAnalysisResponse(BaseModel):
     summary: str = ""
     key_points: list[str] = []
     error: str | None = None
+    # Typed results (new in Phase 6)
+    announcement: LLMAnalysisResultDetail | None = None
+    sentiment: LLMAnalysisResultDetail | None = None
 
 
 # =============================================================================
@@ -427,71 +450,89 @@ async def get_asset_intraday_quotes(
 @router.post("/research/asset/{ticker}/analyse", response_model=LLMAnalysisResponse)
 async def analyse_asset(
     ticker: str,
+    type: str = Query(default="sentiment", pattern="^(announcement|sentiment|both)$"),
     mode: str = Query(default="all", pattern="^(all|legitimate)$"),
     yf=Depends(get_yfinance_dep),
     settings=Depends(get_settings_dep),
 ):
-    """
-    Generate an LLM analysis report for any asset.
+    """Generate an LLM analysis report for any asset.
+
+    Args:
+        ticker: Stock symbol to analyse.
+        type: Analysis type — "announcement" (Form 8-K), "sentiment" (social/news),
+            or "both" to run both concurrently.
+        mode: Sentiment source filter — "all" uses all sources, "legitimate"
+            excludes Reddit/StockTwits.
 
     Enriches the prompt with macro context, news, performance data, and sentiment.
-    mode="all" uses all sentiment sources; mode="legitimate" excludes Reddit/StockTwits.
     """
-    ticker = ticker.upper()
-
-    # Gather data concurrently
     import asyncio
+    from core.models import SentimentData
+    from dashboard.deps import _state
+
+    ticker = ticker.upper()
+    run_announcement = type in ("announcement", "both")
+    run_sentiment = type in ("sentiment", "both")
+
+    # Gather asset info
     info_task = yf.get_info(ticker)
     perf_task = yf.get_performance_metrics(ticker)
-    macro_task = yf.get_macro_summary()
-    news_task = yf.get_news(ticker)
-
-    info, performance, macro, news = await asyncio.gather(
-        info_task, perf_task, macro_task, news_task
-    )
+    info, performance = await asyncio.gather(info_task, perf_task)
 
     if not info.get("name") and not info.get("current_price"):
         raise NotFoundError(f"No data found for ticker {ticker}")
 
     # Get the available analysers
-    from dashboard.deps import _state
     analysers = _state.get("analysers", {})
 
-    # Try sentiment model ID first (DB registry), then legacy provider name, then any
-    analyser = None
-    if settings.llm_sentiment_model_id:
-        analyser = analysers.get(settings.llm_sentiment_model_id)
-    if not analyser:
-        analyser = analysers.get(settings.llm_default_provider.value)
-    if not analyser:
-        for _name, a in analysers.items():
-            analyser = a
-            break
-
-    if not analyser:
-        raise ServiceUnavailableError(
-            "No LLM analysers available. Register a model in Settings > LLM Models."
+    def _select_analyser(role: str):
+        """Select analyser for a given role (announcement/sentiment)."""
+        a = None
+        model_id = (
+            settings.llm_announcement_model_id if role == "announcement"
+            else settings.llm_sentiment_model_id
         )
+        if model_id:
+            a = analysers.get(model_id)
+        if not a:
+            a = analysers.get(settings.llm_default_provider.value)
+        if not a:
+            for _name, v in analysers.items():
+                return v
+        return a
 
-    # Fetch sentiment from aggregator (with source filtering)
-    from core.models import SentimentData
-    sentiment_agg = _state.get("sentiment_aggregator")
-    if sentiment_agg:
-        try:
+    # Fetch data sources concurrently based on requested type
+    sentiment = SentimentData(ticker=ticker)
+    filings = []
+    fetch_tasks = {}
+
+    if run_sentiment:
+        sentiment_agg = _state.get("sentiment_aggregator")
+        if sentiment_agg:
             company_name = info.get("name", "")
             if mode == "legitimate":
-                sentiment = await sentiment_agg.fetch_filtered(
+                fetch_tasks["sentiment"] = sentiment_agg.fetch_filtered(
                     ticker, company_name, ["SEC EDGAR", "News"]
                 )
             else:
-                sentiment = await sentiment_agg.fetch(ticker, company_name)
-        except Exception as e:
-            logger.warning("Sentiment fetch failed for %s: %s", ticker, e)
-            sentiment = SentimentData(ticker=ticker)
-    else:
-        sentiment = SentimentData(ticker=ticker)
+                fetch_tasks["sentiment"] = sentiment_agg.fetch(ticker, company_name)
 
-    # Build alert context for the sentiment prompt
+    if run_announcement:
+        from sentiment.sec_8k_source import SEC8KSource
+        sec_8k = SEC8KSource()
+        fetch_tasks["filings"] = sec_8k.fetch(ticker)
+
+    if fetch_tasks:
+        results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        for key, result in zip(fetch_tasks.keys(), results):
+            if isinstance(result, Exception):
+                logger.warning("Fetch %s failed for %s: %s", key, ticker, result)
+            elif key == "sentiment":
+                sentiment = result
+            elif key == "filings":
+                filings = result
+
+    # Build alert context for sentiment prompts
     alert_context = {
         "price": info.get("current_price") or 0.0,
         "change_pct": 0.0,
@@ -499,31 +540,96 @@ async def analyse_asset(
         "avg_volume": 0,
     }
 
-    try:
-        analysis = await analyser.analyse_sentiment(
-            ticker, sentiment, alert_context, settings.llm_user_context,
-        )
-    except Exception as e:
-        logger.exception("LLM analysis failed for %s", ticker)
-        # Return error in response body rather than 502, so the frontend can show it
-        return LLMAnalysisResponse(
-            ticker=ticker,
-            provider=getattr(analyser, "provider_name", "unknown"),
-            error=f"LLM connection failed: {e}",
+    # Run requested analyses concurrently
+    analysis_tasks = {}
+    announcement_detail = None
+    sentiment_detail = None
+
+    if run_announcement:
+        ann_analyser = _select_analyser("announcement")
+        if ann_analyser:
+            analysis_tasks["announcement"] = (
+                ann_analyser,
+                asyncio.create_task(
+                    ann_analyser.analyse_announcements(
+                        ticker, filings, settings.llm_user_context,
+                    )
+                ),
+            )
+        else:
+            announcement_detail = LLMAnalysisResultDetail(
+                analysis_type="announcement",
+                error="No LLM analyser available for announcement analysis",
+            )
+
+    if run_sentiment:
+        sent_analyser = _select_analyser("sentiment")
+        if sent_analyser:
+            analysis_tasks["sentiment"] = (
+                sent_analyser,
+                asyncio.create_task(
+                    sent_analyser.analyse_sentiment(
+                        ticker, sentiment, alert_context, settings.llm_user_context,
+                    )
+                ),
+            )
+        else:
+            sentiment_detail = LLMAnalysisResultDetail(
+                analysis_type="sentiment",
+                error="No LLM analyser available for sentiment analysis",
+            )
+
+    if not analysis_tasks and not announcement_detail and not sentiment_detail:
+        raise ServiceUnavailableError(
+            "No LLM analysers available. Register a model in Settings > LLM Models."
         )
 
+    # Await all analysis tasks
+    for key, (analyser_inst, task) in analysis_tasks.items():
+        try:
+            result = await task
+            detail = LLMAnalysisResultDetail(
+                analysis_type=key,
+                provider=result.provider,
+                model=result.model,
+                score=result.score,
+                confidence=result.confidence,
+                bullish_signals=result.bullish_signals,
+                bearish_signals=result.bearish_signals,
+                recommendation=result.recommendation.value,
+                summary=result.summary,
+                key_points=result.key_points,
+                error=result.error,
+            )
+        except Exception as e:
+            logger.exception("LLM %s analysis failed for %s", key, ticker)
+            detail = LLMAnalysisResultDetail(
+                analysis_type=key,
+                provider=getattr(analyser_inst, "provider_name", "unknown"),
+                error=f"LLM connection failed: {e}",
+            )
+
+        if key == "announcement":
+            announcement_detail = detail
+        else:
+            sentiment_detail = detail
+
+    # Build response — top-level fields mirror the primary result for backward compat
+    primary = sentiment_detail or announcement_detail
     return LLMAnalysisResponse(
         ticker=ticker,
-        provider=analysis.provider,
-        model=analysis.model,
-        score=analysis.score,
-        confidence=analysis.confidence,
-        bullish_signals=analysis.bullish_signals,
-        bearish_signals=analysis.bearish_signals,
-        recommendation=analysis.recommendation.value,
-        summary=analysis.summary,
-        key_points=analysis.key_points,
-        error=analysis.error,
+        provider=primary.provider if primary else "",
+        model=primary.model if primary else "",
+        score=primary.score if primary else 5.0,
+        confidence=primary.confidence if primary else 0.5,
+        bullish_signals=primary.bullish_signals if primary else [],
+        bearish_signals=primary.bearish_signals if primary else [],
+        recommendation=primary.recommendation if primary else "HOLD",
+        summary=primary.summary if primary else "",
+        key_points=primary.key_points if primary else [],
+        error=primary.error if primary else None,
+        announcement=announcement_detail,
+        sentiment=sentiment_detail,
     )
 
 

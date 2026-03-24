@@ -283,15 +283,17 @@ class TestHolders:
 class TestAnalyse:
     @pytest.mark.asyncio
     async def test_analyse_returns_error_without_llm(self, client):
-        """POST analyse should return 503 when no LLM analysers are configured."""
+        """POST analyse should return error in response when no analysers available."""
         set_state("analysers", {})
         set_state("sentiment_aggregator", None)
 
         resp = await client.post("/api/research/asset/AAPL/analyse")
-        # Without any analysers, the endpoint raises ServiceUnavailableError (503)
-        assert resp.status_code == 503
+        assert resp.status_code == 200
         data = resp.json()
-        assert "detail" in data or "error" in data
+        # Error should be present in the sentiment detail or top-level
+        assert data.get("error") is not None or (
+            data.get("sentiment") and data["sentiment"].get("error")
+        )
 
     @pytest.mark.asyncio
     async def test_analyse_success_path(self, client):
@@ -331,6 +333,10 @@ class TestAnalyse:
         assert len(data["bearish_signals"]) == 1
         assert len(data["key_points"]) == 2
         assert data["error"] is None
+        # Phase 6: typed results should be present
+        assert data["sentiment"] is not None
+        assert data["sentiment"]["score"] == 7.5
+        assert data["sentiment"]["analysis_type"] == "sentiment"
 
         # Cleanup
         set_state("analysers", {})
@@ -349,8 +355,82 @@ class TestAnalyse:
         assert resp.status_code == 200
         data = resp.json()
         assert data["ticker"] == "AAPL"
+        # Error should be in the sentiment typed field
+        assert data["sentiment"] is not None
+        assert data["sentiment"]["error"] is not None
+        assert "LLM connection failed" in data["sentiment"]["error"]
+        # Top-level error mirrors the primary result
         assert data["error"] is not None
-        assert "LLM connection failed" in data["error"]
+
+        set_state("analysers", {})
+
+    @pytest.mark.asyncio
+    async def test_analyse_type_announcement(self, client):
+        """type=announcement should run announcement analysis only."""
+        from core.models import AnalysisResult, AnalysisType, Recommendation
+
+        mock_analyser = AsyncMock()
+        mock_analyser.provider_name = "test-provider"
+        mock_analyser.analyse_announcements.return_value = AnalysisResult(
+            provider="test-provider",
+            model="test-model",
+            analysis_type=AnalysisType.ANNOUNCEMENT,
+            score=6.0,
+            confidence=0.7,
+            recommendation=Recommendation.BUY,
+            summary="Positive 8-K filing.",
+            key_points=["Earnings beat"],
+        )
+
+        set_state("analysers", {"test-provider": mock_analyser})
+        set_state("sentiment_aggregator", None)
+
+        resp = await client.post("/api/research/asset/AAPL/analyse?type=announcement")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["announcement"] is not None
+        assert data["announcement"]["score"] == 6.0
+        assert data["announcement"]["analysis_type"] == "announcement"
+        assert data["sentiment"] is None  # Not requested
+
+        set_state("analysers", {})
+
+    @pytest.mark.asyncio
+    async def test_analyse_type_both(self, client):
+        """type=both should run both announcement and sentiment analysis."""
+        from core.models import AnalysisResult, AnalysisType, Recommendation
+
+        mock_analyser = AsyncMock()
+        mock_analyser.provider_name = "test-provider"
+        mock_analyser.analyse_announcements.return_value = AnalysisResult(
+            provider="test-provider",
+            model="test-model",
+            analysis_type=AnalysisType.ANNOUNCEMENT,
+            score=7.0,
+            confidence=0.8,
+            recommendation=Recommendation.BUY,
+            summary="Strong filing.",
+        )
+        mock_analyser.analyse_sentiment.return_value = AnalysisResult(
+            provider="test-provider",
+            model="test-model",
+            analysis_type=AnalysisType.SENTIMENT,
+            score=5.5,
+            confidence=0.6,
+            recommendation=Recommendation.HOLD,
+            summary="Mixed sentiment.",
+        )
+
+        set_state("analysers", {"test-provider": mock_analyser})
+        set_state("sentiment_aggregator", None)
+
+        resp = await client.post("/api/research/asset/AAPL/analyse?type=both")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["announcement"] is not None
+        assert data["sentiment"] is not None
+        assert data["announcement"]["score"] == 7.0
+        assert data["sentiment"]["score"] == 5.5
 
         set_state("analysers", {})
 

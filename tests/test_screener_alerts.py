@@ -355,6 +355,34 @@ class TestScreenerAlertEndpoints:
         assert resp.json()["is_alert_active"] is True  # unchanged
 
     @pytest.mark.asyncio
+    async def test_update_analysis_types(self, client, seed_screener):
+        """Should update analysis_types on alert settings."""
+        resp = await client.put(
+            f"/api/screener/saved/{seed_screener}/alerts",
+            json={"analysis_types": ["announcement"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["analysis_types"] == ["announcement"]
+
+        # Update to both
+        resp = await client.put(
+            f"/api/screener/saved/{seed_screener}/alerts",
+            json={"analysis_types": ["announcement", "sentiment"]},
+        )
+        assert resp.status_code == 200
+        assert set(resp.json()["analysis_types"]) == {"announcement", "sentiment"}
+
+    @pytest.mark.asyncio
+    async def test_analysis_types_in_response(self, client, seed_screener):
+        """Saved screener response should include analysis_types."""
+        resp = await client.get("/api/screener/saved")
+        assert resp.status_code == 200
+        screeners = resp.json()
+        assert len(screeners) > 0
+        assert "analysis_types" in screeners[0]
+        assert isinstance(screeners[0]["analysis_types"], list)
+
+    @pytest.mark.asyncio
     async def test_update_alert_settings_not_found(self, client):
         """Should 404 for nonexistent screener."""
         resp = await client.put(

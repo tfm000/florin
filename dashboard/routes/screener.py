@@ -102,6 +102,7 @@ class SavedScreenerResponse(BaseModel):
     is_alert_active: bool
     max_alerts_per_day: int
     include_llm_report: bool
+    analysis_types: list[str]  # Subset of ["announcement", "sentiment"]
     run_interval_seconds: int
     last_run_at: str | None
     created_at: str
@@ -109,6 +110,12 @@ class SavedScreenerResponse(BaseModel):
 
 
 def _orm_to_response(orm: SavedScreenerORM) -> SavedScreenerResponse:
+    # Parse analysis_types JSON safely
+    try:
+        analysis_types = json.loads(orm.analysis_types)
+    except (json.JSONDecodeError, TypeError):
+        analysis_types = ["announcement", "sentiment"]
+
     return SavedScreenerResponse(
         id=orm.id,
         name=orm.name,
@@ -118,6 +125,7 @@ def _orm_to_response(orm: SavedScreenerORM) -> SavedScreenerResponse:
         is_alert_active=orm.is_alert_active,
         max_alerts_per_day=orm.max_alerts_per_day,
         include_llm_report=orm.include_llm_report,
+        analysis_types=analysis_types,
         run_interval_seconds=orm.run_interval_seconds,
         last_run_at=str(orm.last_run_at) if orm.last_run_at else None,
         created_at=str(orm.created_at),
@@ -234,6 +242,7 @@ class AlertSettingsUpdate(BaseModel):
     max_alerts_per_day: int | None = Field(None, ge=1, le=100)
     run_interval_seconds: int | None = Field(None, ge=60, le=86400)
     include_llm_report: bool | None = None
+    analysis_types: list[str] | None = None  # Subset of ["announcement", "sentiment"]
 
 
 class ScreenerAlertLogResponse(BaseModel):
@@ -269,6 +278,16 @@ async def update_alert_settings(
         orm.run_interval_seconds = req.run_interval_seconds
     if req.include_llm_report is not None:
         orm.include_llm_report = req.include_llm_report
+    if req.analysis_types is not None:
+        # Validate values — must be non-empty subset of valid types
+        valid = {"announcement", "sentiment"}
+        if not req.analysis_types:
+            from core.exceptions import ValidationError
+            raise ValidationError("analysis_types cannot be empty — at least one type is required")
+        if not all(t in valid for t in req.analysis_types):
+            from core.exceptions import ValidationError
+            raise ValidationError(f"analysis_types must be a subset of {sorted(valid)}")
+        orm.analysis_types = json.dumps(req.analysis_types)
 
     orm.updated_at = datetime.now(UTC)
     await session.commit()

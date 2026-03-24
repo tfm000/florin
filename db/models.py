@@ -429,6 +429,9 @@ class SavedScreenerORM(Base):
     max_alerts_per_day: Mapped[int] = mapped_column(Integer, default=10)
     alerts_sent_today: Mapped[int] = mapped_column(Integer, default=0)
     include_llm_report: Mapped[bool] = mapped_column(Boolean, default=False)
+    analysis_types: Mapped[str] = mapped_column(
+        Text, default='["announcement", "sentiment"]',
+    )  # JSON list: subset of ["announcement", "sentiment"]
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     run_interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
 

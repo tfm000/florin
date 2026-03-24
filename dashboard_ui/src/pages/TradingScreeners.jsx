@@ -195,6 +195,36 @@ export default function TradingScreeners() {
                     </div>
                   </div>
 
+                  {/* Analysis type selection (only shown when LLM report enabled) */}
+                  {s.include_llm_report && (
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="text-gray-500">Analysis types:</span>
+                      {['announcement', 'sentiment'].map(t => {
+                        const types = s.analysis_types || ['announcement', 'sentiment']
+                        const checked = types.includes(t)
+                        return (
+                          <label key={t} className="flex items-center gap-1.5 text-gray-400 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const next = checked
+                                  ? types.filter(x => x !== t)
+                                  : [...types, t]
+                                // Don't allow empty — must have at least one
+                                if (next.length > 0) {
+                                  handleUpdateAlertSetting(s.id, 'analysis_types', next)
+                                }
+                              }}
+                              className="rounded bg-gray-700 border-gray-600"
+                            />
+                            <span>{t === 'announcement' ? 'Announcements (8-K)' : 'Sentiment'}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   {/* Alert log */}
                   <AlertLog screenerId={s.id} />
                 </div>
