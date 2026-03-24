@@ -320,13 +320,10 @@ class Florin:
             sources.append(RedditJsonSource())
             logger.info("Reddit: using public .json fallback (no API key)")
 
-        # Google Custom Search: only add if API key is configured
-        if self.settings.google_search_api_key:
-            from sentiment.google_search_source import GoogleSearchSource
-            sources.append(GoogleSearchSource(self.settings))
-            logger.info("Google Search: enabled (API key configured)")
-        else:
-            logger.info("Google Search: disabled (no API key)")
+        # Web Search (DuckDuckGo): always available, no API key required
+        from sentiment.web_search_source import WebSearchSource
+        sources.append(WebSearchSource())
+        logger.info("Web Search: enabled (DuckDuckGo, no API key required)")
 
         return SentimentAggregator(sources)
 

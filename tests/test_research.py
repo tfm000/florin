@@ -1,7 +1,7 @@
 """Tests for Research API endpoints."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -791,3 +791,68 @@ class TestFillBidAsk:
         result = _fill_bid_ask(points)
         # No prior spread, mirror: ask = close + (close - bid) = 101
         assert result[0]["ask"] == 101.0
+
+
+# =============================================================================
+# Web Search endpoint
+# =============================================================================
+
+
+class TestWebSearchEndpoint:
+    """Tests for GET /research/web-search."""
+
+    @pytest.mark.asyncio
+    async def test_web_search_returns_list(self, client):
+        """GET /research/web-search?ticker=AAPL should return a list."""
+        mock_results = [
+            {"title": "Apple News", "body": "Snippet", "url": "https://example.com",
+             "source": "Yahoo Finance", "date": "2026-03-23T12:00:00+00:00", "image": ""},
+        ]
+        with patch("ddgs.DDGS") as MockDDGS:
+            mock_ddgs = MagicMock()
+            mock_ddgs.news.return_value = mock_results
+            mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
+            mock_ddgs.__exit__ = MagicMock(return_value=False)
+            MockDDGS.return_value = mock_ddgs
+
+            resp = await client.get("/api/research/web-search?ticker=AAPL")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["title"] == "Apple News"
+        assert data[0]["source"] == "Yahoo Finance"
+        assert data[0]["date"] == "2026-03-23T12:00:00+00:00"
+
+    @pytest.mark.asyncio
+    async def test_web_search_empty_results(self, client):
+        """GET /research/web-search returns empty list when no results."""
+        with patch("ddgs.DDGS") as MockDDGS:
+            mock_ddgs = MagicMock()
+            mock_ddgs.news.return_value = []
+            mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
+            mock_ddgs.__exit__ = MagicMock(return_value=False)
+            MockDDGS.return_value = mock_ddgs
+
+            resp = await client.get("/api/research/web-search?ticker=ZZZZ")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_web_search_error_returns_empty(self, client):
+        """GET /research/web-search returns empty list on error."""
+        with patch("ddgs.DDGS") as MockDDGS:
+            MockDDGS.side_effect = RuntimeError("Search failed")
+
+            resp = await client.get("/api/research/web-search?ticker=AAPL")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_web_search_requires_ticker(self, client):
+        """GET /research/web-search without ticker should return 422."""
+        resp = await client.get("/api/research/web-search")
+        assert resp.status_code == 422

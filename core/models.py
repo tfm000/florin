@@ -186,16 +186,18 @@ class NewsArticle(BaseModel):
     relevance_score: float = 0.0
 
 
-class GoogleSearchResult(BaseModel):
-    """Single Google Custom Search result.
+class WebSearchResult(BaseModel):
+    """Single web search result from DuckDuckGo news search.
 
-    Represents one item returned by the Google Custom Search JSON API,
-    used to supplement news/sentiment data with web search results.
+    Used to supplement news/sentiment data with web search results.
+    Each result represents a news article found via DuckDuckGo's
+    news search for a given stock ticker.
     """
     title: str
     snippet: str = ""
     url: str = ""
-    source: str = ""  # Domain name (displayLink from the API)
+    source: str = ""  # Publisher / domain name
+    date: str = ""  # ISO date string from DuckDuckGo
 
 
 class Form8KFiling(BaseModel):
@@ -238,8 +240,8 @@ class SentimentData(BaseModel):
     # News
     news_articles: list[NewsArticle] = Field(default_factory=list)
 
-    # Google Search
-    google_results: list[GoogleSearchResult] = Field(default_factory=list)
+    # Web Search (DuckDuckGo)
+    web_search_results: list[WebSearchResult] = Field(default_factory=list)
 
     # Metadata
     sources_queried: int = 0
@@ -286,10 +288,10 @@ class SentimentData(BaseModel):
             for a in self.news_articles[:3]:
                 lines.append(f"  - [{a.source}] {a.title[:100]}")
 
-        # Google Search results
-        if self.google_results:
-            lines.append(f"Google Search: {len(self.google_results)} results")
-            for g in self.google_results[:5]:
+        # Web Search results
+        if self.web_search_results:
+            lines.append(f"Web Search: {len(self.web_search_results)} results")
+            for g in self.web_search_results[:5]:
                 lines.append(f"  - [{g.source}] {g.title[:100]}")
                 if g.snippet:
                     lines.append(f"    {g.snippet[:150]}")
@@ -334,7 +336,7 @@ class AnalysisReport(BaseModel):
 
     Supports single-model and consensus modes, with separate results
     for announcement analysis (Form 8-K) and sentiment analysis
-    (Google Search, Reddit, StockTwits).
+    (web search, Reddit, StockTwits).
     """
     id: str = ""
     ticker: str

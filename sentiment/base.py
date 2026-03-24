@@ -1,7 +1,7 @@
 """
 Abstract interface for sentiment data sources.
 
-Implementations: RedditSource, StockTwitsSource, SECEdgarSource, NewsSource
+Implementations: RedditSource, StockTwitsSource, SECEdgarSource, NewsSource, WebSearchSource
 All are independent and can fail without affecting others.
 """
 

@@ -116,10 +116,6 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = ""
 
-    # --- Google Custom Search ---
-    google_search_api_key: str = ""
-    google_search_cx: str = ""  # Custom Search Engine ID
-
     # --- StockTwits ---
     stocktwits_access_token: str = ""
 

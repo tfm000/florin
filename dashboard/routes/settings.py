@@ -31,7 +31,6 @@ _SECRET_KEYS = frozenset({
     # LLM model API keys are in llm_models table now, but keep
     # these in the mask set for backward compat with env-var loading
     "telegram_bot_token",
-    "google_search_api_key",
     "stocktwits_access_token",
 })
 
@@ -57,7 +56,6 @@ _SECTIONS = [
         "label": "Sentiment Sources",
         "keys": [
             "reddit_client_id", "reddit_client_secret", "reddit_user_agent",
-            "google_search_api_key", "google_search_cx",
             "stocktwits_access_token",
         ],
     },

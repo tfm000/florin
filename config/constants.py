@@ -87,7 +87,7 @@ Respond with ONLY valid JSON in this exact schema:
 }}"""
 
 # ---------------------------------------------------------------------------
-# Sentiment Analysis — Google Search, Reddit, StockTwits, News
+# Sentiment Analysis — Web Search (DuckDuckGo), Reddit, StockTwits, News
 # ---------------------------------------------------------------------------
 
 SENTIMENT_SYSTEM_PROMPT = """You are a market sentiment analyst specialising in retail \

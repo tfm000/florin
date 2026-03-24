@@ -13,12 +13,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.models import (
-    GoogleSearchResult,
     NewsArticle,
     RedditPost,
     SECFiling,
     SentimentData,
     StockTwitsMessage,
+    WebSearchResult,
 )
 from sentiment.base import SentimentSource
 
@@ -160,11 +160,11 @@ class SentimentAggregator:
         if news_articles and not isinstance(news_articles[0], NewsArticle):
             news_articles = []
 
-        # Google Search
-        gs_data = merged.get("Google Search", {})
-        google_results = gs_data.get("google_results", [])
-        if google_results and not isinstance(google_results[0], GoogleSearchResult):
-            google_results = []
+        # Web Search (DuckDuckGo)
+        ws_data = merged.get("Web Search", {})
+        web_search_results = ws_data.get("web_search_results", [])
+        if web_search_results and not isinstance(web_search_results[0], WebSearchResult):
+            web_search_results = []
 
         # Determine data quality
         if sources_succeeded == 0:
@@ -192,8 +192,8 @@ class SentimentAggregator:
             insider_sell_count=sec_data.get("insider_sells", 0),
             # News
             news_articles=news_articles,
-            # Google Search
-            google_results=google_results,
+            # Web Search (DuckDuckGo)
+            web_search_results=web_search_results,
             # Metadata
             sources_queried=sources_queried,
             sources_succeeded=sources_succeeded,

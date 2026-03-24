@@ -27,6 +27,7 @@ dependencies = [
 
     # Sentiment
     "praw>=7.7",
+    "ddgs>=9.11",
 
     # LLM - Cloud APIs
     "anthropic>=0.30",

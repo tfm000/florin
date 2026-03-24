@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from core.exceptions import ExternalServiceError, NotFoundError, ServiceUnavailableError
+from core.models import WebSearchResult
 from dashboard.dependencies import get_data_provider_dep, get_settings_dep, get_yfinance_dep
 
 logger = logging.getLogger(__name__)
@@ -668,6 +669,24 @@ async def get_market_news(
         news = unique[:20]
 
     return [NewsItem(**n) for n in news]
+
+
+@router.get("/research/web-search", response_model=list[WebSearchResult])
+async def get_web_search_results(
+    ticker: str = Query(..., min_length=1, description="Ticker symbol to search for"),
+):
+    """
+    Web search results for a ticker via DuckDuckGo news search.
+
+    Delegates to WebSearchSource for the actual search. Returns recent
+    news articles from across the web for the given ticker.
+    No API key required — uses DuckDuckGo's free search.
+    """
+    from sentiment.web_search_source import WebSearchSource
+
+    source = WebSearchSource()
+    result = await source.fetch(ticker.upper())
+    return result.get("web_search_results", [])
 
 
 @router.get("/research/yield-curve", response_model=YieldCurveResponse)

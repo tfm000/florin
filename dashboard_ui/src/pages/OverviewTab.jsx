@@ -1,15 +1,35 @@
 import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { useApi, apiPost } from '../hooks/useApi'
+import { useApi, apiFetch, apiPost } from '../hooks/useApi'
 import MetricsGrid from '../components/MetricsGrid'
 import NewsCard from '../components/NewsCard'
 
 export default function OverviewTab() {
   const { info, ticker } = useOutletContext()
-  const { data: news } = useApi(`/research/news?ticker=${ticker}`)
+  const { data: news } = useApi(`/research/news?ticker=${encodeURIComponent(ticker)}`)
   const [analysis, setAnalysis] = useState(null)
   const [analysing, setAnalysing] = useState(false)
   const [analysisMode, setAnalysisMode] = useState(null)
+  const [newsTab, setNewsTab] = useState('recent')
+  const [webSearchResults, setWebSearchResults] = useState(null)
+  const [webSearchLoading, setWebSearchLoading] = useState(false)
+  const [webSearchError, setWebSearchError] = useState(null)
+
+  const handleWebSearchTab = async () => {
+    setNewsTab('web')
+    if (!webSearchResults && !webSearchLoading) {
+      setWebSearchLoading(true)
+      setWebSearchError(null)
+      try {
+        const results = await apiFetch(`/research/web-search?ticker=${encodeURIComponent(ticker)}`)
+        setWebSearchResults(results)
+      } catch (e) {
+        setWebSearchError(e.message || 'Search failed')
+        setWebSearchResults([])
+      }
+      setWebSearchLoading(false)
+    }
+  }
 
   const handleAnalyse = async (type, mode = 'all') => {
     setAnalysing(true)
@@ -348,17 +368,79 @@ export default function OverviewTab() {
         </div>
       )}
 
-      {/* News */}
-      {news && news.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-300 mb-3">Recent News</h2>
+      {/* News / Web Search toggle */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => setNewsTab('recent')}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              newsTab === 'recent'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-700 text-gray-400 hover:text-white'
+            }`}
+          >
+            Recent News
+          </button>
+          <button
+            onClick={handleWebSearchTab}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              newsTab === 'web'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-700 text-gray-400 hover:text-white'
+            }`}
+          >
+            Web Search
+          </button>
+        </div>
+
+        {newsTab === 'recent' && news && news.length > 0 && (
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {news.map((article, i) => (
-              <NewsCard key={i} article={article} />
+              <NewsCard key={article.url || i} article={article} />
             ))}
           </div>
-        </div>
-      )}
+        )}
+        {newsTab === 'recent' && (!news || news.length === 0) && (
+          <p className="text-gray-500 text-sm">No recent news available.</p>
+        )}
+
+        {newsTab === 'web' && webSearchLoading && (
+          <p className="text-gray-400 text-sm">Searching...</p>
+        )}
+        {newsTab === 'web' && webSearchError && (
+          <p className="text-red-400 text-sm">Search failed: {webSearchError}</p>
+        )}
+        {newsTab === 'web' && !webSearchLoading && webSearchResults && webSearchResults.length > 0 && (
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {webSearchResults.map((r) => (
+              <a
+                key={r.url || r.title}
+                href={r.url || '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-gray-500 transition-colors"
+              >
+                <p className="text-white text-sm font-medium leading-snug line-clamp-2">{r.title}</p>
+                {r.snippet && (
+                  <p className="text-gray-400 text-xs mt-1 line-clamp-2">{r.snippet}</p>
+                )}
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-xs text-gray-500">{r.source}</span>
+                  {r.date && (() => {
+                    const d = new Date(r.date)
+                    return !isNaN(d.getTime())
+                      ? <span className="text-xs text-gray-600">{d.toLocaleDateString()}</span>
+                      : null
+                  })()}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+        {newsTab === 'web' && !webSearchLoading && !webSearchError && webSearchResults && webSearchResults.length === 0 && (
+          <p className="text-gray-500 text-sm">No web search results found.</p>
+        )}
+      </div>
     </div>
   )
 }
