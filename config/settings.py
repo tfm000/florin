@@ -152,6 +152,11 @@ class Settings(BaseSettings):
     llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE
     llm_user_context: str = ""
 
+    # --- LLM Model Registry (new — model IDs reference llm_models table) ---
+    llm_announcement_model_id: str = ""  # ID of model for announcement analysis
+    llm_sentiment_model_id: str = ""  # ID of model for sentiment analysis
+    llm_consensus_leader_model_id: str = ""  # ID of model for consensus leader
+
     # --- Dashboard ---
     dashboard_host: str = "0.0.0.0"
     dashboard_port: int = Field(default=8000, ge=1024, le=65535)

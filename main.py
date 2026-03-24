@@ -41,6 +41,10 @@ class Florin:
         self.db: Database | None = None
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
+        # Mutable references for hot-reload
+        self._analysers: dict[str, Any] = {}
+        self._report_gen: Any = None
+        self._consensus_gen: Any = None
 
     async def start(self) -> None:
         """Initialise and start all services."""
@@ -118,14 +122,17 @@ class Florin:
         from sentiment.sec_8k_source import SEC8KSource
         sec_8k_source = SEC8KSource()
 
-        # LLM analysers
-        analysers = self._init_analysers()
+        # Migrate legacy LLM settings → model registry (first boot only)
+        await self._migrate_legacy_llm_settings()
 
-        # Report generators
+        # LLM analysers (from DB model registry, with flat-settings fallback)
+        self._analysers = await self._init_analysers_from_db()
+
+        # Report generators (hold mutable references for hot-reload)
         from analysis.report_generator import ReportGenerator
         from analysis.consensus_generator import ConsensusGenerator
-        report_gen = ReportGenerator(analysers, self.settings)
-        consensus_gen = ConsensusGenerator(analysers, self.settings)
+        self._report_gen = ReportGenerator(self._analysers, self.settings)
+        self._consensus_gen = ConsensusGenerator(self._analysers, self.settings)
 
         # Telegram bot
         telegram_bot = None
@@ -142,10 +149,11 @@ class Florin:
         set_state("screener_alert_service", screener_alert_svc)
         set_state("data_provider", data_provider)
         set_state("yfinance_provider", yfinance_provider)
-        set_state("analysers", analysers)
-        set_state("report_generator", report_gen)
-        set_state("consensus_generator", consensus_gen)
+        set_state("analysers", self._analysers)
+        set_state("report_generator", self._report_gen)
+        set_state("consensus_generator", self._consensus_gen)
         set_state("sentiment_aggregator", sentiment_agg)
+        set_state("analyser_refresh_callback", self._refresh_analysers)
         from stats.risk_free import RiskFreeRateFetcher
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
@@ -174,11 +182,9 @@ class Florin:
         ))
         logger.info("Screener alert service started")
 
-        # Alert pipeline
+        # Alert pipeline (uses self._report_gen / self._consensus_gen for hot-reload)
         services.append(asyncio.create_task(
-            self._alert_pipeline(
-                sentiment_agg, sec_8k_source, report_gen, consensus_gen,
-            ),
+            self._alert_pipeline(sentiment_agg, sec_8k_source),
             name="alert-pipeline",
         ))
 
@@ -318,8 +324,11 @@ class Florin:
 
         return SentimentAggregator(sources)
 
-    def _init_analysers(self) -> dict[str, Any]:
-        """Initialise available LLM analysers."""
+    def _init_analysers_from_settings(self) -> dict[str, Any]:
+        """Initialise LLM analysers from flat Settings fields (legacy fallback).
+
+        Used when no models are registered in the llm_models table.
+        """
         analysers: dict[str, Any] = {}
         enabled = self.settings.get_enabled_llm_providers()
 
@@ -343,8 +352,206 @@ class Florin:
             from analysis.openrouter_analyser import OpenRouterAnalyser
             analysers["openrouter"] = OpenRouterAnalyser(self.settings)
 
-        logger.info("LLM analysers initialised", analysers=list(analysers.keys()))
+        logger.info("LLM analysers initialised (legacy)", analysers=list(analysers.keys()))
         return analysers
+
+    async def _init_analysers_from_db(self) -> dict[str, Any]:
+        """Initialise LLM analysers from the llm_models DB table.
+
+        Each enabled model in the registry gets its own analyser instance,
+        keyed by model ID. This replaces the flat provider-keyed approach.
+
+        Returns:
+            Dict mapping model_id → LLMAnalyser instance.
+        """
+        from config.settings import Settings
+        from db.models import LLMModelORM
+        from sqlalchemy import select
+
+        analysers: dict[str, Any] = {}
+
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(LLMModelORM).where(LLMModelORM.enabled == True)  # noqa: E712
+            )
+            models = result.scalars().all()
+
+        if not models:
+            logger.info("No LLM models in registry, falling back to flat settings")
+            return self._init_analysers_from_settings()
+
+        for m in models:
+            try:
+                analyser = self._create_analyser(m.host, m.model, m.api_key)
+                if analyser:
+                    analysers[m.id] = analyser
+                    logger.debug("Loaded analyser: %s (%s)", m.display_name, m.id)
+            except Exception as e:
+                logger.error("Failed to create analyser for %s: %s", m.display_name, e)
+
+        logger.info(
+            "LLM analysers initialised from DB registry",
+            count=len(analysers),
+            models=[m.display_name for m in models if m.id in analysers],
+        )
+        return analysers
+
+    def _create_analyser(self, host: str, model: str, api_key: str) -> Any:
+        """Create a single LLM analyser from host/model/key.
+
+        Args:
+            host: Provider host ID (openai, groq, etc.).
+            model: Model identifier string.
+            api_key: API key for the provider.
+
+        Returns:
+            LLMAnalyser instance, or None if host is unsupported.
+        """
+        from config.settings import Settings
+
+        if host == "groq":
+            from analysis.groq_analyser import GroqAnalyser
+            return GroqAnalyser(Settings(groq_api_key=api_key, groq_model=model))
+
+        if host == "gemini":
+            from analysis.gemini_analyser import GeminiAnalyser
+            return GeminiAnalyser(Settings(gemini_api_key=api_key, gemini_model=model))
+
+        if host == "anthropic":
+            from analysis.claude_analyser import ClaudeAnalyser
+            return ClaudeAnalyser(Settings(anthropic_api_key=api_key, claude_model=model))
+
+        if host == "openai":
+            from analysis.openai_analyser import OpenAIAnalyser
+            return OpenAIAnalyser(Settings(openai_api_key=api_key, openai_model=model))
+
+        if host == "openrouter":
+            from analysis.openrouter_analyser import OpenRouterAnalyser
+            return OpenRouterAnalyser(Settings(openrouter_api_key=api_key, openrouter_model=model))
+
+        logger.warning("Unsupported LLM host: %s", host)
+        return None
+
+    async def _refresh_analysers(self) -> None:
+        """Re-initialise analysers from the DB model registry.
+
+        Called when LLM models are added/removed/updated via the API.
+        Updates the analyser dict, report generator, and consensus
+        generator in place so running services pick up the changes.
+        """
+        from dashboard.deps import set_state
+
+        new_analysers = await self._init_analysers_from_db()
+
+        # Update the shared analyser dict in-place
+        self._analysers.clear()
+        self._analysers.update(new_analysers)
+
+        # Re-create generators with updated analysers
+        from analysis.report_generator import ReportGenerator
+        from analysis.consensus_generator import ConsensusGenerator
+        new_report_gen = ReportGenerator(self._analysers, self.settings)
+        new_consensus_gen = ConsensusGenerator(self._analysers, self.settings)
+
+        # Update dashboard deps
+        set_state("analysers", self._analysers)
+        set_state("report_generator", new_report_gen)
+        set_state("consensus_generator", new_consensus_gen)
+
+        # Update the pipeline references
+        self._report_gen = new_report_gen
+        self._consensus_gen = new_consensus_gen
+
+        logger.info("LLM analysers refreshed", count=len(self._analysers))
+
+    async def _migrate_legacy_llm_settings(self) -> None:
+        """Auto-migrate old flat LLM settings to the new model registry.
+
+        On first boot after the upgrade, if the llm_models table is empty
+        but old-style API keys exist in Settings (from env vars or DB),
+        create model entries automatically so the user doesn't lose their
+        configuration.
+        """
+        from db.models import LLMModelORM, generate_id
+        from sqlalchemy import select, func
+
+        async with self.db.session() as session:
+            count = await session.scalar(
+                select(func.count()).select_from(LLMModelORM)
+            )
+            if count and count > 0:
+                return  # Models already exist, skip migration
+
+        # Map old settings to (host, model_field, key_field)
+        legacy_providers = [
+            ("groq", self.settings.groq_model, self.settings.groq_api_key),
+            ("gemini", self.settings.gemini_model, self.settings.gemini_api_key),
+            ("anthropic", self.settings.claude_model, self.settings.anthropic_api_key),
+            ("openai", self.settings.openai_model, self.settings.openai_api_key),
+            ("openrouter", self.settings.openrouter_model, self.settings.openrouter_api_key),
+        ]
+
+        host_labels = {
+            "openai": "OpenAI",
+            "openrouter": "OpenRouter",
+            "gemini": "Gemini",
+            "groq": "Groq",
+            "anthropic": "Anthropic",
+        }
+
+        migrated = []
+        first_model_id = ""
+
+        async with self.db.session() as session:
+            for host, model, api_key in legacy_providers:
+                if not api_key:
+                    continue  # No key configured for this provider
+
+                model_id = generate_id()
+                label = host_labels.get(host, host.title())
+                display_name = f"{label} / {model}" if model else f"{label} / (default)"
+
+                orm = LLMModelORM(
+                    id=model_id,
+                    host=host,
+                    model=model or "",
+                    api_key=api_key,
+                    display_name=display_name,
+                    enabled=True,
+                )
+                session.add(orm)
+                migrated.append(display_name)
+
+                if not first_model_id:
+                    first_model_id = model_id
+
+            if migrated:
+                await session.commit()
+                logger.info(
+                    "Migrated %d legacy LLM provider(s) to model registry: %s",
+                    len(migrated), migrated,
+                )
+
+                # Set the first model as default for all roles if not already set
+                if first_model_id and not self.settings.llm_announcement_model_id:
+                    self.settings.llm_announcement_model_id = first_model_id
+                    self.settings.llm_sentiment_model_id = first_model_id
+                    self.settings.llm_consensus_leader_model_id = first_model_id
+
+                    # Persist all role assignments in a single session
+                    from db.models import SettingORM
+                    async with self.db.session() as s2:
+                        for key in (
+                            "llm_announcement_model_id",
+                            "llm_sentiment_model_id",
+                            "llm_consensus_leader_model_id",
+                        ):
+                            existing = await s2.get(SettingORM, key)
+                            if existing:
+                                existing.value = first_model_id
+                            else:
+                                s2.add(SettingORM(key=key, value=first_model_id))
+                        await s2.commit()
 
     # --- Service loops ---
 
@@ -372,14 +579,15 @@ class Florin:
         self,
         sentiment_agg: Any,
         sec_8k_source: Any,
-        report_gen: Any,
-        consensus_gen: Any,
     ) -> None:
         """React to momentum alerts.
 
         Flow: MOMENTUM_ALERT → fetch sentiment + 8-K filings concurrently
               → generate report (single or consensus) → save to DB
               → publish REPORT_READY
+
+        Uses self._report_gen and self._consensus_gen so that hot-reloaded
+        analysers are picked up without restarting the pipeline.
         """
         async for event in self.event_bus.subscribe(EventType.MOMENTUM_ALERT):
             alert: AlertSignal = event.data
@@ -395,11 +603,11 @@ class Florin:
 
                 # 2. Generate report (both analysis types)
                 if self.settings.llm_mode.value == "consensus":
-                    report = await consensus_gen.generate(
+                    report = await self._consensus_gen.generate(
                         alert, sentiment, filings=filings,
                     )
                 else:
-                    report = await report_gen.generate(
+                    report = await self._report_gen.generate(
                         alert, sentiment, filings=filings,
                     )
 

@@ -456,18 +456,21 @@ async def analyse_asset(
     # Get the available analysers
     from dashboard.deps import _state
     analysers = _state.get("analysers", {})
-    default_provider = settings.llm_default_provider.value
 
-    analyser = analysers.get(default_provider)
+    # Try sentiment model ID first (DB registry), then legacy provider name, then any
+    analyser = None
+    if settings.llm_sentiment_model_id:
+        analyser = analysers.get(settings.llm_sentiment_model_id)
     if not analyser:
-        # Try any available analyser
+        analyser = analysers.get(settings.llm_default_provider.value)
+    if not analyser:
         for _name, a in analysers.items():
             analyser = a
             break
 
     if not analyser:
         raise ServiceUnavailableError(
-            "No LLM analysers available. Configure Groq, Claude, or Gemini API keys in Settings."
+            "No LLM analysers available. Register a model in Settings > LLM Models."
         )
 
     # Fetch sentiment from aggregator (with source filtering)

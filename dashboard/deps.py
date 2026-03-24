@@ -68,3 +68,18 @@ def get_rf_fetcher():
 
 def get_policy_rate_fetcher():
     return _state.get("policy_rate_fetcher")
+
+
+def get_analysers() -> dict:
+    """Return the current dict of LLM analyser instances."""
+    return _state.get("analysers", {})
+
+
+def get_analyser_refresh_callback():
+    """Return the callback to refresh LLM analysers after config changes.
+
+    The callback is an async callable that re-initialises analysers
+    from the DB model registry and updates the report/consensus
+    generators. Set by main.py at startup.
+    """
+    return _state.get("analyser_refresh_callback")

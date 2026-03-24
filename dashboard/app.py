@@ -74,7 +74,7 @@ def create_app(
         stats, health, settings, research, watchlist, monitor,
         calendar, screener, correlation, risk, filings_13f, portfolio,
         short_interest, breadth, news_feed, regime, alerts, insiders,
-        market_hours,
+        market_hours, llm_models,
     )
 
     app.include_router(health.router, prefix="/api")
@@ -101,6 +101,7 @@ def create_app(
     app.include_router(alerts.router, prefix="/api")
     app.include_router(insiders.router, prefix="/api")
     app.include_router(market_hours.router, prefix="/api")
+    app.include_router(llm_models.router, prefix="/api")
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint

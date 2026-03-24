@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useApi, apiPut } from '../hooks/useApi'
 import { useColorblindToggle } from '../hooks/useChartColors'
 import { SettingsSection } from '../components/SettingsWidgets'
+import LLMModelsManager from '../components/LLMModelsManager'
+import LLMAnalysisConfig from '../components/LLMAnalysisConfig'
 
 // System settings — exclude trading/broker/telegram (in TradingSettings) and scanner (removed)
 const EXCLUDED_SECTION_IDS = new Set(['trading', 'broker', 'telegram', 'scanner'])
@@ -108,6 +110,12 @@ export default function Settings() {
           )}
         </div>
       </div>
+
+      {/* LLM Model Registry */}
+      <LLMModelsManager />
+
+      {/* LLM Analysis Configuration */}
+      <LLMAnalysisConfig />
 
       {sections.map(section => (
         <SettingsSection

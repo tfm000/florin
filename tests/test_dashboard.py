@@ -171,7 +171,9 @@ class TestSettingsRoutes:
         data = resp.json()
         assert "sections" in data
         section_ids = [s["id"] for s in data["sections"]]
-        assert "llm" in section_ids
+        # LLM and analysis sections moved to /api/llm-models and /api/llm-settings
+        assert "llm" not in section_ids
+        assert "analysis" not in section_ids
         assert "broker" in section_ids
         assert "trading" in section_ids
         # Scanner section was removed (replaced by per-screener configs)
@@ -271,11 +273,12 @@ class TestSettingsRoutes:
         size_field = next(f for f in trading["fields"] if f["key"] == "default_position_size")
         assert size_field["type"] == "number"
 
-        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
-        mode_field = next(f for f in analysis["fields"] if f["key"] == "llm_mode")
-        assert mode_field["type"] == "select"
-        assert "single" in mode_field["choices"]
-        assert "consensus" in mode_field["choices"]
+        # LLM analysis mode now managed via /api/llm-settings, not in settings sections
+        # Verify general section has select-type fields instead
+        general = next(s for s in data["sections"] if s["id"] == "general")
+        env_field = next(f for f in general["fields"] if f["key"] == "app_env")
+        assert env_field["type"] == "select"
+        assert "development" in env_field["choices"]
 
 
 class TestReadOnlyMode:

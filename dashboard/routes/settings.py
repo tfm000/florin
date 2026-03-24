@@ -28,6 +28,8 @@ _SECRET_KEYS = frozenset({
     "reddit_client_id", "reddit_client_secret",
     "groq_api_key", "gemini_api_key", "anthropic_api_key",
     "openai_api_key", "openrouter_api_key",
+    # LLM model API keys are in llm_models table now, but keep
+    # these in the mask set for backward compat with env-var loading
     "telegram_bot_token",
     "google_search_api_key",
     "stocktwits_access_token",
@@ -59,25 +61,8 @@ _SECTIONS = [
             "stocktwits_access_token",
         ],
     },
-    {
-        "id": "llm",
-        "label": "LLM Providers",
-        "keys": [
-            "groq_api_key", "groq_model",
-            "gemini_api_key", "gemini_model",
-            "anthropic_api_key", "claude_model",
-            "openai_api_key", "openai_model",
-            "openrouter_api_key", "openrouter_model",
-        ],
-    },
-    {
-        "id": "analysis",
-        "label": "Analysis Mode",
-        "keys": [
-            "llm_mode", "llm_default_provider", "llm_consensus_meta_provider",
-            "llm_user_context",
-        ],
-    },
+    # LLM Providers and Analysis Mode sections removed — now managed
+    # via /api/llm-models and /api/llm-settings endpoints.
     {
         "id": "telegram",
         "label": "Telegram",

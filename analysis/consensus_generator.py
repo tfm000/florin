@@ -53,6 +53,8 @@ class ConsensusGenerator:
     ) -> None:
         self._analysers = analysers
         self._meta_provider = settings.llm_consensus_meta_provider.value
+        # Model ID for the consensus leader (from DB model registry)
+        self._leader_model_id = settings.llm_consensus_leader_model_id
         self._user_context = settings.llm_user_context
 
     async def generate(
@@ -262,11 +264,16 @@ class ConsensusGenerator:
         Returns:
             Consensus AnalysisResult from the leader, or simple average fallback.
         """
-        leader = self._analysers.get(self._meta_provider)
+        # Try model ID first (DB registry), then legacy provider name
+        leader = None
+        if self._leader_model_id:
+            leader = self._analysers.get(self._leader_model_id)
+        if not leader:
+            leader = self._analysers.get(self._meta_provider)
         if not leader:
             logger.warning(
-                "Leader LLM %s not available — using simple average",
-                self._meta_provider,
+                "Leader LLM not available (id=%s, provider=%s) — using simple average",
+                self._leader_model_id, self._meta_provider,
             )
             return self._simple_average(individual_results, analysis_type_str)
 

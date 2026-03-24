@@ -462,6 +462,26 @@ class ScreenerAlertLogORM(Base):
 # Central Bank Policy Rates
 # =============================================================================
 
+class LLMModelORM(Base):
+    """Registered LLM model for analysis.
+
+    Each row represents a configured LLM provider + model combination
+    with its API credentials. Users can register multiple models and
+    assign them to different analysis roles (announcement, sentiment,
+    consensus leader).
+    """
+    __tablename__ = "llm_models"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    host: Mapped[str] = mapped_column(String(20), index=True)  # openai, openrouter, gemini, groq, anthropic
+    model: Mapped[str] = mapped_column(String(100))  # e.g. "gpt-4o", "gemini-2.5-flash-lite"
+    api_key: Mapped[str] = mapped_column(Text)  # Stored plaintext (local tool)
+    display_name: Mapped[str] = mapped_column(String(200))  # e.g. "OpenAI / gpt-4o"
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
 class PolicyRateORM(Base):
     """G10 central bank policy rates fetched from BIS CBPOL API."""
     __tablename__ = "policy_rates"
