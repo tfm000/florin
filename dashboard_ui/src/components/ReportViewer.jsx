@@ -6,18 +6,10 @@ const RECOMMENDATION_COLORS = {
   STRONG_AVOID: 'text-red-400 bg-red-900/30',
 }
 
-const FRAUD_COLORS = {
-  LOW: 'text-green-400',
-  MEDIUM: 'text-yellow-400',
-  HIGH: 'text-orange-400',
-  CRITICAL: 'text-red-400',
-}
-
 export default function ReportViewer({ report }) {
   if (!report) return null
 
   const recClass = RECOMMENDATION_COLORS[report.final_recommendation] || 'text-gray-300'
-  const fraudClass = FRAUD_COLORS[report.fraud_risk_level] || 'text-gray-400'
 
   return (
     <div className="bg-gray-800 rounded-lg p-5 border border-gray-700 space-y-4">
@@ -35,7 +27,7 @@ export default function ReportViewer({ report }) {
       </div>
 
       {/* Scores */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div className="bg-gray-900 rounded p-3 text-center">
           <p className="text-gray-400 text-xs">Score</p>
           <p className="text-white font-mono text-lg">{report.final_score.toFixed(1)}</p>
@@ -43,10 +35,6 @@ export default function ReportViewer({ report }) {
         <div className="bg-gray-900 rounded p-3 text-center">
           <p className="text-gray-400 text-xs">Confidence</p>
           <p className="text-white font-mono text-lg">{(report.final_confidence * 100).toFixed(0)}%</p>
-        </div>
-        <div className="bg-gray-900 rounded p-3 text-center">
-          <p className="text-gray-400 text-xs">Fraud Risk</p>
-          <p className={`font-mono text-lg ${fraudClass}`}>{report.fraud_risk_level}</p>
         </div>
       </div>
 
@@ -62,18 +50,6 @@ export default function ReportViewer({ report }) {
           <span className="bg-gray-900 px-2 py-1 rounded text-gray-300">News: {report.news_count}</span>
         </div>
       </div>
-
-      {/* Fraud Flags */}
-      {report.fraud_flags && report.fraud_flags.length > 0 && (
-        <div>
-          <h4 className="text-gray-400 text-xs uppercase mb-2">Fraud Flags</h4>
-          <ul className="text-xs text-orange-300 space-y-1">
-            {report.fraud_flags.map((flag, i) => (
-              <li key={i}>&#9888; {flag}</li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       <p className="text-gray-500 text-xs">{report.generated_at}</p>
     </div>

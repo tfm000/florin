@@ -216,7 +216,7 @@ class TestE2EConsensusMode:
             "b": _make_mock_analyser("b", Recommendation.HOLD, 5.0),
             "c": _make_mock_analyser("c", Recommendation.BUY, 6.0),
         }
-        settings = Settings(llm_consensus_meta_provider="claude")
+        settings = Settings(llm_consensus_meta_provider="claude-cli")
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
@@ -359,7 +359,7 @@ class TestNoAPIKeys:
     @pytest.mark.asyncio
     async def test_no_analysers_consensus_mode(self):
         """Consensus mode with 0 analysers returns empty report."""
-        settings = Settings(llm_consensus_meta_provider="claude")
+        settings = Settings(llm_consensus_meta_provider="claude-cli")
         gen = ConsensusGenerator({}, settings)
 
         report = await gen.generate(

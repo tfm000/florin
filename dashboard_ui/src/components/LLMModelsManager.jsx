@@ -4,8 +4,9 @@ import { useApi, apiPost, apiPut, apiDelete } from '../hooks/useApi'
 /**
  * LLM Models Manager — register, edit, test, and delete LLM model configurations.
  *
- * Each model is a host + model name + API key combination that can be
+ * Each model is a host + model name + optional API key combination that can be
  * assigned to analysis roles (announcement, sentiment, consensus leader).
+ * Anthropic CLI models support optional API key (CLI auth) and thinking mode.
  */
 export default function LLMModelsManager() {
   const { data: models, loading, refetch } = useApi('/llm-models')
@@ -112,6 +113,9 @@ export default function LLMModelsManager() {
 
 
 function ModelCard({ model, onDelete, onToggle, onHealthCheck }) {
+  const keyDisplay = model.api_key_masked || 'CLI Auth'
+  const isCliAuth = !model.api_key_masked
+
   return (
     <div className={`flex items-center justify-between p-3 rounded-lg border ${
       model.enabled
@@ -126,8 +130,15 @@ function ModelCard({ model, onDelete, onToggle, onHealthCheck }) {
           }`}>
             {model.enabled ? 'Active' : 'Disabled'}
           </span>
+          {model.thinking_mode && (
+            <span className="text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400">
+              Thinking: {model.thinking_mode}
+            </span>
+          )}
         </div>
-        <div className="text-gray-500 text-xs mt-0.5 font-mono">{model.api_key_masked}</div>
+        <div className={`text-xs mt-0.5 font-mono ${isCliAuth ? 'text-blue-400' : 'text-gray-500'}`}>
+          {keyDisplay}
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5 ml-3 shrink-0">
@@ -159,28 +170,40 @@ function ModelCard({ model, onDelete, onToggle, onHealthCheck }) {
 
 
 function AddModelForm({ hosts, onSuccess, onMessage }) {
-  const [host, setHost] = useState(hosts[0]?.id || 'openai')
+  const [host, setHost] = useState(hosts[0]?.id || 'groq')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [thinkingMode, setThinkingMode] = useState('low')
   const [saving, setSaving] = useState(false)
 
   const selectedHost = hosts.find(h => h.id === host)
   const hints = selectedHost?.models_hint || []
+  const apiKeyRequired = selectedHost?.requires_api_key !== false
+  const showThinkingMode = host === 'anthropic-cli'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!model.trim() || !apiKey.trim()) {
-      onMessage({ type: 'error', text: 'Model name and API key are required' })
+    if (!model.trim()) {
+      onMessage({ type: 'error', text: 'Model name is required' })
+      return
+    }
+    if (apiKeyRequired && !apiKey.trim()) {
+      onMessage({ type: 'error', text: 'API key is required for this provider' })
       return
     }
 
     setSaving(true)
     try {
-      const created = await apiPost('/llm-models', {
+      const payload = {
         host,
         model: model.trim(),
         api_key: apiKey.trim(),
-      })
+      }
+      if (showThinkingMode) {
+        payload.thinking_mode = thinkingMode
+      }
+
+      const created = await apiPost('/llm-models', payload)
 
       // Run health check on the newly created model
       onMessage({ type: 'info', text: `Added ${created.display_name}. Running health check...` })
@@ -247,20 +270,40 @@ function AddModelForm({ hosts, onSuccess, onMessage }) {
       </div>
 
       <div>
-        <label className="text-gray-400 text-xs block mb-1">API Key</label>
+        <label className="text-gray-400 text-xs block mb-1">
+          API Key{!apiKeyRequired && <span className="text-blue-400 ml-1">(optional)</span>}
+        </label>
         <input
           type="password"
           value={apiKey}
           onChange={e => setApiKey(e.target.value)}
-          placeholder="Enter API key"
+          placeholder={apiKeyRequired ? 'Enter API key' : 'Optional — uses CLI auth if empty'}
           className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm font-mono focus:border-blue-500 focus:outline-none"
         />
       </div>
 
+      {showThinkingMode && (
+        <div>
+          <label className="text-gray-400 text-xs block mb-1">Thinking Mode</label>
+          <select
+            value={thinkingMode}
+            onChange={e => setThinkingMode(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none"
+          >
+            <option value="off">Off</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="max">Max</option>
+          </select>
+          <p className="text-gray-500 text-xs mt-1">Controls Claude's extended thinking depth. Higher = better quality, more tokens.</p>
+        </div>
+      )}
+
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={saving || !model.trim() || !apiKey.trim()}
+          disabled={saving || !model.trim() || (apiKeyRequired && !apiKey.trim())}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-sm rounded font-medium transition-colors"
         >
           {saving ? 'Adding...' : 'Add & Test'}

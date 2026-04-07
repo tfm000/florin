@@ -309,8 +309,8 @@ class ConsensusGenerator:
     ) -> str:
         """Call the leader LLM's underlying API with the consensus prompt.
 
-        Handles both Anthropic (Messages API) and OpenAI-compatible
-        (chat.completions) providers.
+        Handles Claude CLI (claude-agent-sdk), OpenAI-compatible
+        (chat.completions), and Gemini providers.
 
         Args:
             leader: The LLMAnalyser instance to use as leader.
@@ -322,18 +322,11 @@ class ConsensusGenerator:
         Raises:
             RuntimeError: If the leader analyser type is unsupported.
         """
-        # Try Anthropic Claude (messages API)
-        if hasattr(leader, '_client') and hasattr(leader._client, 'messages'):
-            response = await leader._client.messages.create(
-                model=leader.model_name,
-                max_tokens=4096,
-                system=CONSENSUS_LEADER_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            return response.content[0].text if response.content else ""
+        # Try Claude CLI (claude-agent-sdk)
+        if getattr(leader, '_is_claude_agent_sdk', False):
+            return await leader._query_claude(CONSENSUS_LEADER_SYSTEM_PROMPT, prompt)
 
-        # Try OpenAI-compatible (Groq, OpenAI, OpenRouter)
+        # Try OpenAI-compatible (Groq, OpenRouter)
         if hasattr(leader, '_client') and hasattr(leader._client, 'chat'):
             response = await leader._client.chat.completions.create(
                 model=leader.model_name,

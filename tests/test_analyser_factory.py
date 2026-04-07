@@ -16,7 +16,6 @@ from analysis.claude_analyser import ClaudeAnalyser
 from analysis.consensus_generator import ConsensusGenerator
 from analysis.gemini_analyser import GeminiAnalyser
 from analysis.groq_analyser import GroqAnalyser
-from analysis.openai_analyser import OpenAIAnalyser
 from analysis.openrouter_analyser import OpenRouterAnalyser
 from config.settings import Settings
 from core.models import (
@@ -47,14 +46,9 @@ class TestAnalyserFactory:
         assert isinstance(result, GeminiAnalyser)
 
     def test_creates_claude_analyser(self) -> None:
-        """host='anthropic' should return a ClaudeAnalyser instance."""
-        result = _create_temp_analyser("anthropic", "claude-haiku-4-5-20251001", "fake-key")
+        """host='anthropic-cli' should return a ClaudeAnalyser instance."""
+        result = _create_temp_analyser("anthropic-cli", "claude-haiku-4-5-20251001", "fake-key")
         assert isinstance(result, ClaudeAnalyser)
-
-    def test_creates_openai_analyser(self) -> None:
-        """host='openai' should return an OpenAIAnalyser instance."""
-        result = _create_temp_analyser("openai", "gpt-4o", "fake-key")
-        assert isinstance(result, OpenAIAnalyser)
 
     def test_creates_openrouter_analyser(self) -> None:
         """host='openrouter' should return an OpenRouterAnalyser instance."""
@@ -66,9 +60,9 @@ class TestAnalyserFactory:
         result = _create_temp_analyser("unknown", "some-model", "fake-key")
         assert result is None
 
-    def test_all_five_hosts(self) -> None:
+    def test_all_four_hosts(self) -> None:
         """Every supported host should produce a non-None analyser."""
-        hosts = ["groq", "gemini", "anthropic", "openai", "openrouter"]
+        hosts = ["groq", "gemini", "anthropic-cli", "openrouter"]
         for host in hosts:
             analyser = _create_temp_analyser(host, "test-model", "fake-key")
             assert analyser is not None, f"Factory returned None for host={host!r}"
@@ -102,7 +96,7 @@ class TestConsensusEdgeCases:
         analysers = {
             "groq": _make_failing_analyser("groq"),
             "gemini": _make_failing_analyser("gemini"),
-            "claude": _make_failing_analyser("claude"),
+            "claude-cli": _make_failing_analyser("claude-cli"),
         }
 
         settings = Settings(llm_consensus_meta_provider="groq")
@@ -130,7 +124,7 @@ class TestConsensusEdgeCases:
         analysers = {
             "groq": make_mock_analyser("groq", Recommendation.BUY, 7.0),
             "gemini": make_mock_analyser("gemini", Recommendation.HOLD, 4.0),
-            "claude": _make_failing_analyser("claude"),
+            "claude-cli": _make_failing_analyser("claude-cli"),
         }
 
         settings = Settings(llm_consensus_meta_provider="groq")
@@ -156,7 +150,7 @@ class TestConsensusEdgeCases:
         analysers = {
             "groq": make_mock_analyser("groq", Recommendation.AVOID, 2.0),
             "gemini": make_mock_analyser("gemini", Recommendation.HOLD, 5.0),
-            "claude": make_mock_analyser("claude", Recommendation.STRONG_BUY, 9.0),
+            "claude-cli": make_mock_analyser("claude-cli", Recommendation.STRONG_BUY, 9.0),
         }
 
         settings = Settings(llm_consensus_meta_provider="groq")

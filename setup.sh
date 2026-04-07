@@ -95,7 +95,7 @@ if command -v ollama &>/dev/null; then
 else
     warn "Ollama not installed — local LLM analysis unavailable"
     echo "    Install from https://ollama.ai if you want local LLM support."
-    echo "    Cloud LLMs (Groq, Gemini, Claude) work without Ollama."
+    echo "    Cloud LLMs (Groq, Gemini, Claude CLI, OpenRouter) work without Ollama."
     echo ""
 fi
 

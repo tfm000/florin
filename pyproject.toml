@@ -30,9 +30,9 @@ dependencies = [
     "ddgs>=9.11",
 
     # LLM - Cloud APIs
-    "anthropic>=0.30",
+    "claude-agent-sdk>=0.1",
     "google-genai>=1.0",
-    "openai>=1.0",
+    "openai>=1.0",  # Used by OpenRouter analyser
     "groq>=0.9",
 
     # Telegram

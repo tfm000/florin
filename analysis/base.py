@@ -1,7 +1,7 @@
 """
 Abstract interface for LLM analysis providers.
 
-Implementations: GroqAnalyser, GeminiAnalyser, ClaudeAnalyser, OpenAIAnalyser, OpenRouterAnalyser
+Implementations: GroqAnalyser, GeminiAnalyser, ClaudeAnalyser (CLI), OpenRouterAnalyser
 All produce AnalysisResult output with 0–10 scoring — fully interchangeable.
 """
 

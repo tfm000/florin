@@ -23,7 +23,6 @@ Dashboard at `http://localhost:8000` — configure API keys via the Settings pag
 |---|---|---|
 | Python | 3.12+ | Required |
 | Node.js | 18+ | Required for dashboard UI |
-| Ollama | Latest | Optional — local LLM analysis |
 
 ## Features
 
@@ -38,7 +37,7 @@ Dashboard at `http://localhost:8000` — configure API keys via the Settings pag
 - **Short interest** tracking
 - **Insider activity** monitoring
 - **Top institutional holders** (13F filings)
-- **LLM-powered analysis** — single or multi-LLM consensus mode with 5 provider options
+- **LLM-powered analysis** — single or multi-LLM consensus mode with 4 provider options
 
 ### Screening
 - **Multi-asset screener** — stocks, ETFs, indices, mutual funds, crypto
@@ -117,19 +116,19 @@ Leave `T212_API_KEY` unconfigured to use the **paper broker** (simulated trades,
 
 | Variable | Description | Where to get it |
 |---|---|---|
-| `OLLAMA_BASE_URL` | Local Ollama server URL (default: `http://localhost:11434`) | [ollama.com](https://ollama.com) — free, runs locally |
-| `OLLAMA_MODEL` | Ollama model name (default: `llama3.2:8b`) | See [Ollama library](https://ollama.com/library) |
 | `GROQ_API_KEY` | Groq cloud LLM API key | [console.groq.com](https://console.groq.com) — free tier |
 | `GEMINI_API_KEY` | Google Gemini API key | [aistudio.google.com](https://aistudio.google.com) — free tier |
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key | [console.anthropic.com](https://console.anthropic.com) |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key (optional — CLI auth supported) | [console.anthropic.com](https://console.anthropic.com) or `claude login` |
+
+> **Anthropic CLI:** Claude uses the [Claude Code CLI](https://github.com/anthropics/claude-agent-sdk-python) (`claude-agent-sdk`). Install the CLI with `npm install -g @anthropic-ai/claude-code`, then authenticate with `claude login` (Pro/Max subscribers). An API key is optional — if omitted, CLI session auth is used. Configurable thinking modes: off, low, medium, high, max.
 
 ### Analysis Mode
 
 | Variable | Options | Description |
 |---|---|---|
 | `LLM_MODE` | `single` / `consensus` | Single provider or multi-LLM consensus |
-| `LLM_DEFAULT_PROVIDER` | `ollama` / `groq` / `gemini` / `claude` | Which LLM to use in single mode |
-| `LLM_CONSENSUS_META_PROVIDER` | `claude` / `gemini` / `groq` | Which LLM synthesises the consensus |
+| `LLM_DEFAULT_PROVIDER` | `groq` / `gemini` / `claude-cli` / `openrouter` | Which LLM to use in single mode |
+| `LLM_CONSENSUS_META_PROVIDER` | `claude-cli` / `gemini` / `groq` / `openrouter` | Which LLM synthesises the consensus |
 
 ### Trading
 
@@ -187,7 +186,7 @@ Or double-click `Florin.command` (macOS) / `Florin.bat` (Windows).
 The app starts all services concurrently:
 - Market data providers (Alpaca real-time + yfinance historical)
 - Screener alert service with saved configurations
-- Alert processing pipeline (sentiment + fraud detection + LLM analysis)
+- Alert processing pipeline (sentiment + LLM analysis)
 - Position monitoring with stop-loss enforcement
 - Market breadth scanner
 - Telegram bot (if configured)
@@ -264,6 +263,6 @@ Leave `T212_API_KEY` unconfigured to use the paper broker. It simulates order ex
 - **Backend:** Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), SQLite (WAL mode), Alembic
 - **Frontend:** React 19, Vite 8, TailwindCSS 4, React Router 7, Recharts
 - **Real-time:** WebSocket at `/ws`, async EventBus pub/sub
-- **LLM:** FinBERT (local), Ollama (local), Groq, Gemini, Claude (cloud)
+- **LLM:** Groq, Gemini, Claude CLI, OpenRouter (cloud)
 - **Statistical:** statsmodels (Markov regime switching), copulax (copula modelling)
 - **Telegram:** aiogram 3.x (fully async)

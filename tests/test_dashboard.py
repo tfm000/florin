@@ -743,8 +743,6 @@ class TestReportsDeep:
                 id="rpt_001", ticker="AAPL", mode="single",
                 alert_price=2.50, alert_change_pct=15.0, alert_volume=500_000,
                 final_recommendation="BUY", final_score=7.5, final_confidence=0.85,
-                fraud_risk_level="LOW", fraud_risk_score=1.2,
-                fraud_flags=json.dumps(["low_float"]),
                 reddit_mentions=42, apewisdom_mentions=15, alphavantage_sentiment=0.3,
                 insider_buys=2, insider_sells=0, news_count=5,
                 report_json=json.dumps(report_data),
@@ -755,8 +753,6 @@ class TestReportsDeep:
                 id="rpt_002", ticker="TSLA", mode="consensus",
                 alert_price=180.0, alert_change_pct=-5.0, alert_volume=1_000_000,
                 final_recommendation="AVOID", final_score=3.0, final_confidence=0.70,
-                fraud_risk_level="MEDIUM", fraud_risk_score=5.5,
-                fraud_flags=json.dumps([]),
                 reddit_mentions=100, apewisdom_mentions=50, alphavantage_sentiment=-0.35,
                 insider_buys=0, insider_sells=3, news_count=12,
                 report_json=json.dumps({}),
@@ -785,9 +781,6 @@ class TestReportsDeep:
         assert r["final_recommendation"] == "AVOID"
         assert r["final_score"] == 3.0
         assert r["final_confidence"] == 0.70
-        assert r["fraud_risk_level"] == "MEDIUM"
-        assert r["fraud_risk_score"] == 5.5
-        assert r["fraud_flags"] == []
         assert r["reddit_mentions"] == 100
         assert r["apewisdom_mentions"] == 50
         assert r["alphavantage_sentiment"] == -0.35
@@ -818,7 +811,6 @@ class TestReportsDeep:
         data = resp.json()
         assert data["id"] == "rpt_001"
         assert data["ticker"] == "AAPL"
-        assert data["fraud_flags"] == ["low_float"]
         # Detail endpoint includes the full report_data
         assert "report_data" in data
         assert data["report_data"]["analysis"] == "test analysis content"

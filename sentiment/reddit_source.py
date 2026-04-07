@@ -37,7 +37,7 @@ class RedditSource(SentimentSource):
 
     Searches configured subreddits (r/pennystocks, r/wallstreetbets, etc.)
     for the ticker symbol and company name. Extracts post data including
-    author karma and account age for fraud detection.
+    author karma and account age for quality filtering.
     """
 
     def __init__(self, settings: Settings) -> None:

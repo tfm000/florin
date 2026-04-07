@@ -171,8 +171,8 @@ def parse_llm_response(
 
     Args:
         raw: Raw text response from the LLM.
-        provider: Provider identifier (e.g. "openai").
-        model: Model identifier (e.g. "gpt-4o-mini").
+        provider: Provider identifier (e.g. "groq").
+        model: Model identifier (e.g. "llama-4-scout-17b-16e-instruct").
         analysis_type: The type of analysis this result represents.
         latency_ms: Time taken for the API call in milliseconds.
 

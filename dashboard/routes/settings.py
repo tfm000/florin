@@ -27,7 +27,7 @@ _SECRET_KEYS = frozenset({
     "openfigi_api_key",
     "reddit_client_id", "reddit_client_secret",
     "groq_api_key", "gemini_api_key", "anthropic_api_key",
-    "openai_api_key", "openrouter_api_key",
+    "openrouter_api_key",
     # LLM model API keys are in llm_models table now, but keep
     # these in the mask set for backward compat with env-var loading
     "telegram_bot_token",
@@ -93,8 +93,8 @@ _CHOICES: dict[str, list[str]] = {
     "t212_environment": ["demo", "live", "readonly"],
     "alpaca_feed": ["iex", "sip"],
     "llm_mode": ["single", "consensus"],
-    "llm_default_provider": ["groq", "gemini", "claude", "openai", "openrouter"],
-    "llm_consensus_meta_provider": ["groq", "gemini", "claude", "openai", "openrouter"],
+    "llm_default_provider": ["groq", "gemini", "claude-cli", "openrouter"],
+    "llm_consensus_meta_provider": ["groq", "gemini", "claude-cli", "openrouter"],
     "position_size_unit": ["gbp", "usd", "shares"],
     "market_cap_source": ["yfinance", "inferred"],
 }

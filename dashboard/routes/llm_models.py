@@ -28,10 +28,15 @@ router = APIRouter(tags=["llm-models"])
 
 _HOSTS = [
     {
-        "id": "openai",
-        "name": "OpenAI",
-        "models_hint": ["gpt-4o", "gpt-4o-mini", "o3-mini"],
-        "requires_api_key": True,
+        "id": "anthropic-cli",
+        "name": "Anthropic (CLI)",
+        "models_hint": ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"],
+        "requires_api_key": False,
+        "note": (
+            "Uses Claude Code CLI auth. API key optional. "
+            "Install CLI: npm install -g @anthropic-ai/claude-code, "
+            "then: claude login"
+        ),
     },
     {
         "id": "openrouter",
@@ -52,13 +57,9 @@ _HOSTS = [
         "models_hint": ["llama-4-scout-17b-16e-instruct"],
         "requires_api_key": True,
     },
-    {
-        "id": "anthropic",
-        "name": "Anthropic",
-        "models_hint": ["claude-haiku-4-5-20251001", "claude-sonnet-4-20250514"],
-        "requires_api_key": True,
-    },
 ]
+
+_VALID_THINKING_MODES = {"off", "low", "medium", "high", "max"}
 
 _VALID_HOSTS = {h["id"] for h in _HOSTS}
 
@@ -67,9 +68,12 @@ _VALID_HOSTS = {h["id"] for h in _HOSTS}
 
 class CreateLLMModel(BaseModel):
     """Request body for creating a new LLM model registration."""
-    host: str = Field(..., description="Provider host: openai, openrouter, gemini, groq, anthropic")
-    model: str = Field(..., min_length=1, description="Model identifier (e.g. gpt-4o)")
-    api_key: str = Field(..., min_length=1, description="API key for the provider")
+    host: str = Field(
+        ..., description="Provider host: anthropic-cli, openrouter, gemini, groq",
+    )
+    model: str = Field(..., min_length=1, description="Model identifier (e.g. claude-sonnet-4-20250514)")
+    api_key: str = Field(default="", description="API key (optional for CLI-auth providers)")
+    thinking_mode: str = Field(default="low", description="Thinking depth (anthropic-cli only)")
 
 
 class UpdateLLMModel(BaseModel):
@@ -77,6 +81,7 @@ class UpdateLLMModel(BaseModel):
     model: Optional[str] = None
     api_key: Optional[str] = None
     enabled: Optional[bool] = None
+    thinking_mode: Optional[str] = None
 
 
 class LLMModelResponse(BaseModel):
@@ -87,6 +92,7 @@ class LLMModelResponse(BaseModel):
     api_key_masked: str
     display_name: str
     enabled: bool
+    thinking_mode: Optional[str] = None
 
 
 class LLMSettingsUpdate(BaseModel):
@@ -116,11 +122,10 @@ def _mask_key(key: str) -> str:
 def _make_display_name(host: str, model: str) -> str:
     """Generate a human-friendly display name for a host + model pair."""
     host_labels = {
-        "openai": "OpenAI",
+        "anthropic-cli": "Anthropic CLI",
         "openrouter": "OpenRouter",
         "gemini": "Gemini",
         "groq": "Groq",
-        "anthropic": "Anthropic",
     }
     label = host_labels.get(host, host.title())
     return f"{label} / {model}"
@@ -135,6 +140,7 @@ def _orm_to_response(orm: LLMModelORM) -> LLMModelResponse:
         api_key_masked=_mask_key(orm.api_key),
         display_name=orm.display_name,
         enabled=orm.enabled,
+        thinking_mode=orm.thinking_mode,
     )
 
 
@@ -199,6 +205,27 @@ async def create_model(payload: CreateLLMModel) -> LLMModelResponse:
             detail=f"Unsupported host '{payload.host}'. Must be one of: {sorted(_VALID_HOSTS)}",
         )
 
+    # Validate API key requirement per host
+    host_meta = next((h for h in _HOSTS if h["id"] == payload.host), None)
+    if host_meta and host_meta.get("requires_api_key") and not payload.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"API key is required for host '{payload.host}'",
+        )
+
+    # Validate thinking_mode for anthropic-cli
+    thinking_mode: str | None = None
+    if payload.host == "anthropic-cli":
+        if payload.thinking_mode not in _VALID_THINKING_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid thinking_mode '{payload.thinking_mode}'. "
+                    f"Must be one of: {sorted(_VALID_THINKING_MODES)}"
+                ),
+            )
+        thinking_mode = payload.thinking_mode
+
     model_id = generate_id()
     display_name = _make_display_name(payload.host, payload.model)
 
@@ -209,6 +236,7 @@ async def create_model(payload: CreateLLMModel) -> LLMModelResponse:
         api_key=payload.api_key,
         display_name=display_name,
         enabled=True,
+        thinking_mode=thinking_mode,
     )
 
     db = get_db()
@@ -256,6 +284,17 @@ async def update_model(model_id: str, payload: UpdateLLMModel) -> LLMModelRespon
 
         if payload.enabled is not None:
             orm.enabled = payload.enabled
+
+        if payload.thinking_mode is not None and orm.host == "anthropic-cli":
+            if payload.thinking_mode not in _VALID_THINKING_MODES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Invalid thinking_mode '{payload.thinking_mode}'. "
+                        f"Must be one of: {sorted(_VALID_THINKING_MODES)}"
+                    ),
+                )
+            orm.thinking_mode = payload.thinking_mode
 
         orm.updated_at = datetime.now(UTC)
         await session.commit()
@@ -338,10 +377,11 @@ async def health_check(model_id: str) -> dict:
         host = orm.host
         model = orm.model
         api_key = orm.api_key
+        thinking_mode = orm.thinking_mode
 
     # Create a temporary analyser and run health check
     try:
-        analyser = _create_temp_analyser(host, model, api_key)
+        analyser = _create_temp_analyser(host, model, api_key, thinking_mode)
         if analyser is None:
             return {"ok": False, "error": f"Unsupported host: {host}"}
 
@@ -353,7 +393,12 @@ async def health_check(model_id: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def _create_temp_analyser(host: str, model: str, api_key: str):
+def _create_temp_analyser(
+    host: str,
+    model: str,
+    api_key: str,
+    thinking_mode: str | None = None,
+):
     """Create a temporary LLM analyser instance for health checking.
 
     Uses a minimal Settings-like object to avoid polluting the global
@@ -362,7 +407,8 @@ def _create_temp_analyser(host: str, model: str, api_key: str):
     Args:
         host: Provider host ID.
         model: Model identifier.
-        api_key: API key.
+        api_key: API key (may be empty for CLI-auth providers).
+        thinking_mode: Thinking depth for anthropic-cli.
 
     Returns:
         LLMAnalyser instance, or None if host is unsupported.
@@ -379,15 +425,14 @@ def _create_temp_analyser(host: str, model: str, api_key: str):
         temp = Settings(gemini_api_key=api_key, gemini_model=model)
         return GeminiAnalyser(temp)
 
-    if host == "anthropic":
+    if host == "anthropic-cli":
         from analysis.claude_analyser import ClaudeAnalyser
-        temp = Settings(anthropic_api_key=api_key, claude_model=model)
+        temp = Settings(
+            anthropic_api_key=api_key,
+            claude_model=model,
+            claude_cli_thinking_mode=thinking_mode or "low",
+        )
         return ClaudeAnalyser(temp)
-
-    if host == "openai":
-        from analysis.openai_analyser import OpenAIAnalyser
-        temp = Settings(openai_api_key=api_key, openai_model=model)
-        return OpenAIAnalyser(temp)
 
     if host == "openrouter":
         from analysis.openrouter_analyser import OpenRouterAnalyser

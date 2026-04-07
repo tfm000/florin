@@ -343,7 +343,7 @@ class AnalysisResult(BaseModel):
     Score semantics: 0 = extremely negative, 5 = neutral, 10 = extremely positive.
     Used for both individual analyst results and consensus leader output.
     """
-    provider: str  # "groq", "gemini", "claude", "openai", "openrouter"
+    provider: str  # "groq", "gemini", "claude-cli", "openrouter"
     model: str = ""
     analysis_type: AnalysisType = AnalysisType.SENTIMENT
     score: float = Field(default=5.0, ge=0.0, le=10.0)
@@ -363,7 +363,7 @@ class AnalysisReport(BaseModel):
 
     Supports single-model and consensus modes, with separate results
     for announcement analysis (Form 8-K) and sentiment analysis
-    (web search, Reddit, Finnhub, ApeWisdom, Alpha Vantage).
+    (web search, Reddit, ApeWisdom, Alpha Vantage).
     """
     id: str = ""
     ticker: str

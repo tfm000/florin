@@ -350,10 +350,10 @@ class TestConsensusGenerator:
         analysers = {
             "groq": make_mock_analyser("groq", Recommendation.BUY, 6.0),
             "gemini": make_mock_analyser("gemini", Recommendation.HOLD, 3.0),
-            "claude": make_mock_analyser("claude", Recommendation.BUY, 5.0),
+            "claude-cli": make_mock_analyser("claude-cli", Recommendation.BUY, 5.0),
         }
 
-        settings = Settings(llm_consensus_meta_provider="claude")
+        settings = Settings(llm_consensus_meta_provider="claude-cli")
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(

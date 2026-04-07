@@ -83,11 +83,6 @@ class ReportORM(Base):
     final_score: Mapped[float] = mapped_column(Float, default=0.0)
     final_confidence: Mapped[float] = mapped_column(Float, default=0.5)
 
-    # Fraud risk
-    fraud_risk_level: Mapped[str] = mapped_column(String(10), default="LOW")
-    fraud_risk_score: Mapped[float] = mapped_column(Float, default=0.0)
-    fraud_flags: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
-
     # Sentiment summary
     reddit_mentions: Mapped[int] = mapped_column(Integer, default=0)
     apewisdom_mentions: Mapped[int] = mapped_column(Integer, default=0)
@@ -476,11 +471,14 @@ class LLMModelORM(Base):
     __tablename__ = "llm_models"
 
     id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
-    host: Mapped[str] = mapped_column(String(20), index=True)  # openai, openrouter, gemini, groq, anthropic
-    model: Mapped[str] = mapped_column(String(100))  # e.g. "gpt-4o", "gemini-2.5-flash-lite"
-    api_key: Mapped[str] = mapped_column(Text)  # Stored plaintext (local tool)
-    display_name: Mapped[str] = mapped_column(String(200))  # e.g. "OpenAI / gpt-4o"
+    host: Mapped[str] = mapped_column(String(20), index=True)  # openrouter, gemini, groq, anthropic-cli
+    model: Mapped[str] = mapped_column(String(100))  # e.g. "claude-sonnet-4-20250514", "gemini-2.5-flash-lite"
+    api_key: Mapped[str] = mapped_column(Text, default="")  # Optional for CLI-auth providers
+    display_name: Mapped[str] = mapped_column(String(200))  # e.g. "Anthropic CLI / claude-sonnet-4-20250514"
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    thinking_mode: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True, default=None,
+    )  # off, low, medium, high, max — only used by anthropic-cli
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 

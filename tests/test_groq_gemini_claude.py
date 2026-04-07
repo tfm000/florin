@@ -10,13 +10,14 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from analysis.claude_analyser import ClaudeAnalyser
 from analysis.gemini_analyser import GeminiAnalyser
 from analysis.groq_analyser import GroqAnalyser
+from claude_agent_sdk import AssistantMessage, TextBlock
 from config.settings import LLMProvider, Settings
 from core.models import (
     AnalysisResult,
@@ -74,19 +75,13 @@ def _mock_completion_response(content: str) -> SimpleNamespace:
     return SimpleNamespace(choices=[choice])
 
 
-def _mock_claude_response(content: str) -> SimpleNamespace:
-    """Build a mock Anthropic Messages API response object.
+async def _mock_claude_query(content: str):
+    """Return an async generator yielding an AssistantMessage with a TextBlock.
 
-    Claude returns ``response.content[0].text`` rather than
-    ``response.choices[0].message.content``.
+    Used to mock ``claude_agent_sdk.query`` which returns an async iterator
+    of messages.
     """
-    text_block = SimpleNamespace(text=content)
-    return SimpleNamespace(content=[text_block])
-
-
-def _mock_claude_empty_response() -> SimpleNamespace:
-    """Build a mock Anthropic Messages API response with empty content list."""
-    return SimpleNamespace(content=[])
+    yield AssistantMessage(content=[TextBlock(text=content)], model="claude-haiku-4-5-20251001")
 
 
 def _mock_gemini_response(content: str) -> SimpleNamespace:
@@ -232,43 +227,43 @@ class TestGroqAnalyser:
 # =============================================================================
 
 
-class TestClaudeAnalyser:
-    """Tests for the Claude (Anthropic) analyser."""
+class TestClaudeCLIAnalyser:
+    """Tests for the Claude CLI (claude-agent-sdk) analyser."""
 
     @pytest.fixture
     def settings(self) -> Settings:
-        """Settings with Claude configured."""
+        """Settings with Claude CLI configured."""
         return Settings(
             anthropic_api_key="sk-ant-test-key-456",
             claude_model="claude-haiku-4-5-20251001",
+            claude_cli_thinking_mode="off",
         )
 
     @pytest.fixture
     def analyser(self, settings: Settings) -> ClaudeAnalyser:
-        """ClaudeAnalyser with a mocked client."""
-        a = ClaudeAnalyser(settings)
-        a._client = MagicMock()
-        return a
+        """ClaudeAnalyser instance (no mocked client — we patch query)."""
+        return ClaudeAnalyser(settings)
 
     def test_provider_name(self, analyser: ClaudeAnalyser) -> None:
-        """Provider name should be 'claude'."""
-        assert analyser.provider_name == "claude"
+        """Provider name should be 'claude-cli'."""
+        assert analyser.provider_name == "claude-cli"
 
     def test_model_name(self, analyser: ClaudeAnalyser) -> None:
         """Model name should match settings."""
         assert analyser.model_name == "claude-haiku-4-5-20251001"
 
     @pytest.mark.asyncio
-    async def test_analyse_sentiment_success(self, analyser: ClaudeAnalyser) -> None:
+    @patch("analysis.claude_analyser.query")
+    async def test_analyse_sentiment_success(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
         """Successful sentiment analysis should produce a valid AnalysisResult."""
-        mock_response = _mock_claude_response(_make_valid_json_response())
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(return_value=mock_response)
+        mock_query.return_value = _mock_claude_query(_make_valid_json_response())
 
         result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
         assert isinstance(result, AnalysisResult)
-        assert result.provider == "claude"
+        assert result.provider == "claude-cli"
         assert result.model == "claude-haiku-4-5-20251001"
         assert result.analysis_type == AnalysisType.SENTIMENT
         assert result.error is None
@@ -280,11 +275,12 @@ class TestClaudeAnalyser:
         assert result.latency_ms >= 0
 
     @pytest.mark.asyncio
-    async def test_analyse_announcements_success(self, analyser: ClaudeAnalyser) -> None:
+    @patch("analysis.claude_analyser.query")
+    async def test_analyse_announcements_success(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
         """Successful announcement analysis should produce a valid AnalysisResult."""
-        mock_response = _mock_claude_response(_make_valid_json_response())
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(return_value=mock_response)
+        mock_query.return_value = _mock_claude_query(_make_valid_json_response())
 
         result = await analyser.analyse_announcements("TEST", _make_filings())
 
@@ -294,55 +290,58 @@ class TestClaudeAnalyser:
         assert result.score == 6.5
 
     @pytest.mark.asyncio
-    async def test_analyse_api_error(self, analyser: ClaudeAnalyser) -> None:
+    @patch("analysis.claude_analyser.query")
+    async def test_analyse_api_error(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
         """API errors should produce an AnalysisResult with the error field set."""
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(
-            side_effect=Exception("Overloaded")
-        )
+        mock_query.side_effect = Exception("Overloaded")
 
         result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
         assert isinstance(result, AnalysisResult)
-        assert result.provider == "claude"
+        assert result.provider == "claude-cli"
         assert result.error is not None
         assert "Overloaded" in result.error
         assert result.latency_ms >= 0
 
     @pytest.mark.asyncio
-    async def test_health_check_success(self, analyser: ClaudeAnalyser) -> None:
-        """Health check should return True when the API responds with content."""
-        mock_response = _mock_claude_response("ok")
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(return_value=mock_response)
+    @patch("analysis.claude_analyser.query")
+    async def test_health_check_success(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
+        """Health check should return True when the CLI responds with content."""
+        mock_query.return_value = _mock_claude_query("ok")
 
         assert await analyser.health_check() is True
 
     @pytest.mark.asyncio
-    async def test_health_check_failure(self, analyser: ClaudeAnalyser) -> None:
-        """Health check should return False when the API fails."""
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(
-            side_effect=Exception("Unauthorized")
-        )
+    @patch("analysis.claude_analyser.query")
+    async def test_health_check_failure(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
+        """Health check should return False when the CLI fails."""
+        mock_query.side_effect = Exception("Unauthorized")
 
         assert await analyser.health_check() is False
 
     @pytest.mark.asyncio
-    async def test_health_check_empty_content(self, analyser: ClaudeAnalyser) -> None:
-        """Health check should return False when the API returns empty content."""
-        mock_response = _mock_claude_empty_response()
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(return_value=mock_response)
+    @patch("analysis.claude_analyser.query")
+    async def test_health_check_empty_content(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
+        """Health check should return False when the CLI returns empty text."""
+        mock_query.return_value = _mock_claude_query("")
 
         assert await analyser.health_check() is False
 
     @pytest.mark.asyncio
-    async def test_analyse_empty_response(self, analyser: ClaudeAnalyser) -> None:
+    @patch("analysis.claude_analyser.query")
+    async def test_analyse_empty_response(
+        self, mock_query: MagicMock, analyser: ClaudeAnalyser
+    ) -> None:
         """An empty content string should produce an error in the analysis."""
-        mock_response = _mock_claude_response("")
-        analyser._client.messages = MagicMock()
-        analyser._client.messages.create = AsyncMock(return_value=mock_response)
+        mock_query.return_value = _mock_claude_query("")
 
         result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
@@ -498,7 +497,7 @@ class TestGeminiAnalyser:
 
 
 class TestSettingsProviderEnablement:
-    """Test that GROQ, GEMINI, and CLAUDE appear in enabled providers when keys are set."""
+    """Test that GROQ, GEMINI, and CLAUDE_CLI appear in enabled providers when keys are set."""
 
     def test_groq_enabled_when_key_set(self) -> None:
         """GROQ should be in enabled providers when groq_api_key is non-empty."""
@@ -524,20 +523,21 @@ class TestSettingsProviderEnablement:
         providers = settings.get_enabled_llm_providers()
         assert LLMProvider.GEMINI not in providers
 
-    def test_claude_enabled_when_key_set(self) -> None:
-        """CLAUDE should be in enabled providers when anthropic_api_key is non-empty."""
+    def test_claude_cli_enabled_when_key_set(self) -> None:
+        """CLAUDE_CLI should be in enabled providers when anthropic_api_key is non-empty."""
         settings = Settings(anthropic_api_key="sk-ant-test")
         providers = settings.get_enabled_llm_providers()
-        assert LLMProvider.CLAUDE in providers
+        assert LLMProvider.CLAUDE_CLI in providers
 
-    def test_claude_not_enabled_when_key_empty(self) -> None:
-        """CLAUDE should NOT be in enabled providers when anthropic_api_key is empty."""
+    @patch("config.settings._claude_sdk_available", return_value=False)
+    def test_claude_cli_not_enabled_when_key_empty_and_no_sdk(self, _mock_sdk: MagicMock) -> None:
+        """CLAUDE_CLI should NOT be enabled when key is empty and SDK is unavailable."""
         settings = Settings(anthropic_api_key="")
         providers = settings.get_enabled_llm_providers()
-        assert LLMProvider.CLAUDE not in providers
+        assert LLMProvider.CLAUDE_CLI not in providers
 
-    def test_all_three_enabled_when_all_keys_set(self) -> None:
-        """All three providers should appear when all API keys are configured."""
+    def test_all_enabled_when_all_keys_set(self) -> None:
+        """Groq, Gemini, and Claude CLI should all appear when API keys are configured."""
         settings = Settings(
             groq_api_key="gsk-test",
             gemini_api_key="AIza-test",
@@ -546,10 +546,11 @@ class TestSettingsProviderEnablement:
         providers = settings.get_enabled_llm_providers()
         assert LLMProvider.GROQ in providers
         assert LLMProvider.GEMINI in providers
-        assert LLMProvider.CLAUDE in providers
+        assert LLMProvider.CLAUDE_CLI in providers
 
-    def test_empty_when_no_keys(self) -> None:
-        """No providers should be enabled when no API keys are set."""
+    @patch("config.settings._claude_sdk_available", return_value=False)
+    def test_empty_when_no_keys(self, _mock_sdk: MagicMock) -> None:
+        """No providers should be enabled when no API keys are set and SDK unavailable."""
         settings = Settings()
         providers = settings.get_enabled_llm_providers()
         assert len(providers) == 0

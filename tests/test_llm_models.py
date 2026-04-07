@@ -65,15 +65,15 @@ class TestListHosts:
 
     @pytest.mark.asyncio
     async def test_returns_supported_hosts(self, client):
-        """Should return all 5 supported LLM hosts."""
+        """Should return all 4 supported LLM hosts."""
         resp = await client.get("/api/llm-models/hosts")
         assert resp.status_code == 200
 
         hosts = resp.json()
-        assert len(hosts) == 5
+        assert len(hosts) == 4
 
         host_ids = {h["id"] for h in hosts}
-        assert host_ids == {"openai", "openrouter", "gemini", "groq", "anthropic"}
+        assert host_ids == {"anthropic-cli", "openrouter", "gemini", "groq"}
 
     @pytest.mark.asyncio
     async def test_hosts_have_required_fields(self, client):
@@ -98,16 +98,16 @@ class TestCreateModel:
     async def test_create_model_success(self, client):
         """Should create a model and return it with masked API key."""
         resp = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "groq",
+            "model": "llama-4-scout",
             "api_key": "sk-test-1234567890abcdef",
         })
         assert resp.status_code == 201
 
         data = resp.json()
-        assert data["host"] == "openai"
-        assert data["model"] == "gpt-4o"
-        assert data["display_name"] == "OpenAI / gpt-4o"
+        assert data["host"] == "groq"
+        assert data["model"] == "llama-4-scout"
+        assert data["display_name"] == "Groq / llama-4-scout"
         assert data["enabled"] is True
         assert "id" in data
         assert len(data["id"]) == 16
@@ -145,8 +145,8 @@ class TestCreateModel:
             "api_key": "key1",
         })
         resp2 = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "gemini",
+            "model": "gemini-2.0-flash",
             "api_key": "key2",
         })
         assert resp1.status_code == 201
@@ -183,9 +183,9 @@ class TestListModels:
     async def test_api_key_never_exposed(self, client):
         """API key should never appear unmasked in list response."""
         await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
-            "api_key": "sk-super-secret-key-12345",
+            "host": "groq",
+            "model": "llama",
+            "api_key": "super-secret-key-12345",
         })
 
         resp = await client.get("/api/llm-models")
@@ -201,18 +201,18 @@ class TestUpdateModel:
     async def test_update_model_name(self, client):
         """Should update model name and regenerate display_name."""
         create_resp = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "groq",
+            "model": "llama",
             "api_key": "key",
         })
         model_id = create_resp.json()["id"]
 
         resp = await client.put(f"/api/llm-models/{model_id}", json={
-            "model": "gpt-4o-mini",
+            "model": "llama-small",
         })
         assert resp.status_code == 200
-        assert resp.json()["model"] == "gpt-4o-mini"
-        assert resp.json()["display_name"] == "OpenAI / gpt-4o-mini"
+        assert resp.json()["model"] == "llama-small"
+        assert resp.json()["display_name"] == "Groq / llama-small"
 
     @pytest.mark.asyncio
     async def test_update_enabled_status(self, client):
@@ -234,8 +234,8 @@ class TestUpdateModel:
     async def test_update_api_key(self, client):
         """Should update API key (masked in response)."""
         create_resp = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "groq",
+            "model": "llama",
             "api_key": "old-key-1234567890",
         })
         model_id = create_resp.json()["id"]
@@ -287,8 +287,8 @@ class TestDeleteModel:
     async def test_delete_assigned_model_warns(self, client):
         """Should warn when deleting a model assigned to an analysis role."""
         create_resp = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "groq",
+            "model": "llama",
             "api_key": "key",
         })
         model_id = create_resp.json()["id"]
@@ -410,8 +410,8 @@ class TestLLMSettings:
     async def test_update_disabled_model_id(self, client):
         """Should reject assignment of disabled model."""
         create_resp = await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
+            "host": "groq",
+            "model": "llama",
             "api_key": "key",
         })
         model_id = create_resp.json()["id"]
@@ -486,13 +486,13 @@ class TestAPIKeyMasking:
     async def test_long_key_partially_masked(self, client):
         """Keys > 6 chars should show first 3 and last 3."""
         await client.post("/api/llm-models", json={
-            "host": "openai",
-            "model": "gpt-4o",
-            "api_key": "sk-1234567890abcdef",
+            "host": "groq",
+            "model": "llama",
+            "api_key": "gsk-1234567890abcdef",
         })
 
         resp = await client.get("/api/llm-models")
         masked = resp.json()[0]["api_key_masked"]
-        assert masked.startswith("sk-")
+        assert masked.startswith("gsk")
         assert masked.endswith("def")
         assert "•" in masked

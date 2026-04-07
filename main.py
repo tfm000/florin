@@ -354,13 +354,9 @@ class Florin:
             from analysis.gemini_analyser import GeminiAnalyser
             analysers["gemini"] = GeminiAnalyser(self.settings)
 
-        if LLMProvider.CLAUDE in enabled:
+        if LLMProvider.CLAUDE_CLI in enabled:
             from analysis.claude_analyser import ClaudeAnalyser
-            analysers["claude"] = ClaudeAnalyser(self.settings)
-
-        if LLMProvider.OPENAI in enabled:
-            from analysis.openai_analyser import OpenAIAnalyser
-            analysers["openai"] = OpenAIAnalyser(self.settings)
+            analysers["claude-cli"] = ClaudeAnalyser(self.settings)
 
         if LLMProvider.OPENROUTER in enabled:
             from analysis.openrouter_analyser import OpenRouterAnalyser
@@ -396,7 +392,10 @@ class Florin:
 
         for m in models:
             try:
-                analyser = self._create_analyser(m.host, m.model, m.api_key)
+                analyser = self._create_analyser(
+                    m.host, m.model, m.api_key,
+                    thinking_mode=m.thinking_mode,
+                )
                 if analyser:
                     analysers[m.id] = analyser
                     logger.debug("Loaded analyser: %s (%s)", m.display_name, m.id)
@@ -410,13 +409,21 @@ class Florin:
         )
         return analysers
 
-    def _create_analyser(self, host: str, model: str, api_key: str) -> Any:
+    def _create_analyser(
+        self,
+        host: str,
+        model: str,
+        api_key: str,
+        *,
+        thinking_mode: str | None = None,
+    ) -> Any:
         """Create a single LLM analyser from host/model/key.
 
         Args:
-            host: Provider host ID (openai, groq, etc.).
+            host: Provider host ID (groq, gemini, anthropic-cli, openrouter).
             model: Model identifier string.
-            api_key: API key for the provider.
+            api_key: API key for the provider (may be empty for CLI-auth).
+            thinking_mode: Thinking depth for anthropic-cli (off/low/medium/high/max).
 
         Returns:
             LLMAnalyser instance, or None if host is unsupported.
@@ -431,13 +438,13 @@ class Florin:
             from analysis.gemini_analyser import GeminiAnalyser
             return GeminiAnalyser(Settings(gemini_api_key=api_key, gemini_model=model))
 
-        if host == "anthropic":
+        if host == "anthropic-cli":
             from analysis.claude_analyser import ClaudeAnalyser
-            return ClaudeAnalyser(Settings(anthropic_api_key=api_key, claude_model=model))
-
-        if host == "openai":
-            from analysis.openai_analyser import OpenAIAnalyser
-            return OpenAIAnalyser(Settings(openai_api_key=api_key, openai_model=model))
+            return ClaudeAnalyser(Settings(
+                anthropic_api_key=api_key,
+                claude_model=model,
+                claude_cli_thinking_mode=thinking_mode or "low",
+            ))
 
         if host == "openrouter":
             from analysis.openrouter_analyser import OpenRouterAnalyser
@@ -500,17 +507,15 @@ class Florin:
         legacy_providers = [
             ("groq", self.settings.groq_model, self.settings.groq_api_key),
             ("gemini", self.settings.gemini_model, self.settings.gemini_api_key),
-            ("anthropic", self.settings.claude_model, self.settings.anthropic_api_key),
-            ("openai", self.settings.openai_model, self.settings.openai_api_key),
+            ("anthropic-cli", self.settings.claude_model, self.settings.anthropic_api_key),
             ("openrouter", self.settings.openrouter_model, self.settings.openrouter_api_key),
         ]
 
         host_labels = {
-            "openai": "OpenAI",
             "openrouter": "OpenRouter",
             "gemini": "Gemini",
             "groq": "Groq",
-            "anthropic": "Anthropic",
+            "anthropic-cli": "Anthropic CLI",
         }
 
         migrated = []
@@ -794,10 +799,6 @@ class Florin:
             final_recommendation=report.final_recommendation.value,
             final_score=final_score,
             final_confidence=report.final_confidence,
-            # Legacy fraud columns — hardcoded for DB compat
-            fraud_risk_level="LOW",
-            fraud_risk_score=0.0,
-            fraud_flags="[]",
             reddit_mentions=report.sentiment.reddit_mention_count,
             apewisdom_mentions=report.sentiment.apewisdom_mentions,
             alphavantage_sentiment=report.sentiment.alphavantage_avg_sentiment,

@@ -31,8 +31,7 @@ class LLMMode(str, Enum):
 class LLMProvider(str, Enum):
     GROQ = "groq"
     GEMINI = "gemini"
-    CLAUDE = "claude"
-    OPENAI = "openai"
+    CLAUDE_CLI = "claude-cli"
     OPENROUTER = "openrouter"
 
 
@@ -104,13 +103,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash-lite"
 
-    # --- LLM: Claude ---
-    anthropic_api_key: str = ""
-    claude_model: str = "claude-haiku-4-5-20251001"
-
-    # --- LLM: OpenAI ---
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    # --- LLM: Claude (CLI) ---
+    anthropic_api_key: str = ""  # Optional — CLI auth used if empty
+    claude_model: str = "claude-sonnet-4-20250514"
+    claude_cli_thinking_mode: str = "low"  # off, low, medium, high, max
 
     # --- LLM: OpenRouter ---
     openrouter_api_key: str = ""
@@ -145,7 +141,7 @@ class Settings(BaseSettings):
     # --- LLM Mode ---
     llm_mode: LLMMode = LLMMode.SINGLE
     llm_default_provider: LLMProvider = LLMProvider.GROQ
-    llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE
+    llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE_CLI
     llm_user_context: str = ""
 
     # --- LLM Model Registry (new — model IDs reference llm_models table) ---
@@ -176,16 +172,18 @@ class Settings(BaseSettings):
         return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     def get_enabled_llm_providers(self) -> list[LLMProvider]:
-        """Return list of LLM providers that have valid credentials configured."""
-        providers = []
+        """Return list of LLM providers that have valid credentials configured.
+
+        Claude CLI is enabled if an API key is provided **or** the
+        ``claude-agent-sdk`` package is importable (CLI session auth).
+        """
+        providers: list[LLMProvider] = []
         if self.groq_api_key:
             providers.append(LLMProvider.GROQ)
         if self.gemini_api_key:
             providers.append(LLMProvider.GEMINI)
-        if self.anthropic_api_key:
-            providers.append(LLMProvider.CLAUDE)
-        if self.openai_api_key:
-            providers.append(LLMProvider.OPENAI)
+        if self.anthropic_api_key or _claude_sdk_available():
+            providers.append(LLMProvider.CLAUDE_CLI)
         if self.openrouter_api_key:
             providers.append(LLMProvider.OPENROUTER)
         return providers
@@ -198,6 +196,17 @@ class Settings(BaseSettings):
         if upper not in valid:
             raise ValueError(f"log_level must be one of {valid}")
         return upper
+
+
+def _claude_sdk_available() -> bool:
+    """Check if the ``claude-agent-sdk`` package is importable.
+
+    Used to determine whether Claude CLI auth is available even
+    without an explicit API key.
+    """
+    import importlib.util
+
+    return importlib.util.find_spec("claude_agent_sdk") is not None
 
 
 _settings_instance: Settings | None = None
