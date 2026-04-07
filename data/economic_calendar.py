@@ -38,6 +38,7 @@ import httpx
 from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy import select
 
+from config.constants import ALPHAVANTAGE_API_BASE
 from core.rate_limiter import AsyncRateLimiter
 from data.policy_rates import G10_COUNTRIES
 from db.models import EconomicEventORM
@@ -168,7 +169,8 @@ _BOJ_SCHEDULE_URL = "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
 _BOC_RATE_URL = "https://www.bankofcanada.ca/valet/observations/V39079/json?recent=60"
 
 # AV base
-_AV_BASE = "https://www.alphavantage.co/query"
+# Reuse the project-wide AV base URL constant
+_AV_BASE = ALPHAVANTAGE_API_BASE
 
 # BIS rate history (monthly observations per country)
 _BIS_RATE_HISTORY_URL = (
@@ -178,7 +180,9 @@ _BIS_RATE_HISTORY_URL = (
 
 # Refresh intervals
 _CB_REFRESH_INTERVAL = 86400  # 24 hours
-_AV_REFRESH_INTERVAL = 21600  # 6 hours
+_AV_REFRESH_INTERVAL = 86400  # 24 hours — macro data doesn't change intraday;
+# also conserves the shared AV free-tier quota (25 req/day) which is split with
+# the sentiment AlphaVantageSource (sentiment/alphavantage_source.py).
 
 
 # Map indicator_key → BIS country code for rate history lookups
