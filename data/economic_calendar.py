@@ -349,10 +349,14 @@ class EconomicCalendarService:
     async def get_indicator_history(
         self, indicator_key: str, limit: int = 24,
     ) -> list[dict]:
-        """Fetch historical readings for a specific indicator.
+        """Return historical readings for a specific indicator.
 
-        For AV-backed indicators, fetches the time series from Alpha Vantage.
-        For CB rate indicators, reads rate history from DB.
+        **DB-first strategy:** Always reads from the ``economic_events`` table
+        first (populated by the scheduled refresh). Only falls back to a live
+        API call if the DB has no data for this indicator yet.
+
+        For CB rate indicators, the BIS CBPOL API provides monthly timeseries
+        with end-of-month dates suitable for charting.
 
         Args:
             indicator_key: e.g. "us_cpi", "ecb_rate", "fed_rate"
@@ -361,17 +365,33 @@ class EconomicCalendarService:
         Returns:
             List of ``{"date": str, "value": str}`` sorted by date ascending.
         """
-        if indicator_key in AV_INDICATORS and self._av_key:
-            cfg = AV_INDICATORS[indicator_key]
-            return await self._fetch_av_history(cfg["function"], limit)
+        # 1. Try DB cache first (fast, no API call, always preferred)
+        db_history = await self._read_history_from_db(indicator_key, limit)
+        if db_history:
+            return db_history
 
-        # For CB rates, fetch monthly timeseries from BIS CBPOL API.
-        # indicator_key pattern is "{country_code}_rate" e.g. "us_rate", "xm_rate"
+        # 2. DB empty — try a live API fetch as fallback
+        # For CB rates, BIS provides monthly timeseries
         bis_code = _indicator_key_to_bis_code(indicator_key)
         if bis_code:
             return await self._fetch_bis_rate_history(bis_code, limit)
 
-        # Fallback: read from economic_events table
+        # For AV indicators, live fetch (rate-limited)
+        if indicator_key in AV_INDICATORS and self._av_key:
+            cfg = AV_INDICATORS[indicator_key]
+            return await self._fetch_av_history(cfg["function"], limit)
+
+        return []
+
+    async def _read_history_from_db(
+        self, indicator_key: str, limit: int,
+    ) -> list[dict]:
+        """Read historical readings for an indicator from the DB cache.
+
+        Returns:
+            List of ``{"date": str, "value": str}`` sorted oldest first.
+            Empty list if no data found.
+        """
         async with self._db.session() as session:
             stmt = (
                 select(EconomicEventORM)
@@ -383,6 +403,8 @@ class EconomicCalendarService:
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
+        if not rows:
+            return []
         return [{"date": r.date, "value": r.actual} for r in reversed(rows)]
 
     async def refresh(self) -> None:
