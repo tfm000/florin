@@ -159,6 +159,15 @@ class Florin:
         set_state("rf_fetcher", rf_fetcher)
         set_state("policy_rate_fetcher", policy_rate_fetcher)
 
+        # Economic calendar service (CB meeting dates, AV indicators, BIS rates)
+        from data.economic_calendar import EconomicCalendarService
+        econ_cal_service = EconomicCalendarService(
+            db=self.db,
+            alphavantage_api_key=self.settings.alphavantage_api_key,
+            policy_rate_fetcher=policy_rate_fetcher,
+        )
+        set_state("economic_calendar_service", econ_cal_service)
+
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
         await load_cusip_cache(self.db)
@@ -174,6 +183,11 @@ class Florin:
         # Risk-free rate daily refresh
         services.append(asyncio.create_task(
             self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
+        ))
+
+        # Economic calendar refresh (CB meetings daily, AV indicators every 6h)
+        services.append(asyncio.create_task(
+            self._econ_cal_refresh_loop(econ_cal_service), name="econ-cal-refresh"
         ))
 
         # Screener alert service (background, periodic screener execution)
@@ -254,6 +268,7 @@ class Florin:
             await data_provider.disconnect()
         if broker:
             await broker.disconnect()
+        await econ_cal_service.close()
         if self.db:
             await self.db.close()
 
@@ -593,6 +608,29 @@ class Florin:
             except Exception as e:
                 logger.error("Risk-free rate refresh failed: %s", e)
             await asyncio.sleep(86_400)
+
+    async def _econ_cal_refresh_loop(self, service: Any) -> None:
+        """Refresh economic calendar data periodically.
+
+        The service internally manages two refresh cadences:
+        - CB meeting dates: every 24 hours
+        - Alpha Vantage indicators: every 6 hours
+        We call refresh() every hour; the service decides what's stale.
+        """
+        # Initial fetch on startup
+        try:
+            await service.refresh()
+            logger.info("Economic calendar initial refresh complete")
+        except Exception as e:
+            logger.error("Economic calendar initial refresh failed: %s", e)
+
+        while not self._shutdown_event.is_set():
+            await asyncio.sleep(3600)  # Check every hour
+            try:
+                await service.refresh()
+                logger.info("Economic calendar refreshed")
+            except Exception as e:
+                logger.error("Economic calendar refresh failed: %s", e)
 
     async def _alert_pipeline(
         self,

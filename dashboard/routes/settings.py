@@ -32,6 +32,7 @@ _SECRET_KEYS = frozenset({
     # these in the mask set for backward compat with env-var loading
     "telegram_bot_token",
     "alphavantage_api_key",
+    "finnhub_api_key",
 })
 
 # Settings grouped by section for the UI
@@ -57,6 +58,13 @@ _SECTIONS = [
         "keys": [
             "reddit_client_id", "reddit_client_secret", "reddit_user_agent",
             "alphavantage_api_key",
+        ],
+    },
+    {
+        "id": "economic_calendar",
+        "label": "Economic Calendar",
+        "keys": [
+            "finnhub_api_key",
         ],
     },
     # LLM Providers and Analysis Mode sections removed — now managed

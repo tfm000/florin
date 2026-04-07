@@ -498,3 +498,45 @@ class PolicyRateORM(Base):
     rate: Mapped[float] = mapped_column(Float)
     effective_date: Mapped[str] = mapped_column(String(10), default="")  # YYYY-MM-DD
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+# =============================================================================
+# Economic Calendar Events
+# =============================================================================
+
+class EconomicEventORM(Base):
+    """Economic calendar events — CB meetings, macro indicators, etc.
+
+    Populated by the EconomicCalendarService from multiple sources:
+    - Central bank meeting dates parsed from official websites
+    - Rate values from BIS CBPOL, ECB, and BOC APIs
+    - US macro indicator values from Alpha Vantage
+    - Past FOMC decisions from the Fed RSS feed
+    """
+    __tablename__ = "economic_events"
+    __table_args__ = (
+        UniqueConstraint("event_key", name="uq_economic_event_key"),
+        Index("ix_economic_events_date", "date"),
+        Index("ix_economic_events_country", "country"),
+        Index("ix_economic_events_category", "category"),
+    )
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=generate_id)
+    event_key: Mapped[str] = mapped_column(String(100))  # e.g. "fomc_2026-04-29", "us_cpi_2026-03"
+    date: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD
+    event: Mapped[str] = mapped_column(String(100))  # Event name
+    country: Mapped[str] = mapped_column(String(3))  # ISO code: US, EU, GB, JP, CA, etc.
+    country_name: Mapped[str] = mapped_column(String(50), default="")
+    institution: Mapped[str] = mapped_column(String(80), default="")  # Federal Reserve, BLS, ECB, etc.
+    category: Mapped[str] = mapped_column(String(30), default="")  # Monetary Policy, Employment, etc.
+    importance: Mapped[str] = mapped_column(String(10), default="high")  # high, medium, low
+    expected: Mapped[str] = mapped_column(String(30), default="")  # Forecast value
+    actual: Mapped[str] = mapped_column(String(30), default="")  # Actual released value
+    previous: Mapped[str] = mapped_column(String(30), default="")  # Prior period value
+    unit: Mapped[str] = mapped_column(String(30), default="")  # %, K persons, index, etc.
+    description: Mapped[str] = mapped_column(Text, default="")
+    frequency: Mapped[str] = mapped_column(String(20), default="")  # Monthly, Quarterly, 8x/year
+    source: Mapped[str] = mapped_column(String(30), default="")  # fed_rss, ecb_api, bis, alpha_vantage, etc.
+    indicator_key: Mapped[str] = mapped_column(String(30), default="")  # For history endpoint
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

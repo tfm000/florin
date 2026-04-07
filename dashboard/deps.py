@@ -83,3 +83,12 @@ def get_analyser_refresh_callback():
     generators. Set by main.py at startup.
     """
     return _state.get("analyser_refresh_callback")
+
+
+def get_state_value(key: str):
+    """Return an arbitrary value from the service state dict.
+
+    Used for services that don't have dedicated getter functions yet.
+    Returns None if the key is not set.
+    """
+    return _state.get(key)

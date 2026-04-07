@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     # --- Alpha Vantage ---
     alphavantage_api_key: str = ""
 
+    # --- Finnhub ---
+    finnhub_api_key: str = ""
+
     # --- Telegram ---
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
