@@ -20,8 +20,11 @@ STOCK_SUBREDDITS = [
     "Shortsqueeze",
 ]
 
-# --- StockTwits ---
-STOCKTWITS_API_BASE = "https://api.stocktwits.com/api/2"
+# --- ApeWisdom ---
+APEWISDOM_API_BASE = "https://apewisdom.io/api/v1.0"
+
+# --- Alpha Vantage ---
+ALPHAVANTAGE_API_BASE = "https://www.alphavantage.co/query"
 
 # --- SEC EDGAR ---
 SEC_EDGAR_BASE = "https://efts.sec.gov/LATEST"
@@ -87,7 +90,7 @@ Respond with ONLY valid JSON in this exact schema:
 }}"""
 
 # ---------------------------------------------------------------------------
-# Sentiment Analysis — Web Search (DuckDuckGo), Reddit, StockTwits, News
+# Sentiment Analysis — Web Search, Reddit, ApeWisdom, Alpha Vantage, News
 # ---------------------------------------------------------------------------
 
 SENTIMENT_SYSTEM_PROMPT = """You are a market sentiment analyst specialising in retail \

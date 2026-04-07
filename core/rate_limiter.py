@@ -23,7 +23,7 @@ class AsyncRateLimiter:
     window_seconds : float
         Time window in seconds.
     name : str
-        Label for debug logging (e.g. "SEC", "StockTwits").
+        Label for debug logging (e.g. "SEC", "AlphaVantage").
     """
 
     def __init__(

@@ -32,7 +32,6 @@ from core.models import (
     Recommendation,
     RedditPost,
     SentimentData,
-    StockTwitsMessage,
 )
 
 
@@ -149,7 +148,7 @@ class TestPromptHelper:
         """Sentiment prompt should include ticker and sentiment data."""
         sentiment = make_sentiment(
             reddit_mention_count=5,
-            stocktwits_bullish_count=3,
+            apewisdom_mentions=10,
         )
         alert_context = {
             "price": 2.50,

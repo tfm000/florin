@@ -463,7 +463,7 @@ async def analyse_asset(
         type: Analysis type — "announcement" (Form 8-K), "sentiment" (social/news),
             or "both" to run both concurrently.
         mode: Sentiment source filter — "all" uses all sources, "legitimate"
-            excludes Reddit/StockTwits.
+            excludes Reddit and social aggregators (ApeWisdom).
 
     Enriches the prompt with macro context, news, performance data, and sentiment.
     """

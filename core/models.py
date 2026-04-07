@@ -153,12 +153,25 @@ class RedditPost(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class StockTwitsMessage(BaseModel):
-    """Single StockTwits message."""
-    text: str
-    sentiment: Optional[str] = None  # "Bullish" | "Bearish" | None
-    likes: int = 0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+class AlphaVantageNewsSentiment(BaseModel):
+    """Alpha Vantage news article with AI-scored sentiment.
+
+    Each article includes overall sentiment and per-ticker relevance
+    and sentiment scores. Powered by Alpha Vantage's NEWS_SENTIMENT
+    endpoint with AI-driven scoring.
+
+    Reference: https://www.alphavantage.co/documentation/#news-sentiment
+    """
+    title: str
+    source: str = ""
+    url: str = ""
+    summary: str = ""
+    published_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    overall_sentiment_score: float = 0.0  # -1 to 1
+    overall_sentiment_label: str = ""  # "Bullish", "Bearish", "Neutral", etc.
+    ticker_relevance: float = 0.0  # 0–1
+    ticker_sentiment_score: float = 0.0  # -1 to 1
+    ticker_sentiment_label: str = ""
 
 
 class SECFiling(BaseModel):
@@ -227,10 +240,14 @@ class SentimentData(BaseModel):
     reddit_posts: list[RedditPost] = Field(default_factory=list)
     reddit_mention_count: int = 0
 
-    # StockTwits
-    stocktwits_messages: list[StockTwitsMessage] = Field(default_factory=list)
-    stocktwits_bullish_count: int = 0
-    stocktwits_bearish_count: int = 0
+    # ApeWisdom (Reddit aggregation)
+    apewisdom_rank: int = 0  # 0 = not trending
+    apewisdom_mentions: int = 0
+    apewisdom_upvotes: int = 0
+
+    # Alpha Vantage News Sentiment
+    alphavantage_articles: list[AlphaVantageNewsSentiment] = Field(default_factory=list)
+    alphavantage_avg_sentiment: float = 0.0
 
     # SEC
     sec_filings: list[SECFiling] = Field(default_factory=list)
@@ -258,9 +275,19 @@ class SentimentData(BaseModel):
             for p in top:
                 lines.append(f"  - [{p.subreddit}] (score:{p.score}) {p.title[:100]}")
 
-        lines.append(f"StockTwits: {self.stocktwits_bullish_count} bullish, "
-                      f"{self.stocktwits_bearish_count} bearish "
-                      f"({len(self.stocktwits_messages)} messages)")
+        if self.apewisdom_rank > 0:
+            lines.append(f"ApeWisdom: rank #{self.apewisdom_rank}, "
+                          f"{self.apewisdom_mentions} mentions, "
+                          f"{self.apewisdom_upvotes} upvotes")
+        else:
+            lines.append("ApeWisdom: not trending")
+
+        if self.alphavantage_articles:
+            lines.append(f"Alpha Vantage: {len(self.alphavantage_articles)} articles, "
+                          f"avg sentiment {self.alphavantage_avg_sentiment:+.2f}")
+            for a in self.alphavantage_articles[:3]:
+                label = f" [{a.ticker_sentiment_label}]" if a.ticker_sentiment_label else ""
+                lines.append(f"  - [{a.source}]{label} {a.title[:100]}")
 
         lines.append(f"SEC: {len(self.sec_filings)} recent filings, "
                       f"{self.insider_buy_count} insider buys, "
@@ -336,7 +363,7 @@ class AnalysisReport(BaseModel):
 
     Supports single-model and consensus modes, with separate results
     for announcement analysis (Form 8-K) and sentiment analysis
-    (web search, Reddit, StockTwits).
+    (web search, Reddit, Finnhub, ApeWisdom, Alpha Vantage).
     """
     id: str = ""
     ticker: str

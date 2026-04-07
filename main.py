@@ -301,15 +301,26 @@ class Florin:
         """Initialise sentiment aggregator with all sources."""
         from sentiment.aggregator import SentimentAggregator
         from sentiment.reddit_source import RedditSource
-        from sentiment.stocktwits_source import StockTwitsSource
         from sentiment.sec_edgar_source import SECEdgarSource
         from sentiment.news_source import NewsSource
 
-        sources = [
-            StockTwitsSource(access_token=self.settings.stocktwits_access_token),
+        sources: list[Any] = [
             SECEdgarSource(),
             NewsSource(self.settings),
         ]
+
+        # ApeWisdom: always available, no API key required
+        from sentiment.apewisdom_source import ApeWisdomSource
+        sources.append(ApeWisdomSource())
+        logger.info("ApeWisdom: enabled (no API key required)")
+
+        # Alpha Vantage: conditional on API key
+        if self.settings.alphavantage_api_key:
+            from sentiment.alphavantage_source import AlphaVantageSource
+            sources.append(AlphaVantageSource(api_key=self.settings.alphavantage_api_key))
+            logger.info("Alpha Vantage: enabled (API key configured)")
+        else:
+            logger.info("Alpha Vantage: disabled (no API key)")
 
         # Reddit: use OAuth (PRAW) if credentials available, else public .json fallback
         if self.settings.reddit_client_id:
@@ -788,8 +799,8 @@ class Florin:
             fraud_risk_score=0.0,
             fraud_flags="[]",
             reddit_mentions=report.sentiment.reddit_mention_count,
-            stocktwits_bullish=report.sentiment.stocktwits_bullish_count,
-            stocktwits_bearish=report.sentiment.stocktwits_bearish_count,
+            apewisdom_mentions=report.sentiment.apewisdom_mentions,
+            alphavantage_sentiment=report.sentiment.alphavantage_avg_sentiment,
             insider_buys=report.sentiment.insider_buy_count,
             insider_sells=report.sentiment.insider_sell_count,
             news_count=len(report.sentiment.news_articles),

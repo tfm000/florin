@@ -90,8 +90,8 @@ class ReportORM(Base):
 
     # Sentiment summary
     reddit_mentions: Mapped[int] = mapped_column(Integer, default=0)
-    stocktwits_bullish: Mapped[int] = mapped_column(Integer, default=0)
-    stocktwits_bearish: Mapped[int] = mapped_column(Integer, default=0)
+    apewisdom_mentions: Mapped[int] = mapped_column(Integer, default=0)
+    alphavantage_sentiment: Mapped[float] = mapped_column(Float, default=0.0)
     insider_buys: Mapped[int] = mapped_column(Integer, default=0)
     insider_sells: Mapped[int] = mapped_column(Integer, default=0)
     news_count: Mapped[int] = mapped_column(Integer, default=0)

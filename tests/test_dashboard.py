@@ -745,7 +745,7 @@ class TestReportsDeep:
                 final_recommendation="BUY", final_score=7.5, final_confidence=0.85,
                 fraud_risk_level="LOW", fraud_risk_score=1.2,
                 fraud_flags=json.dumps(["low_float"]),
-                reddit_mentions=42, stocktwits_bullish=10, stocktwits_bearish=3,
+                reddit_mentions=42, apewisdom_mentions=15, alphavantage_sentiment=0.3,
                 insider_buys=2, insider_sells=0, news_count=5,
                 report_json=json.dumps(report_data),
                 user_action="PENDING",
@@ -757,7 +757,7 @@ class TestReportsDeep:
                 final_recommendation="AVOID", final_score=3.0, final_confidence=0.70,
                 fraud_risk_level="MEDIUM", fraud_risk_score=5.5,
                 fraud_flags=json.dumps([]),
-                reddit_mentions=100, stocktwits_bullish=20, stocktwits_bearish=30,
+                reddit_mentions=100, apewisdom_mentions=50, alphavantage_sentiment=-0.35,
                 insider_buys=0, insider_sells=3, news_count=12,
                 report_json=json.dumps({}),
                 user_action="DENY",
@@ -789,8 +789,8 @@ class TestReportsDeep:
         assert r["fraud_risk_score"] == 5.5
         assert r["fraud_flags"] == []
         assert r["reddit_mentions"] == 100
-        assert r["stocktwits_bullish"] == 20
-        assert r["stocktwits_bearish"] == 30
+        assert r["apewisdom_mentions"] == 50
+        assert r["alphavantage_sentiment"] == -0.35
         assert r["insider_buys"] == 0
         assert r["insider_sells"] == 3
         assert r["news_count"] == 12

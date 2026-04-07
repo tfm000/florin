@@ -55,8 +55,8 @@ export default function ReportViewer({ report }) {
         <h4 className="text-gray-400 text-xs uppercase mb-2">Sentiment Sources</h4>
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="bg-gray-900 px-2 py-1 rounded text-gray-300">Reddit: {report.reddit_mentions}</span>
-          <span className="bg-gray-900 px-2 py-1 rounded text-green-300">ST Bull: {report.stocktwits_bullish}</span>
-          <span className="bg-gray-900 px-2 py-1 rounded text-red-300">ST Bear: {report.stocktwits_bearish}</span>
+          {report.apewisdom_mentions > 0 && <span className="bg-gray-900 px-2 py-1 rounded text-purple-300">ApeWisdom: {report.apewisdom_mentions}</span>}
+          {report.alphavantage_sentiment != null && <span className={`bg-gray-900 px-2 py-1 rounded ${report.alphavantage_sentiment > 0 ? 'text-green-300' : report.alphavantage_sentiment < 0 ? 'text-red-300' : 'text-gray-300'}`}>AV Sent: {report.alphavantage_sentiment?.toFixed(2)}</span>}
           <span className="bg-gray-900 px-2 py-1 rounded text-gray-300">Insider Buy: {report.insider_buys}</span>
           <span className="bg-gray-900 px-2 py-1 rounded text-gray-300">Insider Sell: {report.insider_sells}</span>
           <span className="bg-gray-900 px-2 py-1 rounded text-gray-300">News: {report.news_count}</span>

@@ -1,7 +1,7 @@
 """
 Abstract interface for sentiment data sources.
 
-Implementations: RedditSource, StockTwitsSource, SECEdgarSource, NewsSource, WebSearchSource
+Implementations: RedditSource, ApeWisdomSource, AlphaVantageSource, SECEdgarSource, NewsSource, WebSearchSource
 All are independent and can fail without affecting others.
 """
 
@@ -22,7 +22,7 @@ class SentimentSource(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Human-readable name of this source (e.g., 'Reddit', 'StockTwits')."""
+        """Human-readable name of this source (e.g., 'Reddit', 'ApeWisdom')."""
         ...
 
     @abstractmethod

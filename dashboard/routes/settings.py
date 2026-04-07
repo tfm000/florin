@@ -31,7 +31,7 @@ _SECRET_KEYS = frozenset({
     # LLM model API keys are in llm_models table now, but keep
     # these in the mask set for backward compat with env-var loading
     "telegram_bot_token",
-    "stocktwits_access_token",
+    "alphavantage_api_key",
 })
 
 # Settings grouped by section for the UI
@@ -56,7 +56,7 @@ _SECTIONS = [
         "label": "Sentiment Sources",
         "keys": [
             "reddit_client_id", "reddit_client_secret", "reddit_user_agent",
-            "stocktwits_access_token",
+            "alphavantage_api_key",
         ],
     },
     # LLM Providers and Analysis Mode sections removed — now managed

@@ -68,9 +68,10 @@ def format_alert_message(
     sources = []
     if s.reddit_mention_count > 0:
         sources.append(f"Reddit\\({escape_md(str(s.reddit_mention_count))}\\)")
-    st_total = s.stocktwits_bullish_count + s.stocktwits_bearish_count
-    if st_total > 0:
-        sources.append(f"StockTwits\\({escape_md(str(st_total))}\\)")
+    if s.apewisdom_mentions > 0:
+        sources.append(f"ApeWisdom\\({escape_md(str(s.apewisdom_mentions))}\\)")
+    if s.alphavantage_articles:
+        sources.append(f"AlphaVantage\\({escape_md(str(len(s.alphavantage_articles)))}\\)")
     if s.sec_filings:
         sources.append(f"SEC\\({escape_md(str(len(s.sec_filings)))}\\)")
     if s.news_articles:

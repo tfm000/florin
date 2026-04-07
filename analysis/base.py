@@ -68,7 +68,7 @@ class LLMAnalyser(ABC):
 
         Args:
             ticker: Stock symbol (e.g. "AAPL").
-            sentiment: Aggregated sentiment data (Reddit, StockTwits, web search, news).
+            sentiment: Aggregated sentiment data (Reddit, ApeWisdom, Alpha Vantage, web search, news).
             alert_context: Optional dict with price, change_pct, volume, avg_volume.
             user_context: Optional user-provided context to include in the prompt.
 

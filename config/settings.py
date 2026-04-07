@@ -116,8 +116,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = ""
 
-    # --- StockTwits ---
-    stocktwits_access_token: str = ""
+    # --- Alpha Vantage ---
+    alphavantage_api_key: str = ""
 
     # --- Telegram ---
     telegram_bot_token: str = ""
