@@ -139,6 +139,80 @@ class TestHistory:
         assert data[0]["close"] == 191.5
 
     @pytest.mark.asyncio
+    async def test_get_history_adjusted_default_excludes_adj_close(self, client):
+        """Default (adjusted=true) should omit adj_close from the response entirely."""
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "adj_close" not in data[0], "adj_close should be excluded from adjusted responses"
+
+    @pytest.mark.asyncio
+    async def test_get_history_raw_includes_adj_close(self, client, app):
+        """When adjusted=false, response should include adj_close field with adjusted prices."""
+        from dashboard.deps import set_state
+
+        yf_mock = AsyncMock()
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000, "adj_close": 191.5},
+            {"date": "2024-01-02", "open": 186.5, "high": 188.0, "low": 186.0, "close": 187.0, "volume": 48000000, "adj_close": 192.8},
+        ]
+        set_state("yfinance_provider", yf_mock)
+
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["close"] == 186.0
+        assert data[0]["adj_close"] == 191.5
+        assert data[1]["adj_close"] == 192.8
+        # Verify auto_adjust=False was passed to the provider
+        yf_mock.get_history.assert_called_once_with(
+            "AAPL", period="1y", interval="1d", auto_adjust=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_history_raw_empty_returns_empty_list(self, client, app):
+        """When adjusted=false and provider returns no data, response is an empty list."""
+        from dashboard.deps import set_state
+
+        yf_mock = AsyncMock()
+        yf_mock.get_history.return_value = []
+        set_state("yfinance_provider", yf_mock)
+
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_get_history_raw_without_adj_close_falls_back_to_close(self, client, app):
+        """When adjusted=false but provider omits adj_close (e.g. yfinance version mismatch),
+        adj_close should be None and excluded from the response."""
+        from dashboard.deps import set_state
+
+        yf_mock = AsyncMock()
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000},
+        ]
+        set_state("yfinance_provider", yf_mock)
+
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["close"] == 186.0
+        # adj_close not provided by provider, so it's None and excluded by response_model_exclude_none
+        assert "adj_close" not in data[0]
+
+    @pytest.mark.asyncio
+    async def test_get_history_adjusted_explicit_true(self, client):
+        """Explicitly passing adjusted=true should behave the same as the default."""
+        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert "adj_close" not in data[0]
+
+    @pytest.mark.asyncio
     async def test_invalid_period_rejected(self, client):
         resp = await client.get("/api/research/asset/AAPL/history?period=invalid")
         assert resp.status_code == 422
@@ -752,6 +826,30 @@ class TestQuotesEndpoint:
         data = resp.json()
         assert data[-1]["bid"] is None
         assert data[-1]["ask"] is None
+
+    @pytest.mark.asyncio
+    async def test_quotes_raw_includes_adj_close(self, client):
+        """Quotes endpoint with adjusted=false passes through adj_close."""
+        from dashboard.deps import set_state
+
+        yf_mock = AsyncMock()
+        yf_mock.get_history.return_value = [
+            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000, "adj_close": 191.5},
+        ]
+        yf_mock.get_info.return_value = {"ticker": "AAPL", "bid": 190.0, "ask": 192.0}
+        set_state("yfinance_provider", yf_mock)
+
+        resp = await client.get("/api/research/asset/AAPL/quotes?period=1y&adjusted=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["close"] == 186.0
+        assert data[0]["adj_close"] == 191.5
+        assert data[0]["bid"] == 190.0
+        assert data[0]["ask"] == 192.0
+        yf_mock.get_history.assert_called_once_with(
+            "AAPL", period="1y", interval="1d", auto_adjust=False,
+        )
 
 
 class TestFillBidAsk:

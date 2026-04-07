@@ -514,8 +514,19 @@ class YFinanceProvider:
         interval: str = "1d",
         start: str = "",
         end: str = "",
+        auto_adjust: bool = True,
     ) -> list[dict]:
-        """Historical OHLCV data using adjusted prices (accounts for splits and dividends).
+        """Historical OHLCV data, optionally adjusted for splits and dividends.
+
+        Args:
+            ticker: Stock ticker symbol.
+            period: Preset period (e.g. '1y', '5y', 'max').
+            interval: Bar interval (e.g. '1d', '1h').
+            start: Custom start date (ISO format).
+            end: Custom end date (ISO format).
+            auto_adjust: When True (default), all OHLCV values are adjusted for
+                splits/dividends. When False, raw prices are returned alongside
+                an ``adj_close`` field containing the adjusted closing price.
 
         Use start/end for custom date ranges, or period for presets.
         Checks for cached 5y/max data first to avoid redundant API calls.
@@ -523,14 +534,16 @@ class YFinanceProvider:
         if not ticker or ticker[0].isdigit():
             return []
 
-        cache_key = f"history:{ticker}:{start or period}:{end}:{interval}"
+        adj_tag = "adj" if auto_adjust else "raw"
+        cache_key = f"history:{ticker}:{start or period}:{end}:{interval}:{adj_tag}"
         cached = _get_cached(cache_key, HISTORY_TTL)
         if cached is not None:
             return cached
 
         # Try to slice from wide cache (max or 5y) — avoids a new API call
-        # when portfolio batch download already populated the cache
-        if interval == "1d":
+        # when portfolio batch download already populated the cache.
+        # Wide cache only contains adjusted data, so skip for raw requests.
+        if interval == "1d" and auto_adjust:
             wide = _try_get_wide_cache(ticker, interval)
             if wide is not None:
                 cutoff_5y = _period_cutoff("5y")
@@ -554,21 +567,24 @@ class YFinanceProvider:
             try:
                 t = yf.Ticker(ticker)
                 if start and end:
-                    df = t.history(start=start, end=end, interval=interval, auto_adjust=True)
+                    df = t.history(start=start, end=end, interval=interval, auto_adjust=auto_adjust)
                 else:
-                    df = t.history(period=period, interval=interval, auto_adjust=True)
+                    df = t.history(period=period, interval=interval, auto_adjust=auto_adjust)
                 if df is None or df.empty:
                     return []
                 records = []
                 for idx, row in df.iterrows():
-                    records.append({
+                    record = {
                         "date": str(idx),
                         "open": float(row.get("Open", 0)),
                         "high": float(row.get("High", 0)),
                         "low": float(row.get("Low", 0)),
                         "close": float(row.get("Close", 0)),
                         "volume": int(row.get("Volume", 0)),
-                    })
+                    }
+                    if not auto_adjust:
+                        record["adj_close"] = float(row.get("Adj Close", row.get("Close", 0)))
+                    records.append(record)
                 return records
             except Exception:
                 logger.exception("yfinance history failed for %s", ticker)

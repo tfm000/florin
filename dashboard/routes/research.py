@@ -119,12 +119,14 @@ class AssetInfo(BaseModel):
 
 
 class HistoryPoint(BaseModel):
+    """OHLCV price bar. When adjusted=True (default), all prices are split/dividend adjusted."""
     date: str
     open: float
     high: float
     low: float
     close: float
     volume: int
+    adj_close: float | None = None
 
 
 class QuotePoint(BaseModel):
@@ -137,6 +139,7 @@ class QuotePoint(BaseModel):
     volume: int
     bid: float | None = None
     ask: float | None = None
+    adj_close: float | None = None
 
 
 class NewsItem(BaseModel):
@@ -277,20 +280,29 @@ async def get_asset_info(
     )
 
 
-@router.get("/research/asset/{ticker}/history", response_model=list[HistoryPoint])
+@router.get(
+    "/research/asset/{ticker}/history",
+    response_model=list[HistoryPoint],
+    response_model_exclude_unset=True,
+)
 async def get_asset_history(
     ticker: str,
     period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
     interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
     start: str = Query(default="", description="Custom start date (YYYY-MM-DD)"),
     end: str = Query(default="", description="Custom end date (YYYY-MM-DD)"),
+    adjusted: bool = Query(default=True, description="Use split/dividend adjusted prices"),
     yf=Depends(get_yfinance_dep),
 ):
     """Historical OHLCV data. Use start/end for custom date ranges, or period for presets."""
     if start and end:
-        history = await yf.get_history(ticker.upper(), start=start, end=end, interval=interval)
+        history = await yf.get_history(
+            ticker.upper(), start=start, end=end, interval=interval, auto_adjust=adjusted,
+        )
     else:
-        history = await yf.get_history(ticker.upper(), period=period, interval=interval)
+        history = await yf.get_history(
+            ticker.upper(), period=period, interval=interval, auto_adjust=adjusted,
+        )
     return [HistoryPoint(**h) for h in history]
 
 
@@ -337,21 +349,26 @@ def _fill_bid_ask(points: list[dict]) -> list[dict]:
     return points
 
 
-@router.get("/research/asset/{ticker}/quotes", response_model=list[QuotePoint])
+@router.get(
+    "/research/asset/{ticker}/quotes",
+    response_model=list[QuotePoint],
+    response_model_exclude_unset=True,
+)
 async def get_asset_quotes(
     ticker: str,
     period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
     interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
     start: str = Query(default=""),
     end: str = Query(default=""),
+    adjusted: bool = Query(default=True, description="Use split/dividend adjusted prices"),
     yf=Depends(get_yfinance_dep),
 ):
     """OHLCV + bid/ask data (interday via yfinance, current bid/ask snapshot)."""
     tick = ticker.upper()
     if start and end:
-        history = await yf.get_history(tick, start=start, end=end, interval=interval)
+        history = await yf.get_history(tick, start=start, end=end, interval=interval, auto_adjust=adjusted)
     else:
-        history = await yf.get_history(tick, period=period, interval=interval)
+        history = await yf.get_history(tick, period=period, interval=interval, auto_adjust=adjusted)
 
     if not history:
         return []
