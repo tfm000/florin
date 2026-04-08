@@ -48,6 +48,22 @@ def _normalize_dividend_yield(raw: float | None) -> float | None:
     return raw
 
 
+def _normalize_pe(pe: float | None, eps: float | None) -> float | None:
+    """Sanitize P/E ratio from yfinance using the underlying EPS.
+
+    Returns None for values that are economically meaningless:
+    - Negative PE (company has negative earnings — ratio is not interpretable).
+    - Near-zero EPS (|EPS| < $0.05) — dividing price by ~0 produces noise, not signal.
+    """
+    if pe is None:
+        return None
+    if pe <= 0:
+        return None
+    if eps is not None and abs(eps) < 0.05:
+        return None
+    return pe
+
+
 def _effective_ttl(ttl: float) -> float:
     """Return the TTL to use: short during market hours, until next open otherwise."""
     from core.market_hours import is_market_open, next_market_open
@@ -420,8 +436,8 @@ class YFinanceProvider:
                     "sector": info.get("sector", ""),
                     "industry": info.get("industry", ""),
                     "market_cap": info.get("marketCap"),
-                    "pe_ratio": info.get("trailingPE"),
-                    "forward_pe": info.get("forwardPE"),
+                    "pe_ratio": _normalize_pe(info.get("trailingPE"), info.get("trailingEps")),
+                    "forward_pe": _normalize_pe(info.get("forwardPE"), info.get("forwardEps")),
                     "short_interest": info.get("shortPercentOfFloat"),
                     "shares_short": info.get("sharesShort"),
                     "short_ratio": info.get("shortRatio"),

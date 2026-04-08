@@ -80,6 +80,15 @@ class IntradayReturnsResponse(BaseModel):
     returns: list[IntradayReturnPoint]
 
 
+def _is_valid_pe_for_agg(val: float) -> bool:
+    """Return True if a PE value should be included in portfolio-level aggregates.
+
+    Negative PE ratios (from negative earnings) are excluded as they are not
+    meaningful for portfolio-level analysis and distort averages.
+    """
+    return val > 0
+
+
 class HoldingInfo(BaseModel):
     ticker: str
     weight: float
@@ -476,12 +485,17 @@ async def get_holdings_info(
         ))
 
     # Compute weighted averages (exclude nulls, renormalize weights)
+    _pe_fields = {"pe_ratio", "forward_pe"}
+
     def _weighted_avg(field: str) -> float | None:
+        is_pe = field in _pe_fields
         total_w = 0.0
         total_v = 0.0
         for h in holding_infos:
             val = getattr(h, field)
             if val is not None:
+                if is_pe and not _is_valid_pe_for_agg(val):
+                    continue
                 w = h.weight / 100
                 total_w += w
                 total_v += w * val
@@ -948,15 +962,25 @@ async def _compute_full_summary(
     holding_infos = await asyncio.to_thread(_build_holdings)
 
     # Compute aggregate fundamentals
+    _pe_fields = {"pe_ratio", "forward_pe"}
+
     def _vals(field: str) -> list[float]:
-        return [getattr(h, field) for h in holding_infos if getattr(h, field) is not None]
+        is_pe = field in _pe_fields
+        return [
+            v for h in holding_infos
+            if (v := getattr(h, field)) is not None
+            and (not is_pe or _is_valid_pe_for_agg(v))
+        ]
 
     def _weighted_avg(field: str) -> float | None:
+        is_pe = field in _pe_fields
         total_w = 0.0
         total_v = 0.0
         for h in holding_infos:
             val = getattr(h, field)
             if val is not None:
+                if is_pe and not _is_valid_pe_for_agg(val):
+                    continue
                 w = h.weight / 100
                 total_w += w
                 total_v += w * val
