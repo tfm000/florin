@@ -257,9 +257,9 @@ class PortfolioCacheService:
         prices = 100.0 * (1.0 + cum_returns / 100.0)
 
         try:
-            from stats.core import compute_full_stats
+            from stats.core import compute_full_stats, total_return
             stats = compute_full_stats(prices)
-            total_ret = (prices[-1] / prices[0] - 1) * 100
+            total_ret = total_return(prices) or 0.0
             return {
                 "portfolio_id": portfolio_id,
                 "period": period,

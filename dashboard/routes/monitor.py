@@ -95,6 +95,8 @@ async def list_monitored(
     # Fetch from yfinance for tickers not in Alpaca cache
     yf_prices: dict[str, dict] = {}
     if tickers_needing_price:
+        from stats.core import simple_pct_change
+
         yf_provider = get_yfinance_provider()
         if yf_provider:
             batch = await yf_provider.get_info_batch(tickers_needing_price, max_concurrent=5)
@@ -103,7 +105,7 @@ async def list_monitored(
                 prev = info.get("previous_close")
                 change_pct = None
                 if price and prev and prev > 0:
-                    change_pct = round((price / prev - 1) * 100, 2)
+                    change_pct = round(simple_pct_change(price, prev), 2)
                 yf_prices[ticker] = {
                     "price": price,
                     "change_pct": change_pct,

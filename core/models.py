@@ -77,17 +77,6 @@ class StockQuote(BaseModel):
     change_pct: float = 0.0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    @property
-    def change_from_open(self) -> float:
-        if self.open_price == 0:
-            return 0.0
-        return ((self.price - self.open_price) / self.open_price) * 100
-
-    @property
-    def change_from_prev_close(self) -> float:
-        if self.prev_close == 0:
-            return 0.0
-        return ((self.price - self.prev_close) / self.prev_close) * 100
 
 
 class StockInfo(BaseModel):

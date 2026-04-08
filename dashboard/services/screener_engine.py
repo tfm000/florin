@@ -374,6 +374,8 @@ async def apply_momentum_filter(
         return []
 
     # Fetch histories concurrently
+    from stats.core import simple_pct_change
+
     async def _get_return(item: ScreenerResult) -> tuple[ScreenerResult, float | None]:
         try:
             hist = await yf.get_history(item.ticker, period=yf_period)
@@ -382,7 +384,7 @@ async def apply_momentum_filter(
             closes = [h["close"] for h in hist if h.get("close") and h["close"] > 0]
             if len(closes) <= days:
                 return item, None
-            ret = (closes[-1] / closes[-(days + 1)] - 1) * 100
+            ret = simple_pct_change(closes[-1], closes[-(days + 1)])
             return item, ret
         except Exception:
             logger.debug("Momentum fetch failed for %s", item.ticker, exc_info=True)

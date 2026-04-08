@@ -16,6 +16,8 @@ from stats.core import (
     historical_cvar,
     var_cvar,
     distribution_stats,
+    simple_pct_change,
+    total_return,
     period_return,
     compute_return_stats,
     compute_risk_adjusted,
@@ -211,6 +213,108 @@ class TestDistribution:
 
 
 # ── Period return ────────────────────────────────────────────────────
+
+class TestSimplePctChange:
+    """Tests for simple_pct_change — single source of truth for (end/start - 1) * 100."""
+
+    def test_positive_return(self):
+        result = simple_pct_change(110.0, 100.0)
+        assert result == pytest.approx(10.0)
+
+    def test_negative_return(self):
+        result = simple_pct_change(90.0, 100.0)
+        assert result == pytest.approx(-10.0)
+
+    def test_zero_return(self):
+        result = simple_pct_change(100.0, 100.0)
+        assert result == pytest.approx(0.0)
+
+    def test_start_zero_returns_none(self):
+        assert simple_pct_change(100.0, 0.0) is None
+
+    def test_start_negative_returns_none(self):
+        assert simple_pct_change(100.0, -5.0) is None
+
+    def test_end_zero(self):
+        """End price of zero is valid (total loss)."""
+        result = simple_pct_change(0.0, 100.0)
+        assert result == pytest.approx(-100.0)
+
+    def test_end_negative(self):
+        """Negative end price produces a result (caller validates domain)."""
+        result = simple_pct_change(-5.0, 100.0)
+        assert result == pytest.approx(-105.0)
+
+    def test_large_return(self):
+        result = simple_pct_change(1000.0, 100.0)
+        assert result == pytest.approx(900.0)
+
+    def test_small_fractional_change(self):
+        result = simple_pct_change(100.01, 100.0)
+        assert result == pytest.approx(0.01, abs=1e-10)
+
+    def test_algebraic_equivalence(self):
+        """Verify (end/start - 1)*100 == (end - start)/start * 100."""
+        end, start = 157.32, 143.87
+        expected = (end - start) / start * 100
+        assert simple_pct_change(end, start) == pytest.approx(expected)
+
+
+class TestTotalReturn:
+    """Tests for total_return — total return of a price series as a percentage."""
+
+    def test_basic_return(self):
+        prices = np.array([100.0, 105.0, 110.0])
+        assert total_return(prices) == pytest.approx(10.0)
+
+    def test_negative_return(self):
+        prices = np.array([100.0, 95.0, 90.0])
+        assert total_return(prices) == pytest.approx(-10.0)
+
+    def test_flat_series(self):
+        prices = np.array([100.0, 100.0, 100.0])
+        assert total_return(prices) == pytest.approx(0.0)
+
+    def test_single_price_returns_none(self):
+        assert total_return(np.array([100.0])) is None
+
+    def test_empty_returns_none(self):
+        assert total_return(np.array([])) is None
+
+    def test_leading_zeros_skipped(self):
+        """First positive price is used as base when leading zeros exist."""
+        prices = np.array([0.0, 0.0, 100.0, 110.0])
+        assert total_return(prices) == pytest.approx(10.0)
+
+    def test_all_zeros_returns_none(self):
+        prices = np.array([0.0, 0.0, 0.0])
+        assert total_return(prices) is None
+
+    def test_leading_negative_skipped(self):
+        """Negative prices are treated as invalid (not > 0)."""
+        prices = np.array([-5.0, 0.0, 100.0, 120.0])
+        assert total_return(prices) == pytest.approx(20.0)
+
+    def test_accepts_list_input(self):
+        """Should accept list via np.asarray coercion."""
+        result = total_return(np.array([100.0, 150.0]))
+        assert result == pytest.approx(50.0)
+
+    def test_consistency_with_simple_pct_change(self):
+        """total_return(prices) should equal simple_pct_change(prices[-1], prices[0])
+        when all prices are positive."""
+        prices = np.array([100.0, 105.0, 98.0, 112.0])
+        tr = total_return(prices)
+        spc = simple_pct_change(prices[-1], prices[0])
+        assert tr == pytest.approx(spc)
+
+    def test_consistency_with_period_return(self):
+        """total_return should match period_return(prices, len(prices)) for clean data."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0])
+        tr = total_return(prices)
+        pr = period_return(prices, len(prices))
+        assert tr == pytest.approx(pr)
+
 
 class TestPeriodReturn:
     def test_period_return_basic(self):

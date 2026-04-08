@@ -284,6 +284,33 @@ def distribution_stats(returns_pct: np.ndarray) -> DistributionStats:
 # Period return
 # ---------------------------------------------------------------------------
 
+def simple_pct_change(end: float, start: float) -> float | None:
+    """Percentage change between two prices.
+
+    Returns ``(end / start - 1) * 100`` or ``None`` if *start* <= 0.
+    """
+    if start <= 0:
+        return None
+    return (end / start - 1) * 100
+
+
+def total_return(prices: np.ndarray) -> float | None:
+    """Total return of a price series as a percentage.
+
+    Finds the first positive price as the base.  Returns ``None`` if
+    fewer than 2 prices or no valid (> 0) base price exists.
+    """
+    prices = np.asarray(prices, dtype=np.float64)
+    if len(prices) < 2:
+        return None
+    # Find first positive price as base (vectorised)
+    mask = prices > 0
+    if not mask.any():
+        return None
+    base = prices[mask.argmax()]
+    return float((prices[-1] / base - 1) * 100)
+
+
 def period_return(prices: np.ndarray, n_days: int) -> float | None:
     """Return over the last *n_days* as a percentage.
 
@@ -292,7 +319,7 @@ def period_return(prices: np.ndarray, n_days: int) -> float | None:
     prices = np.asarray(prices, dtype=np.float64)
     if len(prices) < n_days or n_days < 1:
         return None
-    return float((prices[-1] - prices[-n_days]) / prices[-n_days] * 100)
+    return simple_pct_change(float(prices[-1]), float(prices[-n_days]))
 
 
 # ---------------------------------------------------------------------------

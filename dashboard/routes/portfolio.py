@@ -448,6 +448,8 @@ async def get_holdings_info(
     infos = [info_map.get(t, {}) for t in tickers]
     histories = [history_map.get(t, []) for t in tickers]
 
+    from stats.core import simple_pct_change, log_returns, annualized_volatility
+
     holding_infos = []
     for i, info in enumerate(infos):
         t = tickers[i]
@@ -459,10 +461,10 @@ async def get_holdings_info(
         if hist and len(hist) >= 2:
             first_close = hist[0]["close"]
             last_close = hist[-1]["close"]
-            if first_close > 0:
-                p_return = round((last_close / first_close - 1) * 100, 2)
+            result = simple_pct_change(last_close, first_close)
+            if result is not None:
+                p_return = round(result, 2)
             try:
-                from stats.core import log_returns, annualized_volatility
                 closes = np.array([h["close"] for h in hist])
                 rets = log_returns(closes)
                 p_vol = round(annualized_volatility(rets), 2)
@@ -562,11 +564,11 @@ async def get_portfolio_analytics(
         rf_daily = rf_full[1:]  # align to returns (n-1)
 
     def _compute(prices, rf_daily_rates):
-        from stats.core import compute_full_stats
+        from stats.core import compute_full_stats, total_return
 
         stats = compute_full_stats(prices, rf_daily_rates)
 
-        total_ret = (prices[-1] / prices[0] - 1) * 100
+        total_ret = total_return(prices) or 0.0
 
         return {
             "total_return": round(total_ret, 2),
@@ -646,6 +648,8 @@ async def get_portfolio_returns(
         # Target total weight for prorating (sum of all weights with history)
         target_total = sum(w for t, w in weights.items() if t in first_prices)
 
+        from stats.core import simple_pct_change
+
         points = []
         for d in all_dates:
             port_return = 0.0
@@ -658,7 +662,7 @@ async def get_portfolio_returns(
                 if price is None:
                     # Missing data for this date → 0 return contribution
                     continue
-                ret = (price / first_prices[t] - 1) * 100
+                ret = simple_pct_change(price, first_prices[t]) or 0.0
                 port_return += w * ret
                 active_weight += w
 
@@ -838,9 +842,9 @@ async def _compute_full_summary(
             rf_daily = rf_coro_result[1:]  # align to returns (n-1)
 
         def _compute_analytics(prices, rf_daily_rates):
-            from stats.core import compute_full_stats
+            from stats.core import compute_full_stats, total_return
             stats = compute_full_stats(prices, rf_daily_rates)
-            total_ret = (prices[-1] / prices[0] - 1) * 100
+            total_ret = total_return(prices) or 0.0
             return {
                 "total_return": round(total_ret, 2),
                 "annualized_vol": round(stats.returns.annualized_volatility, 2),
@@ -860,6 +864,8 @@ async def _compute_full_summary(
 
     # --- Compute cumulative returns (BOTH prorated and non-prorated) ---
     def _compute_returns_variant(do_prorate: bool) -> list[dict]:
+        from stats.core import simple_pct_change
+
         date_map: dict[str, dict[str, float]] = {}
         for t in tickers:
             hist = history_map.get(t, [])
@@ -897,7 +903,7 @@ async def _compute_full_summary(
                 price = date_map.get(d, {}).get(t)
                 if price is None:
                     continue
-                ret = (price / first_prices[t] - 1) * 100
+                ret = simple_pct_change(price, first_prices[t]) or 0.0
                 port_return += w * ret
                 active_weight += w
 
@@ -917,6 +923,8 @@ async def _compute_full_summary(
 
     # --- Build holdings info ---
     def _build_holdings():
+        from stats.core import simple_pct_change, log_returns, annualized_volatility
+
         holding_infos = []
         for t in tickers_by_weight:
             raw_weight = all_tickers_raw.get(t, 0)
@@ -928,10 +936,10 @@ async def _compute_full_summary(
             if hist and len(hist) >= 2:
                 first_close = hist[0]["close"]
                 last_close = hist[-1]["close"]
-                if first_close > 0:
-                    p_return = round((last_close / first_close - 1) * 100, 2)
+                result = simple_pct_change(last_close, first_close)
+                if result is not None:
+                    p_return = round(result, 2)
                 try:
-                    from stats.core import log_returns, annualized_volatility
                     closes = np.array([h["close"] for h in hist])
                     rets = log_returns(closes)
                     p_vol = round(annualized_volatility(rets), 2)
@@ -1165,6 +1173,8 @@ async def get_holdings_info_page(
         yf.get_histories_batch(page_tickers, period=period, start=start, end=end),
     )
 
+    from stats.core import simple_pct_change, log_returns, annualized_volatility
+
     holding_infos = []
     for h in page:
         t = h.ticker
@@ -1176,10 +1186,10 @@ async def get_holdings_info_page(
         if hist and len(hist) >= 2:
             first_close = hist[0]["close"]
             last_close = hist[-1]["close"]
-            if first_close > 0:
-                p_return = round((last_close / first_close - 1) * 100, 2)
+            result = simple_pct_change(last_close, first_close)
+            if result is not None:
+                p_return = round(result, 2)
             try:
-                from stats.core import log_returns, annualized_volatility
                 closes = np.array([hh["close"] for hh in hist])
                 rets = log_returns(closes)
                 p_vol = round(annualized_volatility(rets), 2)
@@ -1265,6 +1275,8 @@ async def get_intraday_returns(
                     first_prices[t] = price
                     break
 
+        from stats.core import simple_pct_change
+
         points = []
         for ts in all_ts:
             port_return = 0.0
@@ -1276,7 +1288,7 @@ async def get_intraday_returns(
                 price = ts_map.get(ts, {}).get(t)
                 if price is None:
                     continue
-                ret = (price / first_prices[t] - 1) * 100
+                ret = simple_pct_change(price, first_prices[t]) or 0.0
                 port_return += w * ret
                 total_weight += w
 
@@ -1347,6 +1359,7 @@ async def get_intraday_analytics(
                     break
 
         # Daily return: weighted return from first bar to last bar
+        from stats.core import simple_pct_change
         last_ts = all_ts[-1]
         daily_return = 0.0
         total_w = 0.0
@@ -1356,7 +1369,7 @@ async def get_intraday_analytics(
             last_price = ts_map.get(last_ts, {}).get(t)
             if last_price is None:
                 continue
-            ret = (last_price / first_prices[t] - 1) * 100
+            ret = simple_pct_change(last_price, first_prices[t]) or 0.0
             daily_return += w * ret
             total_w += w
         if total_w > 0:

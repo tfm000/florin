@@ -805,13 +805,16 @@ def _compute_return(closes: list[float], days: int) -> float | None:
 
     Returns percentage (e.g. 5.0 for +5%) or None if insufficient data.
     """
+    from stats.core import simple_pct_change
+
     if len(closes) <= days:
         return None
     end_price = closes[-1]
     start_price = closes[-(days + 1)]
-    if start_price <= 0 or end_price <= 0:
+    if end_price <= 0:
         return None
-    return round((end_price / start_price - 1) * 100, 2)
+    result = simple_pct_change(end_price, start_price)
+    return round(result, 2) if result is not None else None
 
 
 @router.get("/research/sectors", response_model=SectorsResponse)
@@ -895,6 +898,8 @@ async def get_sectors_history(
         return SectorHistoryResponse(dates=[], series={})
 
     # Build series: cumulative return from first date
+    from stats.core import simple_pct_change
+
     series: dict[str, list[float]] = {}
     for name, lookup in zip(sector_names, lookups):
         if not lookup or common_dates[0] not in lookup:
@@ -903,9 +908,11 @@ async def get_sectors_history(
         if base_price <= 0:
             continue
         series[name] = [
-            round((lookup[d] / base_price - 1) * 100, 2)
+            round(pct, 2)
             for d in common_dates
             if d in lookup
+            for pct in (simple_pct_change(lookup[d], base_price),)
+            if pct is not None
         ]
 
     return SectorHistoryResponse(dates=common_dates, series=series)
