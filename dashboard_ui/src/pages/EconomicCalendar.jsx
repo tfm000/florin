@@ -41,14 +41,14 @@ function formatValue(val) {
  * Inline expandable row for an economic event.
  * When expanded, shows metadata and fetches indicator history for a sparkline chart.
  */
-function EconRow({ event, isExpanded, onToggle }) {
+function EconRow({ event, isExpanded, onToggle, historyParams = 'months=36' }) {
   const today = new Date().toISOString().split('T')[0]
   const isPast = event.date < today
   const hasSurprise = event.actual && event.expected && event.actual !== event.expected
 
   const { data: historyData, loading: histLoading } = useApi(
     isExpanded && event.indicator_key
-      ? `/calendar/indicators/${event.indicator_key}/history`
+      ? `/calendar/indicators/${event.indicator_key}/history?${historyParams}`
       : null
   )
 
@@ -305,6 +305,16 @@ function IndicatorCard({ event, isExpanded, onToggle }) {
  * Section B: US Economic Indicators (source=alpha_vantage),
  *   displayed as a card grid with expandable historical charts.
  */
+const RATE_HISTORY_RANGES = [
+  { label: '1Y', months: 12 },
+  { label: '2Y', months: 24 },
+  { label: '3Y', months: 36 },
+  { label: '5Y', months: 60 },
+  { label: '10Y', months: 120 },
+  { label: 'Max', months: 240 },
+  { label: 'Custom', months: 0 },
+]
+
 export default function EconomicCalendar() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -313,6 +323,23 @@ export default function EconomicCalendar() {
   const [categoryFilter, setCategoryFilter] = useState('All')
   const [expandedKey, setExpandedKey] = useState(null)
   const [expandedIndicator, setExpandedIndicator] = useState(null)
+
+  // Rate history range — shared across all monetary policy charts
+  const [rateHistoryMonths, setRateHistoryMonths] = useState(36)
+  const [showCustomRange, setShowCustomRange] = useState(false)
+  const [customRangeStart, setCustomRangeStart] = useState('')
+  const [customRangeEnd, setCustomRangeEnd] = useState('')
+  const [appliedCustomRange, setAppliedCustomRange] = useState(null) // { start, end }
+
+  /** Build the query params string passed to all rate history API calls. */
+  const historyParams = useMemo(() => {
+    if (appliedCustomRange) {
+      const p = [`start_date=${appliedCustomRange.start}`]
+      if (appliedCustomRange.end) p.push(`end_date=${appliedCustomRange.end}`)
+      return p.join('&')
+    }
+    return `months=${rateHistoryMonths}`
+  }, [rateHistoryMonths, appliedCustomRange])
 
   const dateParams = [
     startDate && `start_date=${startDate}`,
@@ -434,6 +461,63 @@ export default function EconomicCalendar() {
               {showPast ? 'Showing Past' : 'Show Past'}
             </button>
           </div>
+
+          {/* Rate chart range — controls all monetary policy rate charts */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500 font-semibold uppercase">Rate chart range</span>
+            {RATE_HISTORY_RANGES.map(r => (
+              <button
+                key={r.label}
+                onClick={() => {
+                  if (r.label === 'Custom') {
+                    setShowCustomRange(true)
+                    setAppliedCustomRange(null)
+                  } else {
+                    setShowCustomRange(false)
+                    setAppliedCustomRange(null)
+                    setRateHistoryMonths(r.months)
+                  }
+                }}
+                className={`px-2 py-1 text-xs rounded ${
+                  r.label === 'Custom'
+                    ? (showCustomRange ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700')
+                    : (!showCustomRange && !appliedCustomRange && rateHistoryMonths === r.months
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700')
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+            {showCustomRange && (
+              <div className="flex items-center gap-1 ml-1">
+                <input
+                  type="date"
+                  value={customRangeStart}
+                  onChange={e => setCustomRangeStart(e.target.value)}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                />
+                <span className="text-gray-500 text-xs">to</span>
+                <input
+                  type="date"
+                  value={customRangeEnd}
+                  onChange={e => setCustomRangeEnd(e.target.value)}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                />
+                <button
+                  onClick={() => {
+                    if (customRangeStart && customRangeEnd && customRangeStart < customRangeEnd) {
+                      setAppliedCustomRange({ start: customRangeStart, end: customRangeEnd })
+                    }
+                  }}
+                  disabled={!customRangeStart || !customRangeEnd || customRangeStart >= customRangeEnd}
+                  className="px-2 py-1 text-xs rounded bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-gray-600 disabled:text-gray-400"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {loading && <p className="text-gray-500 text-sm">Loading economic events...</p>}
@@ -454,6 +538,7 @@ export default function EconomicCalendar() {
                     event={e}
                     isExpanded={expandedKey === key}
                     onToggle={() => setExpandedKey(expandedKey === key ? null : key)}
+                    historyParams={historyParams}
                   />
                 )
               })}
@@ -472,6 +557,7 @@ export default function EconomicCalendar() {
                         event={e}
                         isExpanded={expandedKey === key}
                         onToggle={() => setExpandedKey(expandedKey === key ? null : key)}
+                        historyParams={historyParams}
                       />
                     )
                   })}

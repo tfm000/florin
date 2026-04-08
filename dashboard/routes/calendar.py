@@ -283,16 +283,24 @@ async def get_calendar(
 @router.get("/calendar/indicators/{indicator_key}/history", response_model=list[HistoryPoint])
 async def get_indicator_history(
     indicator_key: str,
-    limit: int = Query(default=24, ge=1, le=100),
+    months: int = Query(default=36, ge=1, le=240, description="Number of months of history (default 36 = 3 years)"),
+    start_date: str = Query(default="", description="Custom start date (YYYY-MM-DD). Overrides months if set."),
+    end_date: str = Query(default="", description="Custom end date (YYYY-MM-DD). Defaults to today."),
 ):
     """Get historical readings for a specific economic indicator.
 
-    Used to render sparkline charts when users expand an economic event row.
+    Supports two modes:
+    - **Preset range:** ``months=36`` returns the last 36 months.
+    - **Custom range:** ``start_date=2020-01-01&end_date=2023-12-31`` returns
+      that specific period. When ``start_date`` is set, ``months`` is ignored.
+
     Returns data points sorted oldest-first for charting.
 
     Args:
         indicator_key: Indicator identifier (e.g. "us_cpi", "ecb_rate", "fed_rate").
-        limit: Maximum number of data points (default 24).
+        months: How many months of history to return (default 36 = 3 years).
+        start_date: Custom start date. If set, overrides ``months``.
+        end_date: Custom end date. Defaults to today if omitted.
     """
     from dashboard.deps import get_state_value
     econ_service = get_state_value("economic_calendar_service")
@@ -300,5 +308,22 @@ async def get_indicator_history(
     if not econ_service:
         return []
 
-    history = await econ_service.get_indicator_history(indicator_key, limit)
+    # Custom date range overrides months
+    if start_date:
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        # Calculate months from date range
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            months = max(1, (end_dt.year - start_dt.year) * 12 + end_dt.month - start_dt.month + 1)
+        except ValueError:
+            pass  # Fall through to default months
+
+    history = await econ_service.get_indicator_history(indicator_key, months)
+
+    # If custom date range, filter to exact range
+    if start_date:
+        history = [h for h in history if h["date"] >= start_date and h["date"] <= (end_date or "9999-12-31")]
+
     return [HistoryPoint(**h) for h in history]

@@ -286,11 +286,15 @@ class EconomicCalendarService:
                 "User-Agent": "FlorinTerminal/1.0 (+https://github.com/florin-terminal)",
             },
         )
-        # AV free tier: 25 requests/day, max 1 request/second.
-        # Reuse the project's existing AsyncRateLimiter for pacing.
+        # AV free tier: 25 requests/day, 1 request/second.
+        # Empirically verified: 1s delay between requests succeeds 5/5;
+        # 0s delay fails 4/5. Using 1 req/1.5sec pacing.
+        # Note: this quota is shared with sentiment/alphavantage_source.py.
         self._av_limiter: AsyncRateLimiter = AsyncRateLimiter(
-            max_requests=60, window_seconds=60, name="AV-EconCalendar",
+            max_requests=1, window_seconds=1.5, name="AV-EconCalendar",
         )
+        # Seed the limiter so even the first request waits (prevents burst on startup)
+        self._av_limiter._last_request_time = time.monotonic()
         self._last_cb_refresh: float = 0.0
         self._last_av_refresh: float = 0.0
 
@@ -351,39 +355,39 @@ class EconomicCalendarService:
         ]
 
     async def get_indicator_history(
-        self, indicator_key: str, limit: int = 24,
+        self, indicator_key: str, months: int = 36,
     ) -> list[dict]:
         """Return historical readings for a specific indicator.
 
-        **DB-first strategy:** Always reads from the ``economic_events`` table
-        first (populated by the scheduled refresh). Only falls back to a live
-        API call if the DB has no data for this indicator yet.
-
         For CB rate indicators, the BIS CBPOL API provides monthly timeseries
-        with end-of-month dates suitable for charting.
+        with end-of-month dates. ``months`` controls how far back to look.
+
+        For AV indicators, reads from DB cache (populated by scheduled refresh).
+        Falls back to live AV call if DB is empty.
 
         Args:
             indicator_key: e.g. "us_cpi", "ecb_rate", "fed_rate"
-            limit: Maximum number of data points to return.
+            months: How many months of history to return (default 36 = 3 years).
 
         Returns:
             List of ``{"date": str, "value": str}`` sorted by date ascending.
         """
-        # 1. Try DB cache first (fast, no API call, always preferred)
-        db_history = await self._read_history_from_db(indicator_key, limit)
+        # CB rates: always use BIS timeseries API (free, no key, returns full
+        # monthly history). The DB only stores the latest rate per country so
+        # it's insufficient for charting.
+        bis_code = _indicator_key_to_bis_code(indicator_key)
+        if bis_code:
+            return await self._fetch_bis_rate_history(bis_code, months)
+
+        # AV indicators: DB-first (populated by scheduled refresh with 24
+        # historical readings). Only falls back to live API if DB is empty.
+        db_history = await self._read_history_from_db(indicator_key, months)
         if db_history:
             return db_history
 
-        # 2. DB empty — try a live API fetch as fallback
-        # For CB rates, BIS provides monthly timeseries
-        bis_code = _indicator_key_to_bis_code(indicator_key)
-        if bis_code:
-            return await self._fetch_bis_rate_history(bis_code, limit)
-
-        # For AV indicators, live fetch (rate-limited)
         if indicator_key in AV_INDICATORS and self._av_key:
             cfg = AV_INDICATORS[indicator_key]
-            return await self._fetch_av_history(cfg["function"], limit)
+            return await self._fetch_av_history(cfg["function"], months)
 
         return []
 
