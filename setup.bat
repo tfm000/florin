@@ -9,30 +9,54 @@ echo.
 echo === Florin Terminal Setup ===
 echo.
 
-:: ── 1. Python 3.12+ ─────────────────────────────────────
+:: ── 1. Environment + dependencies ───────────────────────
+:: Preferred path: uv. It creates the virtual environment, provisions the
+:: Python interpreter pinned in .python-version, and installs the exact,
+:: locked dependency set from uv.lock — fully reproducible.
+set USE_UV=0
+where uv >nul 2>&1
+if %errorlevel% equ 0 (
+    set USE_UV=1
+    for /f "tokens=*" %%V in ('uv --version') do echo [OK] Found %%V
+
+    echo Creating virtual environment...
+    uv venv || exit /b 1
+    echo [OK] Virtual environment created (.venv)
+
+    echo Installing dependencies (locked)...
+    uv sync --extra dev || exit /b 1
+    echo [OK] Dependencies installed from uv.lock
+    goto :deps_done
+)
+
+echo [!] uv not found — falling back to python venv + pip (NOT locked)
+echo     Install uv for reproducible installs:
+echo       powershell -c "irm https://astral.sh/uv/install.ps1 ^| iex"
+echo.
+
+:: ── Degraded fallback: find Python 3.13+ ────────────────
 set PYTHON=
-for %%P in (python3 python) do (
+for %%P in (python3.13 python3 python) do (
     where %%P >nul 2>&1
     if !errorlevel! equ 0 (
         for /f "tokens=*" %%V in ('%%P -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2^>nul') do set PYVER=%%V
         for /f %%M in ('%%P -c "import sys; print(sys.version_info.major)" 2^>nul') do set PYMAJOR=%%M
         for /f %%N in ('%%P -c "import sys; print(sys.version_info.minor)" 2^>nul') do set PYMINOR=%%N
-        if !PYMAJOR! geq 3 if !PYMINOR! geq 12 (
+        if !PYMAJOR! geq 3 if !PYMINOR! geq 13 (
             set PYTHON=%%P
             goto :found_python
         )
     )
 )
-echo [X] Python 3.12+ is required but not found. Install from https://python.org
+echo [X] Python 3.13+ is required but not found. Install from https://python.org or install uv.
 exit /b 1
 
 :found_python
 echo [OK] Found %PYTHON% (%PYVER%)
 
-:: ── 2. Virtual environment ──────────────────────────────
 if not exist "%VENV_DIR%\Scripts\activate.bat" (
     echo Creating virtual environment...
-    %PYTHON% -m venv %VENV_DIR%
+    %PYTHON% -m venv %VENV_DIR% || exit /b 1
     echo [OK] Virtual environment created
 ) else (
     echo [OK] Virtual environment already exists
@@ -40,12 +64,13 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
 
 call %VENV_DIR%\Scripts\activate.bat
 
-:: ── 3. Python dependencies ──────────────────────────────
-echo Installing dependencies...
-pip install -q -e ".[dev]"
+echo Installing dependencies (unlocked — install uv for reproducible builds)...
+pip install -q -e ".[dev]" || exit /b 1
 echo [OK] Dependencies installed
 
-:: ── 4. Node.js + React dashboard (optional) ─────────────
+:deps_done
+
+:: ── 2. Node.js + React dashboard (optional) ─────────────
 where node >nul 2>&1
 if %errorlevel% equ 0 (
     echo [OK] Node.js found
@@ -63,19 +88,31 @@ if %errorlevel% equ 0 (
     echo.
 )
 
-:: ── 5. Database ──────────────────────────────────────────
+:: ── 3. Database ──────────────────────────────────────────
 echo Initialising database...
-%PYTHON% -c "import asyncio; from db.database import Database; asyncio.run((lambda: (db := Database('sqlite+aiosqlite:///./florin.db')) or asyncio.ensure_future(db.init()))())" 2>nul
-%PYTHON% -c "import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./florin.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')"
+set DB_INIT=import asyncio; exec('async def init():\n    from db.database import Database\n    db = Database(\"sqlite+aiosqlite:///./florin.db\")\n    await db.init()\n    await db.close()\nasyncio.run(init())')
+if "%USE_UV%"=="1" (
+    uv run python -c "%DB_INIT%" || exit /b 1
+) else (
+    python -c "%DB_INIT%" || exit /b 1
+)
 echo [OK] Database initialised
 
-:: ── 6. Desktop launcher ─────────────────────────────────
-(
-echo @echo off
-echo cd /d "%%~dp0"
-echo call .venv\Scripts\activate.bat
-echo python main.py
-) > Florin.bat
+:: ── 4. Desktop launcher ─────────────────────────────────
+if "%USE_UV%"=="1" (
+    (
+    echo @echo off
+    echo cd /d "%%~dp0"
+    echo uv run python main.py
+    ) > Florin.bat
+) else (
+    (
+    echo @echo off
+    echo cd /d "%%~dp0"
+    echo call .venv\Scripts\activate.bat
+    echo python main.py
+    ) > Florin.bat
+)
 echo [OK] Created Florin.bat (double-click to launch)
 
 echo.
@@ -84,7 +121,11 @@ echo.
 echo Next steps:
 echo   1. Start the app:
 echo      * Double-click Florin.bat, or
-echo      * Run: .venv\Scripts\activate ^&^& python main.py
+if "%USE_UV%"=="1" (
+    echo      * Run: uv run python main.py
+) else (
+    echo      * Run: .venv\Scripts\activate ^&^& python main.py
+)
 echo   2. Configure your API keys via the dashboard at http://localhost:8000/settings
 echo.
 echo   Dashboard will be available at http://localhost:8000

@@ -2,7 +2,7 @@
 name = "florin"
 version = "0.2.0"
 description = "AI-powered financial terminal for market screening, analysis, and trading"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "MIT" }
 
 dependencies = [
@@ -72,11 +72,23 @@ dev = [
 florin = "main:cli_entry"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+# UP042: (str, Enum) is intentional in core models/settings — StrEnum changes
+# str()/format/serialization behaviour, which we rely on for API and DB output.
+ignore = ["UP042"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends()/Query() are designed to be called in argument defaults;
+# B008 is a known false positive for them.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test-local mock classes (MockClient, MockDDGS, ...) correctly use PascalCase.
+"tests/**" = ["N806"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -86,7 +98,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -104,6 +116,7 @@ include = [
     "dashboard*",
     "db*",
     "stats*",
+    "news*",
     "tests*",
 ]
 exclude = ["dashboard_ui*"]
