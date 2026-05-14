@@ -96,13 +96,13 @@ async def get_correlation_matrix(
         for hist in histories:
             price_map = {_date_key(h["date"]): h["close"] for h in hist}
             prices = [price_map[d] for d in common_dates if d in price_map]
-            # Compute log returns
-            log_returns = [
-                np.log(prices[i] / prices[i - 1])
+            # Compute simple returns
+            rets = [
+                (prices[i] / prices[i - 1]) - 1
                 for i in range(1, len(prices))
-                if prices[i] > 0 and prices[i - 1] > 0
+                if prices[i - 1] > 0
             ]
-            returns_matrix.append(log_returns)
+            returns_matrix.append(rets)
 
         # Align lengths
         min_len = min(len(r) for r in returns_matrix)

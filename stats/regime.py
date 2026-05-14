@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def fit_markov_regimes(
-    log_returns_scaled: np.ndarray,
+    returns_scaled: np.ndarray,
     dates: list[str],
     n_regimes: int = 2,
     display_start: str = "",
@@ -26,11 +26,11 @@ def fit_markov_regimes(
 
     Parameters
     ----------
-    log_returns_scaled : np.ndarray
-        Log returns **already scaled by 100** for numerical stability.
+    returns_scaled : np.ndarray
+        Simple returns **already scaled by 100** for numerical stability.
         Length must match ``len(dates)``.
     dates : list[str]
-        ISO date/datetime strings aligned to ``log_returns_scaled``.
+        ISO date/datetime strings aligned to ``returns_scaled``.
     n_regimes : int
         Number of regimes (2 or 3).
     display_start / display_end : str
@@ -45,7 +45,7 @@ def fit_markov_regimes(
     dict with keys ``regimes`` (list[dict]) and ``stats`` (list[dict]),
     or ``None`` on failure / insufficient data.
     """
-    if len(log_returns_scaled) < 30:
+    if len(returns_scaled) < 30:
         return None
 
     try:
@@ -54,7 +54,7 @@ def fit_markov_regimes(
         )
 
         model = MarkovRegression(
-            log_returns_scaled,
+            returns_scaled,
             k_regimes=n_regimes,
             trend="c",
             switching_variance=True,
@@ -89,7 +89,7 @@ def fit_markov_regimes(
             mask = regime_assignments == r
             if mask.sum() == 0:
                 continue
-            regime_rets = log_returns_scaled[mask] / 100  # unscale
+            regime_rets = returns_scaled[mask] / 100  # unscale
             stats.append({
                 "regime": r,
                 "mean_return": round(float(np.mean(regime_rets)) * annualize_factor * 100, 2),

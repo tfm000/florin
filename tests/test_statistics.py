@@ -419,3 +419,52 @@ class TestParametric:
         # similar results. Not exact because MC sampling advances the
         # random state between calls.
         assert abs(result.sharpe - result_scalar.sharpe) < 1.0
+
+
+# ── Return type conventions ─────────────────────────────────────────
+
+class TestReturnTypeConventions:
+    """Verify that the codebase uses simple returns for standard statistics
+    and reserves log returns only for parametric distribution fitting."""
+
+    def test_annualized_volatility_uses_simple_returns(self):
+        """annualized_volatility with simple returns should match the
+        standard formula: std(simple_rets, ddof=1) * sqrt(252) * 100."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0, 108.0, 106.0])
+        rets = simple_returns(prices)
+        vol = annualized_volatility(rets)
+        expected = float(np.std(rets, ddof=1) * np.sqrt(252) * 100)
+        assert vol == pytest.approx(expected)
+
+    def test_simple_vs_log_vol_differ_for_large_moves(self):
+        """For assets with large price moves, log and simple return vol
+        should produce different values — confirming the choice matters."""
+        # Simulate a volatile penny stock: 50% swings
+        prices = np.array([1.0, 1.5, 0.75, 1.2, 0.6, 1.1, 0.8])
+        simple_rets = simple_returns(prices)
+        log_rets = log_returns(prices)
+        simple_vol = annualized_volatility(simple_rets)
+        log_vol = annualized_volatility(log_rets)
+        # They should not be identical
+        assert simple_vol != pytest.approx(log_vol, abs=1e-6)
+
+    def test_compute_full_stats_uses_simple_returns(self):
+        """compute_full_stats internally uses simple_returns — verify by
+        comparing its vol output against a manual simple-return calculation."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0, 108.0])
+        fs = compute_full_stats(prices)
+        rets = simple_returns(prices)
+        expected_vol = float(np.std(rets, ddof=1) * np.sqrt(252) * 100)
+        assert fs.returns.annualized_volatility == pytest.approx(expected_vol)
+
+    def test_fit_student_t_accepts_log_returns(self):
+        """fit_student_t is the one place log returns are correct — verify
+        it accepts them without error."""
+        from stats.parametric import fit_student_t
+
+        np.random.seed(42)
+        log_rets = np.random.normal(0.0005, 0.02, 200)
+        result = fit_student_t(log_rets)
+        if result is None:
+            pytest.skip("copulax not installed or fit degenerate")
+        assert result.var.var_95 < 0  # VaR should be negative (loss)

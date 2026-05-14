@@ -110,13 +110,15 @@ async def detect_regimes(
         if len(closes) < 30:
             return None
 
-        log_rets = np.array([
-            np.log(closes[i] / closes[i - 1])
+        # Simple returns scaled by 100 for numerical stability
+        # closes are pre-filtered to > 0, so division is always safe
+        simple_rets = np.array([
+            (closes[i] / closes[i - 1]) - 1
             for i in range(1, len(closes))
-        ]) * 100  # Scale for numerical stability
+        ]) * 100
 
         return fit_markov_regimes(
-            log_rets, dates[1:], n_regimes,
+            simple_rets, dates[1:], n_regimes,
             display_start=display_start, display_end=display_end,
             annualize_factor=annualize,
         )

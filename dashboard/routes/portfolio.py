@@ -448,7 +448,7 @@ async def get_holdings_info(
     infos = [info_map.get(t, {}) for t in tickers]
     histories = [history_map.get(t, []) for t in tickers]
 
-    from stats.core import simple_pct_change, log_returns, annualized_volatility
+    from stats.core import simple_pct_change, simple_returns, annualized_volatility
 
     holding_infos = []
     for i, info in enumerate(infos):
@@ -466,7 +466,7 @@ async def get_holdings_info(
                 p_return = round(result, 2)
             try:
                 closes = np.array([h["close"] for h in hist])
-                rets = log_returns(closes)
+                rets = simple_returns(closes)
                 p_vol = round(annualized_volatility(rets), 2)
             except Exception:
                 pass
@@ -723,18 +723,18 @@ async def get_portfolio_regime(
 
     def _compute():
         try:
-            from stats.core import log_returns
+            from stats.core import simple_returns
             from stats.regime import fit_markov_regimes
 
             port_prices, common = _build_portfolio_prices(tickers, weights, max_histories)
             if port_prices is None:
                 return None
 
-            # Compute log returns and scale by 100 for numerical stability
-            log_rets = log_returns(port_prices)
-            if not np.all(np.isfinite(log_rets)):
+            # Simple returns scaled by 100 for numerical stability
+            rets = simple_returns(port_prices)
+            if not np.all(np.isfinite(rets)):
                 return None
-            scaled = log_rets * 100
+            scaled = rets * 100
             return_dates = common[1:]  # dates aligned to returns
 
             return fit_markov_regimes(
@@ -923,7 +923,7 @@ async def _compute_full_summary(
 
     # --- Build holdings info ---
     def _build_holdings():
-        from stats.core import simple_pct_change, log_returns, annualized_volatility
+        from stats.core import simple_pct_change, simple_returns, annualized_volatility
 
         holding_infos = []
         for t in tickers_by_weight:
@@ -941,7 +941,7 @@ async def _compute_full_summary(
                     p_return = round(result, 2)
                 try:
                     closes = np.array([h["close"] for h in hist])
-                    rets = log_returns(closes)
+                    rets = simple_returns(closes)
                     p_vol = round(annualized_volatility(rets), 2)
                 except Exception:
                     pass
@@ -1173,7 +1173,7 @@ async def get_holdings_info_page(
         yf.get_histories_batch(page_tickers, period=period, start=start, end=end),
     )
 
-    from stats.core import simple_pct_change, log_returns, annualized_volatility
+    from stats.core import simple_pct_change, simple_returns, annualized_volatility
 
     holding_infos = []
     for h in page:
@@ -1191,7 +1191,7 @@ async def get_holdings_info_page(
                 p_return = round(result, 2)
             try:
                 closes = np.array([hh["close"] for hh in hist])
-                rets = log_returns(closes)
+                rets = simple_returns(closes)
                 p_vol = round(annualized_volatility(rets), 2)
             except Exception:
                 pass
