@@ -19,15 +19,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ReturnStats:
     mean_daily: float
-    annualized_return: float      # pct
+    annualized_return: float  # pct
     annualized_volatility: float  # pct
     trading_days: int
 
@@ -40,8 +40,8 @@ class RiskAdjustedStats:
 
 @dataclass(frozen=True)
 class VaRStats:
-    var_95: float   # pct
-    var_99: float   # pct
+    var_95: float  # pct
+    var_99: float  # pct
     cvar_95: float  # pct
     cvar_99: float  # pct
 
@@ -55,8 +55,8 @@ class DrawdownStats:
 
 @dataclass(frozen=True)
 class DistributionStats:
-    mean: float           # pct (daily)
-    std_dev: float        # pct (daily)
+    mean: float  # pct (daily)
+    std_dev: float  # pct (daily)
     skewness: float
     excess_kurtosis: float
 
@@ -73,6 +73,7 @@ class FullStats:
 # ---------------------------------------------------------------------------
 # Return computation
 # ---------------------------------------------------------------------------
+
 
 def simple_returns(prices: np.ndarray) -> np.ndarray:
     """Simple (arithmetic) returns from a price series.
@@ -109,6 +110,7 @@ def log_returns(prices: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Core statistics
 # ---------------------------------------------------------------------------
+
 
 def annualized_return(returns: np.ndarray, trading_days: int = 252) -> float:
     """Annualized return in percentage."""
@@ -157,7 +159,7 @@ def sortino_ratio(
     excess = returns - rf_daily
     mean_excess = float(np.mean(excess))
     downside = np.minimum(excess, 0.0)
-    downside_std = float(np.sqrt(np.mean(downside ** 2)))
+    downside_std = float(np.sqrt(np.mean(downside**2)))
     if downside_std <= 0:
         return 0.0
     return float(mean_excess / downside_std * np.sqrt(trading_days))
@@ -166,6 +168,7 @@ def sortino_ratio(
 # ---------------------------------------------------------------------------
 # Drawdown
 # ---------------------------------------------------------------------------
+
 
 def max_drawdown(prices: np.ndarray) -> DrawdownStats:
     """Maximum drawdown from a price series (running-peak method)."""
@@ -216,6 +219,7 @@ def max_drawdown_from_log_returns(log_rets: np.ndarray) -> DrawdownStats:
 # Value-at-Risk
 # ---------------------------------------------------------------------------
 
+
 def historical_var(returns: np.ndarray, confidence: float = 0.95) -> float:
     """Historical VaR at given confidence level, as percentage."""
     if len(returns) == 0:
@@ -250,6 +254,7 @@ def var_cvar(returns: np.ndarray) -> VaRStats:
 # Distribution
 # ---------------------------------------------------------------------------
 
+
 def distribution_stats(returns_pct: np.ndarray) -> DistributionStats:
     """Mean, std (sample, ddof=1), skewness, excess kurtosis.
 
@@ -267,11 +272,11 @@ def distribution_stats(returns_pct: np.ndarray) -> DistributionStats:
 
     z = (returns_pct - mean) / std
     # Adjusted Fisher-Pearson skewness (sample)
-    skew = float(n / ((n - 1) * (n - 2)) * np.sum(z ** 3)) if n > 2 else 0.0
+    skew = float(n / ((n - 1) * (n - 2)) * np.sum(z**3)) if n > 2 else 0.0
     # Excess kurtosis (sample)
     if n > 3:
         kurt = float(
-            n * (n + 1) / ((n - 1) * (n - 2) * (n - 3)) * np.sum(z ** 4)
+            n * (n + 1) / ((n - 1) * (n - 2) * (n - 3)) * np.sum(z**4)
             - 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))
         )
     else:
@@ -283,6 +288,7 @@ def distribution_stats(returns_pct: np.ndarray) -> DistributionStats:
 # ---------------------------------------------------------------------------
 # Period return
 # ---------------------------------------------------------------------------
+
 
 def simple_pct_change(end: float, start: float) -> float | None:
     """Percentage change between two prices.
@@ -325,6 +331,7 @@ def period_return(prices: np.ndarray, n_days: int) -> float | None:
 # ---------------------------------------------------------------------------
 # Composite helpers
 # ---------------------------------------------------------------------------
+
 
 def compute_return_stats(
     returns: np.ndarray,

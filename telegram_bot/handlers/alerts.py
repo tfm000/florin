@@ -99,7 +99,8 @@ async def screener_alert_listener(
             await bot.send_screener_alert(message, ticker=ticker)
             logger.info(
                 "Sent screener alert for %s (screener: %s)",
-                ticker, alert_data.get("screener_name", "?"),
+                ticker,
+                alert_data.get("screener_name", "?"),
             )
         except Exception:
             logger.exception("Failed to send screener alert for %s", ticker)

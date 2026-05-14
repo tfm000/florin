@@ -2,10 +2,10 @@
 
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -24,14 +24,16 @@ def _make_history(num_days: int, base_price: float = 100.0):
     for i in range(num_days):
         d = start + timedelta(days=i)
         price = base_price + i * 0.5
-        history.append({
-            "date": d.isoformat(),
-            "open": price - 0.2,
-            "high": price + 1.0,
-            "low": price - 1.0,
-            "close": price,
-            "volume": 1_000_000 + i * 1000,
-        })
+        history.append(
+            {
+                "date": d.isoformat(),
+                "open": price - 0.2,
+                "high": price + 1.0,
+                "low": price - 1.0,
+                "close": price,
+                "volume": 1_000_000 + i * 1000,
+            }
+        )
     return history
 
 
@@ -136,9 +138,13 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_delete_13f_portfolio_with_holdings(self, client):
         """13F portfolios can be deleted along with their holdings."""
-        create_resp = await client.post("/api/portfolios", json={
-            "name": "13F Delete Test", "group": "13F",
-        })
+        create_resp = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "13F Delete Test",
+                "group": "13F",
+            },
+        )
         pid = create_resp.json()["id"]
 
         # Add holdings (initial population is allowed for 13F)
@@ -181,17 +187,25 @@ class TestPortfolioCRUD:
 
     @pytest.mark.asyncio
     async def test_create_portfolio_with_description(self, client):
-        resp = await client.post("/api/portfolios", json={
-            "name": "Desc Test", "description": "A portfolio for testing",
-        })
+        resp = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "Desc Test",
+                "description": "A portfolio for testing",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["description"] == "A portfolio for testing"
 
     @pytest.mark.asyncio
     async def test_list_includes_description(self, client):
-        await client.post("/api/portfolios", json={
-            "name": "Desc List", "description": "my desc",
-        })
+        await client.post(
+            "/api/portfolios",
+            json={
+                "name": "Desc List",
+                "description": "my desc",
+            },
+        )
         resp = await client.get("/api/portfolios")
         p = next(p for p in resp.json() if p["name"] == "Desc List")
         assert p["description"] == "my desc"
@@ -233,9 +247,13 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_13f_portfolio_name_change_rejected(self, client):
         """13F portfolios cannot have their name changed."""
-        create = await client.post("/api/portfolios", json={
-            "name": "13F Locked", "group": "13F",
-        })
+        create = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "13F Locked",
+                "group": "13F",
+            },
+        )
         pid = create.json()["id"]
         resp = await client.put(f"/api/portfolios/{pid}", json={"name": "Renamed"})
         assert resp.status_code == 403
@@ -248,9 +266,13 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_13f_portfolio_description_editable(self, client):
         """13F portfolios CAN have their description changed."""
-        create = await client.post("/api/portfolios", json={
-            "name": "13F Desc Edit", "group": "13F",
-        })
+        create = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "13F Desc Edit",
+                "group": "13F",
+            },
+        )
         pid = create.json()["id"]
         resp = await client.put(f"/api/portfolios/{pid}", json={"description": "Notes"})
         assert resp.status_code == 200
@@ -263,32 +285,50 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_13f_portfolio_initial_holdings_allowed(self, client):
         """13F portfolios allow initial holdings population (empty → populated)."""
-        create = await client.post("/api/portfolios", json={
-            "name": "13F Initial", "group": "13F",
-        })
+        create = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "13F Initial",
+                "group": "13F",
+            },
+        )
         pid = create.json()["id"]
-        resp = await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        resp = await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
         assert resp.status_code == 200
         assert resp.json()["count"] == 1
 
     @pytest.mark.asyncio
     async def test_13f_portfolio_holdings_modification_rejected(self, client):
         """13F portfolios cannot have their holdings modified after initial population."""
-        create = await client.post("/api/portfolios", json={
-            "name": "13F No Edit", "group": "13F",
-        })
+        create = await client.post(
+            "/api/portfolios",
+            json={
+                "name": "13F No Edit",
+                "group": "13F",
+            },
+        )
         pid = create.json()["id"]
         # Initial population — allowed
-        resp1 = await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        resp1 = await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
         assert resp1.status_code == 200
         # Subsequent modification — blocked
-        resp2 = await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "MSFT", "weight": 50}, {"ticker": "GOOG", "weight": 50},
-        ])
+        resp2 = await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "MSFT", "weight": 50},
+                {"ticker": "GOOG", "weight": 50},
+            ],
+        )
         assert resp2.status_code == 403
         assert "13F" in resp2.json()["detail"]
 
@@ -308,17 +348,32 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_holdings_info_with_data(self, client):
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         # Mock get_info to return different data per ticker
         def mock_info(ticker):
             info = {
-                "AAPL": {"sector": "Technology", "industry": "Consumer Electronics",
-                         "pe_ratio": 30.0, "forward_pe": 28.0, "dividend_yield": 0.005,
-                         "beta": 1.2, "market_cap": 3e12, "current_price": 195.0},
-                "MSFT": {"sector": "Technology", "industry": "Software",
-                         "pe_ratio": 35.0, "forward_pe": 32.0, "dividend_yield": 0.008,
-                         "beta": 0.9, "market_cap": 2.8e12, "current_price": 420.0},
+                "AAPL": {
+                    "sector": "Technology",
+                    "industry": "Consumer Electronics",
+                    "pe_ratio": 30.0,
+                    "forward_pe": 28.0,
+                    "dividend_yield": 0.005,
+                    "beta": 1.2,
+                    "market_cap": 3e12,
+                    "current_price": 195.0,
+                },
+                "MSFT": {
+                    "sector": "Technology",
+                    "industry": "Software",
+                    "pe_ratio": 35.0,
+                    "forward_pe": 32.0,
+                    "dividend_yield": 0.008,
+                    "beta": 0.9,
+                    "market_cap": 2.8e12,
+                    "current_price": 420.0,
+                },
             }
             return info.get(ticker, {})
 
@@ -326,10 +381,13 @@ class TestPortfolioCRUD:
 
         create = await client.post("/api/portfolios", json={"name": "Info Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info")
         assert resp.status_code == 200
@@ -364,6 +422,7 @@ class TestPortfolioCRUD:
     async def test_holdings_info_weighted_avg_excludes_nulls(self, client):
         """Weighted averages skip holdings where the metric is null."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         def mock_info(ticker):
@@ -375,10 +434,13 @@ class TestPortfolioCRUD:
 
         create = await client.post("/api/portfolios", json={"name": "Null Avg"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "JPM", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "JPM", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info")
         data = resp.json()
@@ -392,6 +454,7 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_get_analytics(self, client, app):
         import numpy as np
+
         import dashboard.routes.portfolio as portfolio_mod
 
         # Patch numpy into the portfolio module so np.float64 resolves at line 195
@@ -400,9 +463,7 @@ class TestPortfolioCRUD:
 
         try:
             # Create portfolio with holdings
-            create_resp = await client.post(
-                "/api/portfolios", json={"name": "Analytics Test"}
-            )
+            create_resp = await client.post("/api/portfolios", json={"name": "Analytics Test"})
             pid = create_resp.json()["id"]
 
             holdings = [
@@ -445,21 +506,24 @@ class TestPortfolioCRUD:
     async def test_analytics_values_nonzero(self, client, app):
         """With valid history, analytics values should be nonzero and reasonable."""
         import numpy as np
+
         import dashboard.routes.portfolio as portfolio_mod
 
         original_np = getattr(portfolio_mod, "np", None)
         portfolio_mod.np = np
 
         try:
-            create_resp = await client.post(
-                "/api/portfolios", json={"name": "Values Test"}
-            )
+            create_resp = await client.post("/api/portfolios", json={"name": "Values Test"})
             pid = create_resp.json()["id"]
-            await client.put(f"/api/portfolios/{pid}/holdings", json=[
-                {"ticker": "AAPL", "weight": 100},
-            ])
+            await client.put(
+                f"/api/portfolios/{pid}/holdings",
+                json=[
+                    {"ticker": "AAPL", "weight": 100},
+                ],
+            )
 
             from dashboard.deps import get_yfinance_provider
+
             yf = get_yfinance_provider()
             yf.get_history.side_effect = lambda t, **kw: _make_history(40, base_price=100.0)
 
@@ -485,6 +549,7 @@ class TestPortfolioCRUD:
     async def test_analytics_nonexistent_portfolio(self, client, app):
         """Analytics for a non-existent portfolio returns zeros."""
         import numpy as np
+
         import dashboard.routes.portfolio as portfolio_mod
 
         original_np = getattr(portfolio_mod, "np", None)
@@ -506,15 +571,14 @@ class TestPortfolioCRUD:
     @pytest.mark.asyncio
     async def test_get_analytics_empty_holdings(self, client, app):
         import numpy as np
+
         import dashboard.routes.portfolio as portfolio_mod
 
         original_np = getattr(portfolio_mod, "np", None)
         portfolio_mod.np = np
 
         try:
-            create_resp = await client.post(
-                "/api/portfolios", json={"name": "Empty Analytics"}
-            )
+            create_resp = await client.post("/api/portfolios", json={"name": "Empty Analytics"})
             pid = create_resp.json()["id"]
 
             resp = await client.get(f"/api/portfolios/{pid}/analytics?period=1y")
@@ -539,20 +603,25 @@ class TestPortfolioCRUD:
 # Portfolio returns endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestPortfolioReturns:
     @pytest.mark.asyncio
     async def test_returns_basic(self, client):
         """Returns endpoint produces a cumulative return time series."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         yf_mock.get_history.side_effect = lambda t, **kw: _make_history(40, base_price=100.0)
 
         create = await client.post("/api/portfolios", json={"name": "Returns Basic"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/returns?period=1y")
         assert resp.status_code == 200
@@ -589,6 +658,7 @@ class TestPortfolioReturns:
     async def test_returns_prorated(self, client):
         """Prorated mode includes dates where some holdings are missing."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         # AAPL has 40 days, MSFT has only 20 (shorter)
@@ -601,10 +671,13 @@ class TestPortfolioReturns:
 
         create = await client.post("/api/portfolios", json={"name": "Prorated"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         # Non-prorated: only overlapping dates
         resp_normal = await client.get(f"/api/portfolios/{pid}/returns?period=1y&prorated=false")
@@ -624,9 +697,11 @@ class TestPortfolioReturns:
     async def test_returns_start_end(self, client):
         """Returns endpoint accepts start/end params."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         call_args = []
+
         async def mock_hist(t, **kw):
             call_args.append(kw)
             return _make_history(40, base_price=100.0)
@@ -635,13 +710,14 @@ class TestPortfolioReturns:
 
         create = await client.post("/api/portfolios", json={"name": "Returns Range"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
-
-        resp = await client.get(
-            f"/api/portfolios/{pid}/returns?start=2024-01-01&end=2024-06-01"
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
         )
+
+        resp = await client.get(f"/api/portfolios/{pid}/returns?start=2024-01-01&end=2024-06-01")
         assert resp.status_code == 200
         assert any(kw.get("start") == "2024-01-01" for kw in call_args)
 
@@ -653,11 +729,13 @@ class TestPortfolioReturns:
 # Holdings info — per-holding return and volatility
 # ---------------------------------------------------------------------------
 
+
 class TestHoldingsInfoReturnVol:
     @pytest.mark.asyncio
     async def test_holdings_info_includes_return_and_vol(self, client):
         """Per-holding period_return and period_vol are computed from history."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         yf_mock.get_info.side_effect = lambda t: {"sector": "Tech", "industry": "Software"}
@@ -665,9 +743,12 @@ class TestHoldingsInfoReturnVol:
 
         create = await client.post("/api/portfolios", json={"name": "RetVol Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info")
         assert resp.status_code == 200
@@ -687,9 +768,11 @@ class TestHoldingsInfoReturnVol:
     async def test_holdings_info_period_param(self, client):
         """Period query param is passed to history fetch."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         call_args = []
+
         async def mock_hist(t, **kw):
             call_args.append(kw)
             return _make_history(20, base_price=100.0)
@@ -699,9 +782,12 @@ class TestHoldingsInfoReturnVol:
 
         create = await client.post("/api/portfolios", json={"name": "Period Param"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info?period=3m")
         assert resp.status_code == 200
@@ -717,9 +803,11 @@ class TestHoldingsInfoReturnVol:
     async def test_holdings_info_start_end_params(self, client):
         """Custom start/end range is passed to history fetch."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         call_args = []
+
         async def mock_hist(t, **kw):
             call_args.append(kw)
             return _make_history(20, base_price=100.0)
@@ -729,9 +817,12 @@ class TestHoldingsInfoReturnVol:
 
         create = await client.post("/api/portfolios", json={"name": "StartEnd"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         resp = await client.get(
             f"/api/portfolios/{pid}/holdings-info?start=2024-01-01&end=2024-06-01"
@@ -748,6 +839,7 @@ class TestHoldingsInfoReturnVol:
     async def test_holdings_info_short_history_returns_null(self, client):
         """Holdings with < 2 data points get null return/vol."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         yf_mock.get_info.side_effect = lambda t: {"sector": "Tech"}
@@ -755,9 +847,12 @@ class TestHoldingsInfoReturnVol:
 
         create = await client.post("/api/portfolios", json={"name": "Short Hist"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info")
         data = resp.json()
@@ -775,14 +870,17 @@ class TestHoldingsInfoReturnVol:
 # Analytics — start/end custom date range
 # ---------------------------------------------------------------------------
 
+
 class TestAnalyticsCustomRange:
     @pytest.mark.asyncio
     async def test_analytics_with_start_end(self, client, app):
         """Analytics endpoint accepts start/end custom date range."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         call_args = []
+
         async def mock_hist(t, **kw):
             call_args.append(kw)
             return _make_history(40, base_price=100.0)
@@ -791,13 +889,14 @@ class TestAnalyticsCustomRange:
 
         create = await client.post("/api/portfolios", json={"name": "Custom Range"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
-
-        resp = await client.get(
-            f"/api/portfolios/{pid}/analytics?start=2024-01-01&end=2024-06-01"
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
         )
+
+        resp = await client.get(f"/api/portfolios/{pid}/analytics?start=2024-01-01&end=2024-06-01")
         assert resp.status_code == 200
         data = resp.json()
         assert data["portfolio_id"] == pid
@@ -813,6 +912,7 @@ class TestAnalyticsCustomRange:
 # Portfolio regime endpoint
 # ---------------------------------------------------------------------------
 
+
 def _ensure_statsmodels_modules():
     """Ensure mock statsmodels module hierarchy exists for patching."""
     modules = [
@@ -826,7 +926,9 @@ def _ensure_statsmodels_modules():
             mod = types.ModuleType(name)
             sys.modules[name] = mod
     sys.modules["statsmodels"].tsa = sys.modules["statsmodels.tsa"]
-    sys.modules["statsmodels.tsa"].regime_switching = sys.modules["statsmodels.tsa.regime_switching"]
+    sys.modules["statsmodels.tsa"].regime_switching = sys.modules[
+        "statsmodels.tsa.regime_switching"
+    ]
     mreg = sys.modules["statsmodels.tsa.regime_switching.markov_regression"]
     sys.modules["statsmodels.tsa.regime_switching"].markov_regression = mreg
     mreg.MarkovRegression = MagicMock()
@@ -836,6 +938,7 @@ def _make_random_history(num_days: int, base_price: float = 100.0, seed: int = 4
     """Generate random-walk history for regime testing (ending today)."""
     rng = np.random.default_rng(seed)
     from datetime import date, timedelta
+
     start = date.today() - timedelta(days=num_days - 1)
     history = []
     price = base_price
@@ -843,14 +946,16 @@ def _make_random_history(num_days: int, base_price: float = 100.0, seed: int = 4
         d = start + timedelta(days=i)
         ret = rng.normal(0.0005, 0.015)
         price *= 1 + ret
-        history.append({
-            "date": d.isoformat(),
-            "open": round(price * 0.999, 2),
-            "high": round(price * 1.005, 2),
-            "low": round(price * 0.995, 2),
-            "close": round(price, 2),
-            "volume": 1_000_000,
-        })
+        history.append(
+            {
+                "date": d.isoformat(),
+                "open": round(price * 0.999, 2),
+                "high": round(price * 1.005, 2),
+                "low": round(price * 0.995, 2),
+                "close": round(price, 2),
+                "volume": 1_000_000,
+            }
+        )
     return history
 
 
@@ -860,6 +965,7 @@ class TestPortfolioRegime:
         """Portfolio regime endpoint returns valid regime structure."""
         _ensure_statsmodels_modules()
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         history = _make_random_history(200)
@@ -868,10 +974,13 @@ class TestPortfolioRegime:
 
         create = await client.post("/api/portfolios", json={"name": "Regime Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         # Mock MarkovRegression result
         n_obs = 199  # 200 common dates -> 199 returns
@@ -922,6 +1031,7 @@ class TestPortfolioRegime:
     async def test_portfolio_regime_insufficient_data(self, client):
         """Short portfolio history returns empty regimes."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         short_hist = _make_history(5)
@@ -930,9 +1040,12 @@ class TestPortfolioRegime:
 
         create = await client.post("/api/portfolios", json={"name": "Short Regime"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/regime")
         assert resp.status_code == 200
@@ -962,6 +1075,7 @@ class TestPortfolioRegime:
         """Portfolio regime with n_regimes=3 returns 3 stats."""
         _ensure_statsmodels_modules()
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         history = _make_random_history(200)
@@ -970,9 +1084,12 @@ class TestPortfolioRegime:
 
         create = await client.post("/api/portfolios", json={"name": "3 Regime"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 100},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 100},
+            ],
+        )
 
         n_obs = 199
         mock_probs = np.zeros((n_obs, 3))
@@ -1008,12 +1125,15 @@ class TestPortfolioRegime:
 # Shared regime function unit tests
 # ---------------------------------------------------------------------------
 
+
 class TestFitMarkovRegimes:
     def test_fit_markov_regimes_too_short(self):
         """Returns None when fewer than 30 data points."""
         from stats.regime import fit_markov_regimes
+
         result = fit_markov_regimes(
-            np.random.randn(10), [f"2024-01-{i+1:02d}" for i in range(10)],
+            np.random.randn(10),
+            [f"2024-01-{i + 1:02d}" for i in range(10)],
         )
         assert result is None
 
@@ -1034,6 +1154,7 @@ class TestFitMarkovRegimes:
         mock_model.fit.return_value = mock_result
 
         from stats.regime import fit_markov_regimes
+
         dates = [f"2024-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(n_obs)]
 
         with patch(
@@ -1063,8 +1184,10 @@ class TestFitMarkovRegimes:
         mock_model = MagicMock()
         mock_model.fit.return_value = mock_result
 
-        from stats.regime import fit_markov_regimes
         from datetime import date, timedelta
+
+        from stats.regime import fit_markov_regimes
+
         start = date(2024, 1, 2)
         dates = [(start + timedelta(days=i)).isoformat() for i in range(n_obs)]
 
@@ -1073,8 +1196,11 @@ class TestFitMarkovRegimes:
             return_value=mock_model,
         ):
             result = fit_markov_regimes(
-                np.random.randn(n_obs) * 100, dates, n_regimes=2,
-                display_start="2024-02-01", display_end="2024-03-01",
+                np.random.randn(n_obs) * 100,
+                dates,
+                n_regimes=2,
+                display_start="2024-02-01",
+                display_end="2024-03-01",
             )
 
         assert result is not None
@@ -1094,6 +1220,7 @@ class TestFitMarkovRegimes:
 # ---------------------------------------------------------------------------
 # Intraday endpoints
 # ---------------------------------------------------------------------------
+
 
 class TestIntradayReturns:
     @pytest.fixture
@@ -1116,14 +1243,56 @@ class TestIntradayReturns:
         alpaca_mock = AsyncMock()
         alpaca_mock.get_intraday_bars.return_value = {
             "AAPL": [
-                {"timestamp": "2026-03-20T14:30:00Z", "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000},
-                {"timestamp": "2026-03-20T14:35:00Z", "open": 100, "high": 102, "low": 100, "close": 101, "volume": 1200},
-                {"timestamp": "2026-03-20T14:40:00Z", "open": 101, "high": 103, "low": 101, "close": 102, "volume": 800},
+                {
+                    "timestamp": "2026-03-20T14:30:00Z",
+                    "open": 100,
+                    "high": 101,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                },
+                {
+                    "timestamp": "2026-03-20T14:35:00Z",
+                    "open": 100,
+                    "high": 102,
+                    "low": 100,
+                    "close": 101,
+                    "volume": 1200,
+                },
+                {
+                    "timestamp": "2026-03-20T14:40:00Z",
+                    "open": 101,
+                    "high": 103,
+                    "low": 101,
+                    "close": 102,
+                    "volume": 800,
+                },
             ],
             "MSFT": [
-                {"timestamp": "2026-03-20T14:30:00Z", "open": 200, "high": 201, "low": 199, "close": 200, "volume": 500},
-                {"timestamp": "2026-03-20T14:35:00Z", "open": 200, "high": 202, "low": 200, "close": 201, "volume": 600},
-                {"timestamp": "2026-03-20T14:40:00Z", "open": 201, "high": 203, "low": 200, "close": 200, "volume": 400},
+                {
+                    "timestamp": "2026-03-20T14:30:00Z",
+                    "open": 200,
+                    "high": 201,
+                    "low": 199,
+                    "close": 200,
+                    "volume": 500,
+                },
+                {
+                    "timestamp": "2026-03-20T14:35:00Z",
+                    "open": 200,
+                    "high": 202,
+                    "low": 200,
+                    "close": 201,
+                    "volume": 600,
+                },
+                {
+                    "timestamp": "2026-03-20T14:40:00Z",
+                    "open": 201,
+                    "high": 203,
+                    "low": 200,
+                    "close": 200,
+                    "volume": 400,
+                },
             ],
         }
 
@@ -1133,16 +1302,21 @@ class TestIntradayReturns:
         set_state("event_bus", event_bus)
         set_state("rf_fetcher", None)
 
-        from httpx import ASGITransport, AsyncClient as HttpxClient
+        from httpx import ASGITransport
+        from httpx import AsyncClient as HttpxClient
+
         transport = ASGITransport(app=app)
         async with HttpxClient(transport=transport, base_url="http://test") as c:
             # Create portfolio with holdings
             resp = await c.post("/api/portfolios", json={"name": "Intraday Test"})
             pid = resp.json()["id"]
-            await c.put(f"/api/portfolios/{pid}/holdings", json=[
-                {"ticker": "AAPL", "weight": 60},
-                {"ticker": "MSFT", "weight": 40},
-            ])
+            await c.put(
+                f"/api/portfolios/{pid}/holdings",
+                json=[
+                    {"ticker": "AAPL", "weight": 60},
+                    {"ticker": "MSFT", "weight": 40},
+                ],
+            )
             yield c, pid, alpaca_mock
 
         await db.close()
@@ -1186,23 +1360,27 @@ class TestIntradayReturns:
 class TestPriceableTickerFilter:
     def test_equity_tickers_are_priceable(self):
         from dashboard.routes.portfolio import _is_priceable_ticker
+
         assert _is_priceable_ticker("AAPL") is True
         assert _is_priceable_ticker("BRK-B") is True
         assert _is_priceable_ticker("MSFT") is True
 
     def test_bond_descriptions_are_not_priceable(self):
         from dashboard.routes.portfolio import _is_priceable_ticker
+
         assert _is_priceable_ticker("RIVN 3.625 10/15/30") is False
         assert _is_priceable_ticker("BAC 0.6 05/25/27 MTN") is False
         assert _is_priceable_ticker("SPOT 0 03/15/26") is False
 
     def test_empty_ticker_is_not_priceable(self):
         from dashboard.routes.portfolio import _is_priceable_ticker
+
         assert _is_priceable_ticker("") is False
 
     def test_priceable_weights_rescale_100(self):
-        from dashboard.routes.portfolio import _priceable_weights
         from types import SimpleNamespace
+
+        from dashboard.routes.portfolio import _priceable_weights
 
         holdings = [
             SimpleNamespace(ticker="AAPL", weight=60),
@@ -1219,8 +1397,9 @@ class TestPriceableTickerFilter:
         assert abs(weights["MSFT"] - 10 / 70) < 1e-9
 
     def test_priceable_weights_no_rescale(self):
-        from dashboard.routes.portfolio import _priceable_weights
         from types import SimpleNamespace
+
+        from dashboard.routes.portfolio import _priceable_weights
 
         holdings = [
             SimpleNamespace(ticker="AAPL", weight=60),
@@ -1234,8 +1413,9 @@ class TestPriceableTickerFilter:
         assert abs(sum(weights.values()) - 0.7) < 1e-9
 
     def test_priceable_weights_rescale_custom_target(self):
-        from dashboard.routes.portfolio import _priceable_weights
         from types import SimpleNamespace
+
+        from dashboard.routes.portfolio import _priceable_weights
 
         holdings = [
             SimpleNamespace(ticker="AAPL", weight=60),
@@ -1248,8 +1428,9 @@ class TestPriceableTickerFilter:
         assert abs(weights["AAPL"] - (60 / 70 * 50 / 100)) < 1e-9
 
     def test_priceable_weights_all_bonds_returns_empty(self):
-        from dashboard.routes.portfolio import _priceable_weights
         from types import SimpleNamespace
+
+        from dashboard.routes.portfolio import _priceable_weights
 
         holdings = [
             SimpleNamespace(ticker="RIVN 3.625 10/15/30", weight=50),
@@ -1298,10 +1479,13 @@ class TestConsolidatedSummary:
 
         create = await client.post("/api/portfolios", json={"name": "Summary Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/summary?period=1y")
         assert resp.status_code == 200
@@ -1353,10 +1537,13 @@ class TestConsolidatedSummary:
 
         create = await client.post("/api/portfolios", json={"name": "Bond Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "RIVN 3.625 10/15/30", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "RIVN 3.625 10/15/30", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/summary?period=1y")
         assert resp.status_code == 200
@@ -1394,10 +1581,13 @@ class TestConsolidatedSummary:
 
         create = await client.post("/api/portfolios", json={"name": "Page Test"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         resp = await client.get(f"/api/portfolios/{pid}/holdings-info-page?offset=0&limit=1")
         assert resp.status_code == 200
@@ -1439,9 +1629,11 @@ class TestYFinanceBatchMethods:
 
     @pytest.mark.asyncio
     async def test_get_histories_batch_basic(self):
-        from data.yfinance_provider import YFinanceProvider, _cache
-        import pandas as pd
         from datetime import date, timedelta
+
+        import pandas as pd
+
+        from data.yfinance_provider import YFinanceProvider, _cache
 
         provider = YFinanceProvider()
         _cache.clear()
@@ -1480,22 +1672,27 @@ class TestYFinanceBatchMethods:
 
     @pytest.mark.asyncio
     async def test_get_histories_batch_single_ticker(self):
-        from data.yfinance_provider import YFinanceProvider, _cache
-        import pandas as pd
         from datetime import date, timedelta
+
+        import pandas as pd
+
+        from data.yfinance_provider import YFinanceProvider, _cache
 
         provider = YFinanceProvider()
         _cache.clear()
 
         recent_start = date.today() - timedelta(days=10)
         dates = pd.date_range(recent_start.isoformat(), periods=3, freq="B")
-        df = pd.DataFrame({
-            "Open": [100.0, 101.0, 102.0],
-            "High": [105.0, 106.0, 107.0],
-            "Low": [99.0, 100.0, 101.0],
-            "Close": [103.0, 104.0, 105.0],
-            "Volume": [500000, 600000, 700000],
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 102.0],
+                "High": [105.0, 106.0, 107.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [103.0, 104.0, 105.0],
+                "Volume": [500000, 600000, 700000],
+            },
+            index=dates,
+        )
 
         with patch("yfinance.download", return_value=df):
             result = await provider.get_histories_batch(["SOLO"], period="6m")
@@ -1507,14 +1704,16 @@ class TestYFinanceBatchMethods:
     @pytest.mark.asyncio
     async def test_get_histories_batch_empty(self):
         from data.yfinance_provider import YFinanceProvider
+
         provider = YFinanceProvider()
         result = await provider.get_histories_batch([], period="1y")
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_get_histories_batch_uses_cache(self):
-        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
         import pandas as pd
+
+        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
 
         provider = YFinanceProvider()
         _cache.clear()
@@ -1546,6 +1745,7 @@ class TestYFinanceBatchMethods:
     @pytest.mark.asyncio
     async def test_get_info_batch_empty(self):
         from data.yfinance_provider import YFinanceProvider
+
         provider = YFinanceProvider()
         result = await provider.get_info_batch([])
         assert result == {}
@@ -1553,9 +1753,11 @@ class TestYFinanceBatchMethods:
     @pytest.mark.asyncio
     async def test_5y_cache_serves_shorter_periods(self):
         """After fetching 1y (which downloads 5y internally), switching to 6m uses cache."""
-        from data.yfinance_provider import YFinanceProvider, _cache
-        import pandas as pd
         from datetime import date, timedelta
+
+        import pandas as pd
+
+        from data.yfinance_provider import YFinanceProvider, _cache
 
         provider = YFinanceProvider()
         _cache.clear()
@@ -1591,8 +1793,9 @@ class TestYFinanceBatchMethods:
     @pytest.mark.asyncio
     async def test_5y_cache_serves_custom_range(self):
         """Custom date range within 5y is served from cached 5y data."""
-        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
         from datetime import date, timedelta
+
+        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
 
         provider = YFinanceProvider()
         _cache.clear()
@@ -1600,8 +1803,14 @@ class TestYFinanceBatchMethods:
         # Pre-populate 5y cache with some records
         today = date.today()
         records = [
-            {"date": (today - timedelta(days=i)).isoformat(), "open": 100, "high": 105,
-             "low": 95, "close": 102, "volume": 1000000}
+            {
+                "date": (today - timedelta(days=i)).isoformat(),
+                "open": 100,
+                "high": 105,
+                "low": 95,
+                "close": 102,
+                "volume": 1000000,
+            }
             for i in range(500, 0, -1)
         ]
         _set_cached("history:AAPL:5y::1d", records)
@@ -1609,9 +1818,7 @@ class TestYFinanceBatchMethods:
         with patch("yfinance.download") as mock_dl:
             start = (today - timedelta(days=90)).isoformat()
             end = (today - timedelta(days=30)).isoformat()
-            result = await provider.get_histories_batch(
-                ["AAPL"], start=start, end=end
-            )
+            result = await provider.get_histories_batch(["AAPL"], start=start, end=end)
             assert len(result["AAPL"]) > 0
             assert len(result["AAPL"]) < len(records)
             mock_dl.assert_not_called()  # Served from cache
@@ -1619,16 +1826,23 @@ class TestYFinanceBatchMethods:
     @pytest.mark.asyncio
     async def test_get_history_uses_wide_cache(self):
         """Single-ticker get_history() benefits from 5y batch cache."""
-        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
         from datetime import date, timedelta
+
+        from data.yfinance_provider import YFinanceProvider, _cache, _set_cached
 
         provider = YFinanceProvider()
         _cache.clear()
 
         today = date.today()
         records = [
-            {"date": (today - timedelta(days=i)).isoformat(), "open": 100, "high": 105,
-             "low": 95, "close": 102, "volume": 1000000}
+            {
+                "date": (today - timedelta(days=i)).isoformat(),
+                "open": 100,
+                "high": 105,
+                "low": 95,
+                "close": 102,
+                "volume": 1000000,
+            }
             for i in range(400, 0, -1)
         ]
         _set_cached("history:AAPL:5y::1d", records)
@@ -1643,6 +1857,7 @@ class TestYFinanceBatchMethods:
 # Portfolio Cache Service Tests
 # ---------------------------------------------------------------------------
 
+
 class TestPortfolioCacheService:
     """Test the DB-level portfolio summary cache."""
 
@@ -1650,6 +1865,7 @@ class TestPortfolioCacheService:
     async def test_save_and_load_cache(self, app):
         """Save a summary, then load it back — round-trip fidelity."""
         from datetime import date, timedelta
+
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
         from db.models import PortfolioORM
@@ -1739,6 +1955,7 @@ class TestPortfolioCacheService:
 
         # Cache only 180 days of data
         from datetime import date, timedelta
+
         start = (date.today() - timedelta(days=180)).isoformat()
         end = date.today().isoformat()
 
@@ -1760,6 +1977,7 @@ class TestPortfolioCacheService:
     async def test_cache_invalidation(self, app):
         """Invalidation should remove all cached data for the portfolio."""
         from datetime import date, timedelta
+
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
         from db.models import PortfolioORM
@@ -1796,10 +2014,11 @@ class TestPortfolioCacheService:
     @pytest.mark.asyncio
     async def test_cache_covers_narrower_period(self, app):
         """Cache with wide date range serves narrower period requests."""
+        from datetime import date, timedelta
+
         from dashboard.deps import get_db
         from dashboard.services.portfolio_cache import PortfolioCacheService
         from db.models import PortfolioORM
-        from datetime import date, timedelta
 
         db = get_db()
         svc = PortfolioCacheService(db)
@@ -1831,22 +2050,26 @@ class TestPortfolioCacheService:
 # SSE Endpoint Tests
 # ---------------------------------------------------------------------------
 
+
 def _make_recent_history(num_days: int, base_price: float = 100.0):
     """Generate history ending today so cache period checks work."""
     from datetime import date, timedelta
+
     start = date.today() - timedelta(days=num_days - 1)
     history = []
     for i in range(num_days):
         d = start + timedelta(days=i)
         price = base_price + i * 0.5
-        history.append({
-            "date": d.isoformat(),
-            "open": price - 0.2,
-            "high": price + 1.0,
-            "low": price - 1.0,
-            "close": price,
-            "volume": 1_000_000 + i * 1000,
-        })
+        history.append(
+            {
+                "date": d.isoformat(),
+                "open": price - 0.2,
+                "high": price + 1.0,
+                "low": price - 1.0,
+                "close": price,
+                "volume": 1_000_000 + i * 1000,
+            }
+        )
     return history
 
 
@@ -1866,10 +2089,13 @@ class TestPortfolioSSE:
         # Create portfolio with holdings
         create = await client.post("/api/portfolios", json={"name": "SSE Test Cold"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         # Request SSE stream
         resp = await client.get(f"/api/portfolios/{pid}/summary/stream?period=3mo")
@@ -1895,10 +2121,13 @@ class TestPortfolioSSE:
         # Create portfolio
         create = await client.post("/api/portfolios", json={"name": "SSE Test Warm"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
 
         # First request — populates cache (use 3mo which fits 100 days)
         await client.get(f"/api/portfolios/{pid}/summary/stream?period=3mo")
@@ -1923,17 +2152,23 @@ class TestPortfolioSSE:
         # Create portfolio and populate cache
         create = await client.post("/api/portfolios", json={"name": "SSE Invalidate"})
         pid = create.json()["id"]
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 60},
-            {"ticker": "MSFT", "weight": 40},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 60},
+                {"ticker": "MSFT", "weight": 40},
+            ],
+        )
         await client.get(f"/api/portfolios/{pid}/summary/stream?period=3mo")
 
         # Change holdings — should invalidate cache
-        await client.put(f"/api/portfolios/{pid}/holdings", json=[
-            {"ticker": "AAPL", "weight": 50},
-            {"ticker": "MSFT", "weight": 50},
-        ])
+        await client.put(
+            f"/api/portfolios/{pid}/holdings",
+            json=[
+                {"ticker": "AAPL", "weight": 50},
+                {"ticker": "MSFT", "weight": 50},
+            ],
+        )
 
         # Next request should get loading (cache was invalidated)
         resp = await client.get(f"/api/portfolios/{pid}/summary/stream?period=3mo")

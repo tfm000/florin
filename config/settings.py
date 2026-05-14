@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -226,6 +225,7 @@ def get_settings() -> Settings:
 async def load_db_overrides(db: object) -> None:
     """Load setting overrides from the database."""
     from sqlalchemy import select
+
     from db.models import SettingORM
 
     settings = get_settings()
@@ -248,6 +248,4 @@ async def load_db_overrides(db: object) -> None:
                 else:
                     setattr(settings, key, value)
             except (ValueError, KeyError):
-                logger.warning(
-                    "Failed to apply DB override for setting %s=%r", key, value
-                )
+                logger.warning("Failed to apply DB override for setting %s=%r", key, value)

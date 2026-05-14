@@ -31,7 +31,9 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint,
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
         request_id = request.headers.get("x-request-id") or uuid4().hex[:16]
         # Store on request state for downstream access
@@ -52,7 +54,10 @@ async def florin_exception_handler(request: Request, exc: FlorinError) -> JSONRe
 
     logger.warning(
         "FlorinError: %s (code=%s, status=%d, request_id=%s)",
-        exc.message, exc.code, exc.status_code, request_id,
+        exc.message,
+        exc.code,
+        exc.status_code,
+        request_id,
     )
 
     error = ErrorResponse(

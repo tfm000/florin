@@ -87,7 +87,9 @@ _FINNHUB_EARNINGS_URL = "https://finnhub.io/api/v1/calendar/earnings"
 
 
 async def _fetch_finnhub_earnings(
-    api_key: str, start_date: str, end_date: str,
+    api_key: str,
+    start_date: str,
+    end_date: str,
     watchlist_tickers: set[str] | None = None,
 ) -> list[EarningsEvent]:
     """Fetch earnings calendar from Finnhub free tier.
@@ -138,20 +140,22 @@ async def _fetch_finnhub_earnings(
         if eps_est is not None and eps_act is not None and eps_est != 0:
             surprise = round((eps_act - eps_est) / abs(eps_est) * 100, 2)
 
-        results.append(EarningsEvent(
-            ticker=symbol,
-            date=date,
-            eps_estimate=eps_est,
-            reported_eps=eps_act,
-            surprise_pct=surprise,
-            revenue_estimate=rev_est,
-            revenue_actual=rev_act,
-            hour=e.get("hour", ""),
-            quarter=e.get("quarter"),
-            year=e.get("year"),
-            is_future=date >= today,
-            in_watchlist=symbol.upper() in watchlist,
-        ))
+        results.append(
+            EarningsEvent(
+                ticker=symbol,
+                date=date,
+                eps_estimate=eps_est,
+                reported_eps=eps_act,
+                surprise_pct=surprise,
+                revenue_estimate=rev_est,
+                revenue_actual=rev_act,
+                hour=e.get("hour", ""),
+                quarter=e.get("quarter"),
+                year=e.get("year"),
+                is_future=date >= today,
+                in_watchlist=symbol.upper() in watchlist,
+            )
+        )
 
     results.sort(key=lambda x: x.date, reverse=True)
     return results
@@ -161,12 +165,14 @@ async def _fetch_finnhub_earnings(
 # yfinance earnings fallback (per-ticker, for when Finnhub key is absent)
 # ==========================================================================
 
+
 def _get_earnings_sync(sym: str) -> list[EarningsEvent]:
     """Fetch earnings dates with estimates and actuals from yfinance.
 
     Fallback when Finnhub API key is not configured. Per-ticker only.
     """
     import yfinance as _yf
+
     try:
         t = _yf.Ticker(sym)
         info = t.info or {}
@@ -178,21 +184,31 @@ def _get_earnings_sync(sym: str) -> list[EarningsEvent]:
             ed = t.earnings_dates
             if ed is not None and not ed.empty:
                 for idx, row in ed.iterrows():
-                    date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                    date_str = (
+                        idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                    )
                     eps_est = row.get("EPS Estimate")
                     reported = row.get("Reported EPS")
                     surprise = row.get("Surprise(%)")
 
-                    results.append(EarningsEvent(
-                        ticker=sym,
-                        name=name,
-                        date=date_str,
-                        eps_estimate=float(eps_est) if eps_est is not None and str(eps_est) != "nan" else None,
-                        reported_eps=float(reported) if reported is not None and str(reported) != "nan" else None,
-                        surprise_pct=float(surprise) if surprise is not None and str(surprise) != "nan" else None,
-                        is_future=date_str >= today,
-                        in_watchlist=True,  # yfinance fallback only runs for watchlist tickers
-                    ))
+                    results.append(
+                        EarningsEvent(
+                            ticker=sym,
+                            name=name,
+                            date=date_str,
+                            eps_estimate=float(eps_est)
+                            if eps_est is not None and str(eps_est) != "nan"
+                            else None,
+                            reported_eps=float(reported)
+                            if reported is not None and str(reported) != "nan"
+                            else None,
+                            surprise_pct=float(surprise)
+                            if surprise is not None and str(surprise) != "nan"
+                            else None,
+                            is_future=date_str >= today,
+                            in_watchlist=True,  # yfinance fallback only runs for watchlist tickers
+                        )
+                    )
                 return results
         except Exception:  # noqa: BLE001 — yfinance raises varied exceptions
             pass
@@ -204,14 +220,16 @@ def _get_earnings_sync(sym: str) -> list[EarningsEvent]:
             if earn_date and len(earn_date) > 0:
                 d = earn_date[0]
                 date_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
-                results.append(EarningsEvent(
-                    ticker=sym,
-                    name=name,
-                    date=date_str,
-                    eps_estimate=cal.get("Earnings Average"),
-                    is_future=True,
-                    in_watchlist=True,
-                ))
+                results.append(
+                    EarningsEvent(
+                        ticker=sym,
+                        name=name,
+                        date=date_str,
+                        eps_estimate=cal.get("Earnings Average"),
+                        is_future=True,
+                        in_watchlist=True,
+                    )
+                )
 
         return results
     except Exception:  # noqa: BLE001 — yfinance raises varied exceptions
@@ -225,7 +243,9 @@ def _get_earnings_sync(sym: str) -> list[EarningsEvent]:
 
 @router.get("/calendar", response_model=CalendarResponse)
 async def get_calendar(
-    tickers: str = Query(default="", description="Comma-separated tickers for earnings watchlist highlighting"),
+    tickers: str = Query(
+        default="", description="Comma-separated tickers for earnings watchlist highlighting"
+    ),
     start_date: str = Query(default="", description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(default="", description="End date (YYYY-MM-DD)"),
     settings=Depends(get_settings_dep),
@@ -248,13 +268,17 @@ async def get_calendar(
     if not end_date:
         # Default: 4 weeks ahead
         from datetime import timedelta
+
         end_date = (datetime.now() + timedelta(days=28)).strftime("%Y-%m-%d")
 
     # --- Earnings ---
     earnings: list[EarningsEvent] = []
     if settings.finnhub_api_key:
         earnings = await _fetch_finnhub_earnings(
-            settings.finnhub_api_key, start_date, end_date, watchlist_set,
+            settings.finnhub_api_key,
+            start_date,
+            end_date,
+            watchlist_set,
         )
     else:
         # Fallback: yfinance per-ticker (watchlist only)
@@ -268,6 +292,7 @@ async def get_calendar(
 
     # --- Economic events ---
     from dashboard.deps import get_state_value
+
     econ_service = get_state_value("economic_calendar_service")
 
     economic: list[EconomicEvent] = []
@@ -283,9 +308,15 @@ async def get_calendar(
 @router.get("/calendar/indicators/{indicator_key}/history", response_model=list[HistoryPoint])
 async def get_indicator_history(
     indicator_key: str,
-    months: int = Query(default=36, ge=1, le=240, description="Number of months of history (default 36 = 3 years)"),
-    start_date: str = Query(default="", description="Custom start date (YYYY-MM-DD). Overrides months if set."),
-    end_date: str = Query(default="", description="Custom end date (YYYY-MM-DD). Defaults to today."),
+    months: int = Query(
+        default=36, ge=1, le=240, description="Number of months of history (default 36 = 3 years)"
+    ),
+    start_date: str = Query(
+        default="", description="Custom start date (YYYY-MM-DD). Overrides months if set."
+    ),
+    end_date: str = Query(
+        default="", description="Custom end date (YYYY-MM-DD). Defaults to today."
+    ),
 ):
     """Get historical readings for a specific economic indicator.
 
@@ -303,6 +334,7 @@ async def get_indicator_history(
         end_date: Custom end date. Defaults to today if omitted.
     """
     from dashboard.deps import get_state_value
+
     econ_service = get_state_value("economic_calendar_service")
 
     if not econ_service:
@@ -324,6 +356,10 @@ async def get_indicator_history(
 
     # If custom date range, filter to exact range
     if start_date:
-        history = [h for h in history if h["date"] >= start_date and h["date"] <= (end_date or "9999-12-31")]
+        history = [
+            h
+            for h in history
+            if h["date"] >= start_date and h["date"] <= (end_date or "9999-12-31")
+        ]
 
     return [HistoryPoint(**h) for h in history]

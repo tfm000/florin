@@ -1,9 +1,9 @@
 """Tests for Breadth, Market Hours, and Short Interest API endpoints."""
 
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
-from unittest.mock import AsyncMock
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -51,6 +51,7 @@ async def client(app):
 
 # ---- helpers ----------------------------------------------------------------
 
+
 async def _seed_breadth(app, rows: list[dict]) -> None:
     """Insert BreadthSnapshotORM rows into the in-memory DB."""
     from dashboard.deps import get_db
@@ -66,22 +67,26 @@ async def _seed_breadth(app, rows: list[dict]) -> None:
 # Breadth routes
 # =============================================================================
 
+
 class TestBreadthLatest:
     @pytest.mark.asyncio
     async def test_breadth_latest_from_db(self, client, app):
         """Seeded DB snapshot is returned by GET /api/breadth."""
-        await _seed_breadth(app, [
-            {
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "hour": 12,
-                "advancing": 1800,
-                "declining": 1200,
-                "unchanged": 100,
-                "total": 3100,
-                "ad_ratio": 1.5,
-                "recorded_at": datetime.now(),
-            },
-        ])
+        await _seed_breadth(
+            app,
+            [
+                {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "hour": 12,
+                    "advancing": 1800,
+                    "declining": 1200,
+                    "unchanged": 100,
+                    "total": 3100,
+                    "ad_ratio": 1.5,
+                    "recorded_at": datetime.now(),
+                },
+            ],
+        )
 
         resp = await client.get("/api/breadth")
         assert resp.status_code == 200
@@ -102,16 +107,18 @@ class TestBreadthHistory:
         rows = []
         for i in range(5):
             d = today - timedelta(days=i)
-            rows.append({
-                "date": d.strftime("%Y-%m-%d"),
-                "hour": 10,
-                "advancing": 1500 + i * 50,
-                "declining": 1400 - i * 30,
-                "unchanged": 80,
-                "total": 2980 + i * 20,
-                "ad_ratio": round((1500 + i * 50) / max(1, 1400 - i * 30), 2),
-                "recorded_at": d,
-            })
+            rows.append(
+                {
+                    "date": d.strftime("%Y-%m-%d"),
+                    "hour": 10,
+                    "advancing": 1500 + i * 50,
+                    "declining": 1400 - i * 30,
+                    "unchanged": 80,
+                    "total": 2980 + i * 20,
+                    "ad_ratio": round((1500 + i * 50) / max(1, 1400 - i * 30), 2),
+                    "recorded_at": d,
+                }
+            )
         await _seed_breadth(app, rows)
 
         resp = await client.get("/api/breadth/history?days=30")
@@ -142,6 +149,7 @@ class TestBreadthHistory:
 # =============================================================================
 # Market hours routes
 # =============================================================================
+
 
 class TestMarketHours:
     @pytest.mark.asyncio
@@ -178,9 +186,16 @@ class TestMarketHoursDeep:
         resp = await client.get("/api/market/hours")
         names = {m["name"] for m in resp.json()["markets"]}
         expected = {
-            "NYSE / NASDAQ", "London (LSE)", "Frankfurt (XETRA)",
-            "Tokyo (TSE)", "Hong Kong (HKEX)", "Shanghai (SSE)",
-            "Sydney (ASX)", "Toronto (TSX)", "Crypto", "Forex",
+            "NYSE / NASDAQ",
+            "London (LSE)",
+            "Frankfurt (XETRA)",
+            "Tokyo (TSE)",
+            "Hong Kong (HKEX)",
+            "Shanghai (SSE)",
+            "Sydney (ASX)",
+            "Toronto (TSX)",
+            "Crypto",
+            "Forex",
         }
         assert expected == names
 
@@ -270,6 +285,7 @@ class TestMarketStatus:
 # =============================================================================
 # Short interest routes
 # =============================================================================
+
 
 class TestShortInterest:
     @pytest.mark.asyncio

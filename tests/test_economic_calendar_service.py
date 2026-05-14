@@ -10,24 +10,24 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 from config.settings import Settings
 from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
+from data.economic_calendar import EconomicCalendarService
 from db.database import Database
 from db.models import EconomicEventORM
-from data.economic_calendar import EconomicCalendarService
-
 
 # ==========================================================================
 # Fixtures
 # ==========================================================================
+
 
 @pytest.fixture
 async def db():
@@ -74,6 +74,7 @@ async def app(db):
 async def client(app):
     """Create async test client."""
     from httpx import ASGITransport, AsyncClient
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
@@ -171,29 +172,33 @@ class TestFOMCCalendarParser:
 # ==========================================================================
 
 _ECB_RATE_RESPONSE = {
-    "dataSets": [{
-        "series": {
-            "0:0:0:0:0:0": {
-                "observations": {
-                    "0": [2.50, 0, 0, None, None],
-                    "1": [2.65, 0, 0, None, None],
-                    "2": [2.15, 0, 0, None, None],
+    "dataSets": [
+        {
+            "series": {
+                "0:0:0:0:0:0": {
+                    "observations": {
+                        "0": [2.50, 0, 0, None, None],
+                        "1": [2.65, 0, 0, None, None],
+                        "2": [2.15, 0, 0, None, None],
+                    }
                 }
             }
         }
-    }],
+    ],
     "structure": {
         "dimensions": {
-            "observation": [{
-                "id": "TIME_PERIOD",
-                "values": [
-                    {"id": "2026-01-15"},
-                    {"id": "2026-02-15"},
-                    {"id": "2026-03-15"},
-                ]
-            }]
+            "observation": [
+                {
+                    "id": "TIME_PERIOD",
+                    "values": [
+                        {"id": "2026-01-15"},
+                        {"id": "2026-02-15"},
+                        {"id": "2026-03-15"},
+                    ],
+                }
+            ]
         }
-    }
+    },
 }
 
 
@@ -263,7 +268,7 @@ _AV_CPI_RESPONSE = {
         {"date": "2026-02-01", "value": "326.785"},
         {"date": "2026-01-01", "value": "325.252"},
         {"date": "2025-12-01", "value": "324.054"},
-    ]
+    ],
 }
 
 
@@ -272,6 +277,7 @@ class TestAVIndicators:
     async def test_fetch_cpi_indicator(self, service):
         """AV CPI indicator creates events with real dates and formatted values."""
         from data.economic_calendar import AV_INDICATORS
+
         cfg = AV_INDICATORS["us_cpi"]
 
         mock_resp = MagicMock(spec=httpx.Response)
@@ -292,6 +298,7 @@ class TestAVIndicators:
     async def test_fetch_av_error_response(self, service):
         """AV error response (rate limit) handled gracefully."""
         from data.economic_calendar import AV_INDICATORS
+
         cfg = AV_INDICATORS["us_cpi"]
 
         mock_resp = MagicMock(spec=httpx.Response)
@@ -324,6 +331,7 @@ class TestAVIndicators:
     async def test_fetch_av_missing_values_skipped(self, service):
         """AV entries with '.' or empty values are skipped."""
         from data.economic_calendar import AV_INDICATORS
+
         cfg = AV_INDICATORS["us_cpi"]
 
         mock_resp = MagicMock(spec=httpx.Response)
@@ -348,6 +356,7 @@ class TestAVIndicators:
 # ==========================================================================
 # DB persistence tests
 # ==========================================================================
+
 
 class TestDBPersistence:
     @pytest.mark.asyncio
@@ -464,6 +473,7 @@ class TestBOEParser:
 # ==========================================================================
 # Calendar API endpoint tests
 # ==========================================================================
+
 
 class TestCalendarEndpoint:
     @pytest.mark.asyncio

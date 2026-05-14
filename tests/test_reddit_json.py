@@ -1,13 +1,11 @@
 """Tests for Reddit .json fallback sentiment source."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 from sentiment.reddit_json_source import RedditJsonSource
-
 
 SAMPLE_RESPONSE = {
     "data": {
@@ -68,6 +66,7 @@ class TestRedditJsonSource:
 
             # Clear cache
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 
@@ -93,6 +92,7 @@ class TestRedditJsonSource:
             mock_client_cls.return_value = mock_client
 
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 
@@ -119,6 +119,7 @@ class TestRedditJsonSource:
             mock_client_cls.return_value = mock_client
 
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 
@@ -141,6 +142,7 @@ class TestRedditJsonSource:
             mock_client_cls.return_value = mock_client
 
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 
@@ -162,6 +164,7 @@ class TestRedditJsonSource:
             mock_client_cls.return_value = mock_client
 
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 
@@ -185,6 +188,7 @@ class TestRedditJsonSource:
             mock_client_cls.return_value = mock_client
 
             from sentiment.reddit_json_source import _cache
+
             _cache.clear()
             source._last_request_time = 0
 

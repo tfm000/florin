@@ -52,10 +52,7 @@ class SentimentAggregator:
         (with appropriate data quality markers).
         """
         # Run all sources concurrently with individual timeouts
-        tasks = [
-            self._fetch_with_timeout(source, ticker, company_name)
-            for source in self._sources
-        ]
+        tasks = [self._fetch_with_timeout(source, ticker, company_name) for source in self._sources]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Merge results
@@ -63,11 +60,9 @@ class SentimentAggregator:
         sources_succeeded = 0
         merged: dict[str, Any] = {}
 
-        for source, result in zip(self._sources, results):
+        for source, result in zip(self._sources, results, strict=True):
             if isinstance(result, Exception):
-                logger.warning(
-                    "Sentiment source %s failed: %s", source.name, result
-                )
+                logger.warning("Sentiment source %s failed: %s", source.name, result)
                 continue
 
             if isinstance(result, dict) and result:
@@ -76,18 +71,27 @@ class SentimentAggregator:
 
         # Build SentimentData from merged results
         sentiment = self._build_sentiment_data(
-            ticker, merged, sources_queried, sources_succeeded,
+            ticker,
+            merged,
+            sources_queried,
+            sources_succeeded,
         )
 
         logger.info(
             "Sentiment for %s: %d/%d sources succeeded (quality: %s)",
-            ticker, sources_succeeded, sources_queried, sentiment.data_quality,
+            ticker,
+            sources_succeeded,
+            sources_queried,
+            sentiment.data_quality,
         )
 
         return sentiment
 
     async def fetch_filtered(
-        self, ticker: str, company_name: str = "", source_names: list[str] | None = None,
+        self,
+        ticker: str,
+        company_name: str = "",
+        source_names: list[str] | None = None,
     ) -> SentimentData:
         """Fetch sentiment from a named subset of sources."""
         if source_names is None:
@@ -108,15 +112,16 @@ class SentimentAggregator:
         results = {}
         for source in self._sources:
             try:
-                results[source.name] = await asyncio.wait_for(
-                    source.health_check(), timeout=10.0
-                )
+                results[source.name] = await asyncio.wait_for(source.health_check(), timeout=10.0)
             except Exception:
                 results[source.name] = False
         return results
 
     async def _fetch_with_timeout(
-        self, source: SentimentSource, ticker: str, company_name: str,
+        self,
+        source: SentimentSource,
+        ticker: str,
+        company_name: str,
     ) -> dict[str, Any]:
         """Fetch from a single source with timeout."""
         try:
@@ -124,7 +129,7 @@ class SentimentAggregator:
                 source.fetch(ticker, company_name),
                 timeout=SOURCE_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Sentiment source %s timed out for %s", source.name, ticker)
             return {}
 
@@ -155,7 +160,9 @@ class SentimentAggregator:
             apewisdom_rank=aw_data.get("apewisdom_rank", 0),
             apewisdom_mentions=aw_data.get("apewisdom_mentions", 0),
             apewisdom_upvotes=aw_data.get("apewisdom_upvotes", 0),
-            alphavantage_articles=_safe_list(av_data, "alphavantage_articles", AlphaVantageNewsSentiment),
+            alphavantage_articles=_safe_list(
+                av_data, "alphavantage_articles", AlphaVantageNewsSentiment
+            ),
             alphavantage_avg_sentiment=av_data.get("alphavantage_avg_sentiment", 0.0),
             sec_filings=_safe_list(sec_data, "filings", SECFiling),
             insider_buy_count=sec_data.get("insider_buys", 0),

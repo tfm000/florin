@@ -1,7 +1,6 @@
 """Tests for market hours awareness."""
 
-from datetime import UTC, datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 
 from core.market_hours import US_EASTERN, is_market_open, next_market_open
 

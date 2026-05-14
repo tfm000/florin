@@ -7,7 +7,7 @@ Monitored assets are subscribed to Alpaca WebSocket for live price updates.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -16,7 +16,6 @@ from sqlalchemy import func, select
 from core.events import EventBus, EventType
 from core.exceptions import ConflictError, NotFoundError
 from dashboard.dependencies import (
-    get_data_provider_dep,
     get_db_session,
     get_event_bus_dep,
     get_yfinance_dep,
@@ -33,6 +32,7 @@ router = APIRouter(tags=["monitor"])
 # =============================================================================
 # Response schemas
 # =============================================================================
+
 
 class MonitoredAssetResponse(BaseModel):
     id: str
@@ -55,6 +55,7 @@ class MonitorAddRequest(BaseModel):
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @router.get("/monitor", response_model=PaginatedResponse[MonitoredAssetResponse])
 async def list_monitored(
@@ -117,18 +118,22 @@ async def list_monitored(
     for r in rows:
         cached = price_cache.get(r.ticker)
         yf_quote = yf_prices.get(r.ticker, {})
-        items.append(MonitoredAssetResponse(
-            id=r.id,
-            ticker=r.ticker,
-            name=r.name or yf_quote.get("name", ""),
-            source=r.source,
-            asset_type=r.asset_type,
-            is_active=r.is_active,
-            added_at=r.added_at,
-            current_price=getattr(cached, "price", None) if cached else yf_quote.get("price"),
-            change_pct=getattr(cached, "change_pct", None) if cached else yf_quote.get("change_pct"),
-            volume=getattr(cached, "volume", None) if cached else yf_quote.get("volume"),
-        ))
+        items.append(
+            MonitoredAssetResponse(
+                id=r.id,
+                ticker=r.ticker,
+                name=r.name or yf_quote.get("name", ""),
+                source=r.source,
+                asset_type=r.asset_type,
+                is_active=r.is_active,
+                added_at=r.added_at,
+                current_price=getattr(cached, "price", None) if cached else yf_quote.get("price"),
+                change_pct=getattr(cached, "change_pct", None)
+                if cached
+                else yf_quote.get("change_pct"),
+                volume=getattr(cached, "volume", None) if cached else yf_quote.get("volume"),
+            )
+        )
 
     return PaginatedResponse(
         items=items,

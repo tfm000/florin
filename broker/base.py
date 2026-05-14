@@ -21,7 +21,7 @@ from core.models import (
 class Broker(ABC):
     """
     Interface for any brokerage API.
-    
+
     Handles order execution, position monitoring, and account data.
     Implementations must be rate-limit aware and handle retries internally.
     """
@@ -63,10 +63,10 @@ class Broker(ABC):
     async def place_order(self, order: OrderRequest) -> OrderResult:
         """
         Place a buy or sell order.
-        
-        For sell orders, quantity should be positive — the broker 
+
+        For sell orders, quantity should be positive — the broker
         implementation handles the sign convention internally.
-        
+
         Returns OrderResult with success/failure and fill details.
         """
         ...

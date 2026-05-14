@@ -85,18 +85,20 @@ def _normalize_date(s: str) -> str:
 # Data container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RateObservation:
     currency: str
     benchmark: str
-    date: str        # YYYY-MM-DD
-    rate: float      # annual %
+    date: str  # YYYY-MM-DD
+    rate: float  # annual %
     source: str
 
 
 # ---------------------------------------------------------------------------
 # Fetcher
 # ---------------------------------------------------------------------------
+
 
 class RiskFreeRateFetcher:
     """Fetches and caches G10 overnight benchmark rates.
@@ -113,10 +115,7 @@ class RiskFreeRateFetcher:
         self._client = httpx.AsyncClient(
             timeout=30,
             headers={
-                "User-Agent": (
-                    "FlorinTerminal/1.0 "
-                    "(+https://github.com/florin-terminal)"
-                ),
+                "User-Agent": ("FlorinTerminal/1.0 (+https://github.com/florin-terminal)"),
             },
         )
         self._last_fetch: dict[str, str] = {}  # currency → last-fetch date
@@ -230,12 +229,11 @@ class RiskFreeRateFetcher:
                     self._last_fetch[currency] = today
                     logger.debug(
                         "%s: rate for %s fetched within 24h, skipping",
-                        currency, row[0],
+                        currency,
+                        row[0],
                     )
 
-    async def get_daily_rates(
-        self, currency: str, dates: list[str]
-    ) -> np.ndarray:
+    async def get_daily_rates(self, currency: str, dates: list[str]) -> np.ndarray:
         """Get daily risk-free rates aligned to *dates*.
 
         *dates* may contain full datetime strings (e.g. from yfinance);
@@ -337,9 +335,7 @@ class RiskFreeRateFetcher:
 
     # -- dispatch ----------------------------------------------------------
 
-    async def _dispatch_fetch(
-        self, currency: str, start: str, end: str
-    ) -> list[RateObservation]:
+    async def _dispatch_fetch(self, currency: str, start: str, end: str) -> list[RateObservation]:
         fetchers = {
             "USD": self._fetch_sofr,
             "GBP": self._fetch_sonia,
@@ -361,7 +357,9 @@ class RiskFreeRateFetcher:
         except httpx.HTTPStatusError as e:
             logger.warning(
                 "%s rate fetch returned HTTP %d for %s",
-                currency, e.response.status_code, e.request.url,
+                currency,
+                e.response.status_code,
+                e.request.url,
             )
             return []
         except (httpx.RequestError, ValueError) as e:
@@ -386,14 +384,16 @@ class RiskFreeRateFetcher:
                     )
                     if existing.first():
                         continue
-                    session.add(RiskFreeRateORM(
-                        id=uuid4().hex[:16],
-                        currency=obs.currency,
-                        benchmark=obs.benchmark,
-                        date=obs.date,
-                        rate=obs.rate,
-                        source=obs.source,
-                    ))
+                    session.add(
+                        RiskFreeRateORM(
+                            id=uuid4().hex[:16],
+                            currency=obs.currency,
+                            benchmark=obs.benchmark,
+                            date=obs.date,
+                            rate=obs.rate,
+                            source=obs.source,
+                        )
+                    )
             await session.commit()
 
     # -- per-currency fetchers --------------------------------------------
@@ -416,13 +416,15 @@ class RiskFreeRateFetcher:
             rate = item.get("percentRate")
             if rate is None:
                 continue
-            observations.append(RateObservation(
-                currency="USD",
-                benchmark="SOFR",
-                date=item["effectiveDate"],
-                rate=float(rate),
-                source="NY Fed Markets API",
-            ))
+            observations.append(
+                RateObservation(
+                    currency="USD",
+                    benchmark="SOFR",
+                    date=item["effectiveDate"],
+                    rate=float(rate),
+                    source="NY Fed Markets API",
+                )
+            )
         return observations
 
     async def _fetch_sonia(self, start: str, end: str) -> list[RateObservation]:
@@ -442,8 +444,7 @@ class RiskFreeRateFetcher:
         )
         headers = {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; FlorinTerminal/1.0; "
-                "+https://github.com/florin-terminal)"
+                "Mozilla/5.0 (compatible; FlorinTerminal/1.0; +https://github.com/florin-terminal)"
             ),
             "Accept": "text/csv, text/plain, */*",
         }
@@ -464,10 +465,15 @@ class RiskFreeRateFetcher:
                 # BoE date format: DD/Mon/YYYY or DD Mon YYYY
                 d = _parse_boe_date(row[0].strip())
                 rate = float(row[1].strip())
-                observations.append(RateObservation(
-                    currency="GBP", benchmark="SONIA",
-                    date=d, rate=rate, source="Bank of England",
-                ))
+                observations.append(
+                    RateObservation(
+                        currency="GBP",
+                        benchmark="SONIA",
+                        date=d,
+                        rate=rate,
+                        source="Bank of England",
+                    )
+                )
             except (ValueError, IndexError):
                 continue
         return observations
@@ -488,10 +494,15 @@ class RiskFreeRateFetcher:
                 d = row.get("TIME_PERIOD", "").strip()
                 val = row.get("OBS_VALUE", "").strip()
                 if d and val:
-                    observations.append(RateObservation(
-                        currency="EUR", benchmark="ESTR",
-                        date=d, rate=float(val), source="ECB SDMX API",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="EUR",
+                            benchmark="ESTR",
+                            date=d,
+                            rate=float(val),
+                            source="ECB SDMX API",
+                        )
+                    )
             except (ValueError, KeyError):
                 continue
         return observations
@@ -532,7 +543,9 @@ class RiskFreeRateFetcher:
         return observations
 
     async def _fetch_tona_xlsx(
-        self, dt: date, d_str: str,
+        self,
+        dt: date,
+        d_str: str,
     ) -> RateObservation | None:
         """Fetch TONA from the new XLSX format (Oct 2025+)."""
         try:
@@ -548,10 +561,7 @@ class RiskFreeRateFetcher:
                 f"https://www.boj.or.jp/en/statistics/market/short/mutan"
                 f"/d_release/md/{yyyy}/md{ymd}.xlsx"
             ),
-            (
-                f"https://www.boj.or.jp/en/statistics/market/short/mutan"
-                f"/d_release/mp/mp{ymd}.xlsx"
-            ),
+            (f"https://www.boj.or.jp/en/statistics/market/short/mutan/d_release/mp/mp{ymd}.xlsx"),
         ]
 
         for url in urls:
@@ -563,7 +573,9 @@ class RiskFreeRateFetcher:
                 resp.raise_for_status()
 
                 wb = openpyxl.load_workbook(
-                    io.BytesIO(resp.content), read_only=True, data_only=True,
+                    io.BytesIO(resp.content),
+                    read_only=True,
+                    data_only=True,
                 )
                 ws = wb.active
                 val = ws.cell(row=10, column=3).value
@@ -571,8 +583,10 @@ class RiskFreeRateFetcher:
 
                 if val is not None:
                     return RateObservation(
-                        currency="JPY", benchmark="TONA",
-                        date=d_str, rate=float(val),
+                        currency="JPY",
+                        benchmark="TONA",
+                        date=d_str,
+                        rate=float(val),
                         source="Bank of Japan",
                     )
             except Exception as e:
@@ -581,7 +595,9 @@ class RiskFreeRateFetcher:
         return None
 
     async def _fetch_tona_html(
-        self, dt: date, d_str: str,
+        self,
+        dt: date,
+        d_str: str,
     ) -> RateObservation | None:
         """Fetch TONA from the old HTML format (pre-Oct 2025).
 
@@ -602,8 +618,10 @@ class RiskFreeRateFetcher:
             match = re.search(r"\[Avg\.\].*?([\d.]+)%", resp.text, re.DOTALL)
             if match:
                 return RateObservation(
-                    currency="JPY", benchmark="TONA",
-                    date=d_str, rate=float(match.group(1)),
+                    currency="JPY",
+                    benchmark="TONA",
+                    date=d_str,
+                    rate=float(match.group(1)),
                     source="Bank of Japan",
                 )
         except Exception as e:
@@ -626,10 +644,15 @@ class RiskFreeRateFetcher:
                 d = obs["d"]
                 val = obs.get("AVG.INTWO", {}).get("v")
                 if val is not None:
-                    observations.append(RateObservation(
-                        currency="CAD", benchmark="CORRA",
-                        date=d, rate=float(val), source="Bank of Canada Valet API",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="CAD",
+                            benchmark="CORRA",
+                            date=d,
+                            rate=float(val),
+                            source="Bank of Canada Valet API",
+                        )
+                    )
             except (ValueError, KeyError):
                 continue
         return observations
@@ -667,10 +690,15 @@ class RiskFreeRateFetcher:
                     continue
                 val = row[cash_rate_col].strip()
                 if val:
-                    observations.append(RateObservation(
-                        currency="AUD", benchmark="CASH_RATE",
-                        date=d, rate=float(val), source="RBA F1 Table",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="AUD",
+                            benchmark="CASH_RATE",
+                            date=d,
+                            rate=float(val),
+                            source="RBA F1 Table",
+                        )
+                    )
             except (ValueError, IndexError):
                 continue
         return observations
@@ -699,20 +727,22 @@ class RiskFreeRateFetcher:
                 d = row[0].strip()
                 val = row[-1].strip()
                 if d and val:
-                    observations.append(RateObservation(
-                        currency="CHF", benchmark="SARON",
-                        date=d, rate=float(val), source="SNB Data Portal",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="CHF",
+                            benchmark="SARON",
+                            date=d,
+                            rate=float(val),
+                            source="SNB Data Portal",
+                        )
+                    )
             except (ValueError, IndexError):
                 continue
         return observations
 
     async def _fetch_swestr(self, start: str, end: str) -> list[RateObservation]:
         """SEK SWESTR from the Riksbank API."""
-        url = (
-            "https://api.riksbank.se/swestr/v1/all/SWESTR"
-            f"?fromDate={start}&toDate={end}"
-        )
+        url = f"https://api.riksbank.se/swestr/v1/all/SWESTR?fromDate={start}&toDate={end}"
         resp = await self._client.get(url)
         resp.raise_for_status()
         data = resp.json()
@@ -724,10 +754,15 @@ class RiskFreeRateFetcher:
                 d = item.get("date", item.get("effectiveDate", ""))
                 rate = item.get("rate", item.get("interestRate"))
                 if d and rate is not None:
-                    observations.append(RateObservation(
-                        currency="SEK", benchmark="SWESTR",
-                        date=d[:10], rate=float(rate), source="Riksbank API",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="SEK",
+                            benchmark="SWESTR",
+                            date=d[:10],
+                            rate=float(rate),
+                            source="Riksbank API",
+                        )
+                    )
             except (ValueError, KeyError):
                 continue
         return observations
@@ -756,10 +791,15 @@ class RiskFreeRateFetcher:
                 d = row.get("TIME_PERIOD", "").strip()
                 val = row.get("OBS_VALUE", "").strip()
                 if d and val:
-                    observations.append(RateObservation(
-                        currency="NOK", benchmark="NOWA",
-                        date=d, rate=float(val), source="Norges Bank API",
-                    ))
+                    observations.append(
+                        RateObservation(
+                            currency="NOK",
+                            benchmark="NOWA",
+                            date=d,
+                            rate=float(val),
+                            source="Norges Bank API",
+                        )
+                    )
             except (ValueError, KeyError):
                 continue
         return observations
@@ -785,10 +825,15 @@ class RiskFreeRateFetcher:
                 val = row.get("OBS_VALUE", "").strip()
                 if not d or not val or val == "NaN":
                     continue
-                observations.append(RateObservation(
-                    currency="NZD", benchmark="OCR",
-                    date=d, rate=float(val), source="BIS (RBNZ OCR)",
-                ))
+                observations.append(
+                    RateObservation(
+                        currency="NZD",
+                        benchmark="OCR",
+                        date=d,
+                        rate=float(val),
+                        source="BIS (RBNZ OCR)",
+                    )
+                )
             except (ValueError, KeyError):
                 continue
         return observations
@@ -797,6 +842,7 @@ class RiskFreeRateFetcher:
 # ---------------------------------------------------------------------------
 # Date parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_boe_date(s: str) -> str:
     """Parse BoE date format (e.g. '02 Jan 2024' or '02/Jan/2024') to YYYY-MM-DD."""

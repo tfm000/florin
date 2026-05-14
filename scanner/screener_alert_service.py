@@ -90,9 +90,7 @@ class ScreenerAlertService:
         """Load and process all active screeners that are due to run."""
         async with self._db.session() as session:
             result = await session.execute(
-                select(SavedScreenerORM).where(
-                    SavedScreenerORM.is_alert_active.is_(True)
-                )
+                select(SavedScreenerORM).where(SavedScreenerORM.is_alert_active.is_(True))
             )
             screeners = result.scalars().all()
 
@@ -103,7 +101,8 @@ class ScreenerAlertService:
                 except Exception:
                     logger.exception(
                         "Failed to run screener '%s' (id=%s)",
-                        screener.name, screener.id,
+                        screener.name,
+                        screener.id,
                     )
 
     def _should_run(self, screener: SavedScreenerORM) -> bool:
@@ -146,7 +145,11 @@ class ScreenerAlertService:
         momentum_max = float(raw_max) if raw_max is not None and raw_max != "" else None
         if momentum_period and (momentum_min is not None or momentum_max is not None) and self._yf:
             results = await apply_momentum_filter(
-                results, momentum_min, momentum_max, momentum_period, self._yf,
+                results,
+                momentum_min,
+                momentum_max,
+                momentum_period,
+                self._yf,
             )
 
         if not results:
@@ -201,7 +204,9 @@ class ScreenerAlertService:
 
         logger.info(
             "Screener '%s': %d new alerts from %d matches",
-            screener.name, len(to_alert), len(results),
+            screener.name,
+            len(to_alert),
+            len(results),
         )
 
     async def _get_alerted_tickers_today(self, screener_id: str) -> set[str]:
@@ -231,18 +236,22 @@ class ScreenerAlertService:
             }
 
             async with self._db.session() as session:
-                session.add(ScreenerAlertLogORM(
-                    screener_id=screener_id,
-                    ticker=result.ticker,
-                    price=result.price,
-                    change_pct=result.change_pct,
-                    alert_data_json=json.dumps(alert_data),
-                    sent_at=datetime.now(UTC),
-                ))
+                session.add(
+                    ScreenerAlertLogORM(
+                        screener_id=screener_id,
+                        ticker=result.ticker,
+                        price=result.price,
+                        change_pct=result.change_pct,
+                        alert_data_json=json.dumps(alert_data),
+                        sent_at=datetime.now(UTC),
+                    )
+                )
                 await session.commit()
         except Exception as e:
             logger.error(
-                "Failed to log screener alert for %s: %s", result.ticker, e,
+                "Failed to log screener alert for %s: %s",
+                result.ticker,
+                e,
             )
 
     async def _update_last_run(self, screener_id: str) -> None:
@@ -277,9 +286,7 @@ class ScreenerAlertService:
         self._last_reset_date = today
         async with self._db.session() as session:
             result = await session.execute(
-                select(SavedScreenerORM).where(
-                    SavedScreenerORM.alerts_sent_today > 0
-                )
+                select(SavedScreenerORM).where(SavedScreenerORM.alerts_sent_today > 0)
             )
             for orm in result.scalars().all():
                 orm.alerts_sent_today = 0
@@ -288,22 +295,47 @@ class ScreenerAlertService:
         logger.info("Daily screener alert counters reset")
 
     _ASSET_TYPE_LABELS = {
-        "EQUITY": "Stocks", "ETF": "ETFs", "MUTUALFUND": "Mutual Funds",
-        "INDEX": "Indices", "CRYPTOCURRENCY": "Crypto",
+        "EQUITY": "Stocks",
+        "ETF": "ETFs",
+        "MUTUALFUND": "Mutual Funds",
+        "INDEX": "Indices",
+        "CRYPTOCURRENCY": "Crypto",
     }
     _EXCHANGE_LABELS = {
-        "NMS,NGM,NCM": "NASDAQ", "NYQ": "NYSE", "PCX": "NYSE Arca",
-        "ASE": "NYSE American", "BTS": "BATS", "PNK,OQB,OQX": "OTC",
-        "PAR": "Euronext Paris", "AMS": "Euronext Amsterdam",
-        "BRU": "Euronext Brussels", "LIS": "Euronext Lisbon",
-        "MIL": "Borsa Italiana", "MAD": "BME Madrid",
-        "STO": "Nasdaq Stockholm", "EBS": "SIX Swiss", "SES": "SGX",
-        "KSC": "KOSPI", "KOE": "KOSDAQ", "SAO": "B3", "MEX": "BMV",
-        "TAI": "TWSE", "TWO": "TPEx", "NZE": "NZX",
-        "LSE": "London", "IOB": "IOB", "TOR": "TSX", "VAN": "TSX-V",
-        "CNQ": "CSE", "GER": "XETRA", "FRA": "Frankfurt",
-        "JPX": "Tokyo", "HKG": "HKEX", "ASX": "ASX",
-        "NSI": "NSE", "BSE": "BSE",
+        "NMS,NGM,NCM": "NASDAQ",
+        "NYQ": "NYSE",
+        "PCX": "NYSE Arca",
+        "ASE": "NYSE American",
+        "BTS": "BATS",
+        "PNK,OQB,OQX": "OTC",
+        "PAR": "Euronext Paris",
+        "AMS": "Euronext Amsterdam",
+        "BRU": "Euronext Brussels",
+        "LIS": "Euronext Lisbon",
+        "MIL": "Borsa Italiana",
+        "MAD": "BME Madrid",
+        "STO": "Nasdaq Stockholm",
+        "EBS": "SIX Swiss",
+        "SES": "SGX",
+        "KSC": "KOSPI",
+        "KOE": "KOSDAQ",
+        "SAO": "B3",
+        "MEX": "BMV",
+        "TAI": "TWSE",
+        "TWO": "TPEx",
+        "NZE": "NZX",
+        "LSE": "London",
+        "IOB": "IOB",
+        "TOR": "TSX",
+        "VAN": "TSX-V",
+        "CNQ": "CSE",
+        "GER": "XETRA",
+        "FRA": "Frankfurt",
+        "JPX": "Tokyo",
+        "HKG": "HKEX",
+        "ASX": "ASX",
+        "NSI": "NSE",
+        "BSE": "BSE",
     }
 
     @staticmethod
@@ -337,20 +369,22 @@ class ScreenerAlertService:
         parts = []
         if filters.get("price_min") or filters.get("price_max"):
             pmin = filters.get("price_min", "0")
-            pmax = filters.get("price_max", "\u221E")
+            pmax = filters.get("price_max", "\u221e")
             parts.append(f"Price: ${pmin}-${pmax}")
         if filters.get("sector"):
             parts.append(filters["sector"])
         if filters.get("asset_type"):
             label = ScreenerAlertService._ASSET_TYPE_LABELS.get(
-                filters["asset_type"], filters["asset_type"],
+                filters["asset_type"],
+                filters["asset_type"],
             )
             parts.append(label)
         if filters.get("momentum_period"):
             parts.append(f"Momentum: {filters['momentum_period']}")
         if filters.get("exchange"):
             label = ScreenerAlertService._EXCHANGE_LABELS.get(
-                filters["exchange"], filters["exchange"],
+                filters["exchange"],
+                filters["exchange"],
             )
             parts.append(label)
         if filters.get("currency"):

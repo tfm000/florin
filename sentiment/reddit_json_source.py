@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -126,7 +126,9 @@ class RedditJsonSource(SentimentSource):
 
         try:
             async with httpx.AsyncClient(
-                headers=self.HEADERS, timeout=15.0, follow_redirects=True,
+                headers=self.HEADERS,
+                timeout=15.0,
+                follow_redirects=True,
             ) as client:
                 resp = await client.get(
                     f"{self.BASE_URL}/r/{subreddit_str}/search.json",
@@ -166,7 +168,11 @@ class RedditJsonSource(SentimentSource):
             try:
                 # Extract author metadata
                 created_utc = post_data.get("created_utc", 0)
-                created_at = datetime.fromtimestamp(created_utc, tz=UTC) if created_utc else datetime.now(UTC)
+                created_at = (
+                    datetime.fromtimestamp(created_utc, tz=UTC)
+                    if created_utc
+                    else datetime.now(UTC)
+                )
 
                 # Reddit .json doesn't provide author karma/account age directly
                 # in search results — set to defaults

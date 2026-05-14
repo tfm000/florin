@@ -17,13 +17,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from config.settings import Settings
 from core.events import EventBus
 from core.exceptions import FlorinError
-from db.database import Database
 from dashboard.deps import set_state
 from dashboard.middleware import (
     RequestIdMiddleware,
     florin_exception_handler,
 )
 from dashboard.ws import ConnectionManager
+from db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +70,31 @@ def create_app(
 
     # Register API routes (import here to avoid circular imports)
     from dashboard.routes import (
-        positions, reports, trades, account, orders,
-        stats, health, settings, research, watchlist, monitor,
-        calendar, screener, correlation, risk, filings_13f, portfolio,
-        short_interest, breadth, news_feed, regime, alerts, insiders,
-        market_hours, llm_models,
+        account,
+        alerts,
+        breadth,
+        calendar,
+        correlation,
+        filings_13f,
+        health,
+        insiders,
+        llm_models,
+        market_hours,
+        monitor,
+        news_feed,
+        orders,
+        portfolio,
+        positions,
+        regime,
+        reports,
+        research,
+        risk,
+        screener,
+        settings,
+        short_interest,
+        stats,
+        trades,
+        watchlist,
     )
 
     app.include_router(health.router, prefix="/api")
@@ -105,6 +125,7 @@ def create_app(
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint
+
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # Serve React SPA — catch-all route for client-side routing.

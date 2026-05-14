@@ -68,7 +68,8 @@ class LLMAnalyser(ABC):
 
         Args:
             ticker: Stock symbol (e.g. "AAPL").
-            sentiment: Aggregated sentiment data (Reddit, ApeWisdom, Alpha Vantage, web search, news).
+            sentiment: Aggregated sentiment data (Reddit, ApeWisdom, Alpha Vantage,
+                web search, news).
             alert_context: Optional dict with price, change_pct, volume, avg_volume.
             user_context: Optional user-provided context to include in the prompt.
 
@@ -87,5 +88,5 @@ class LLMAnalyser(ABC):
     async def __aenter__(self) -> LLMAnalyser:
         return self
 
-    async def __aexit__(self, *args: object) -> None:
-        pass
+    async def __aexit__(self, *args: object) -> None:  # noqa: B027 — optional teardown hook
+        """No-op by default; subclasses that need teardown may override this."""

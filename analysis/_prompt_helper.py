@@ -262,7 +262,7 @@ def _extract_json(raw: str) -> dict[str, Any]:
 
     # Try to find JSON object in the text — find each '{' and attempt parse
     for i, ch in enumerate(cleaned):
-        if ch == '{':
+        if ch == "{":
             try:
                 return json.loads(cleaned[i:])
             except json.JSONDecodeError:

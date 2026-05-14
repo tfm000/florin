@@ -109,7 +109,10 @@ class SafeBroker(Broker):
         if self._paper_mode:
             logger.info(
                 "PAPER MODE: %s %s %s qty=%.4f routed to paper broker",
-                order.side.value, order.order_type.value, order.ticker, order.quantity,
+                order.side.value,
+                order.order_type.value,
+                order.ticker,
+                order.quantity,
             )
             return await self._paper.place_order(order)
         return await self._inner.place_order(order)

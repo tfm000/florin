@@ -143,7 +143,9 @@ class AlphaVantageSource(SentimentSource):
             if resp.status_code != 200:
                 logger.warning(
                     "Alpha Vantage: HTTP %d for %s — %s",
-                    resp.status_code, ticker, resp.text[:300],
+                    resp.status_code,
+                    ticker,
+                    resp.text[:300],
                 )
                 return {}
 
@@ -210,7 +212,9 @@ class AlphaVantageSource(SentimentSource):
         }
 
     def _parse_article(
-        self, item: dict[str, Any], ticker_upper: str,
+        self,
+        item: dict[str, Any],
+        ticker_upper: str,
     ) -> AlphaVantageNewsSentiment | None:
         """Parse a single news article from Alpha Vantage feed.
 
@@ -227,7 +231,8 @@ class AlphaVantageSource(SentimentSource):
             overall_label = item.get("overall_sentiment_label", "")
 
             ticker_relevance, ticker_score, ticker_label = self._extract_ticker_sentiment(
-                item.get("ticker_sentiment", []), ticker_upper,
+                item.get("ticker_sentiment", []),
+                ticker_upper,
             )
 
             return AlphaVantageNewsSentiment(
@@ -248,7 +253,8 @@ class AlphaVantageSource(SentimentSource):
 
     @staticmethod
     def _extract_ticker_sentiment(
-        ticker_sentiments: Any, ticker_upper: str,
+        ticker_sentiments: Any,
+        ticker_upper: str,
     ) -> tuple[float, float, str]:
         """Extract per-ticker sentiment from the ticker_sentiment array.
 

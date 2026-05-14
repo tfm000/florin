@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -21,7 +20,6 @@ from sentiment.aggregator import SentimentAggregator
 from sentiment.alphavantage_source import AlphaVantageSource
 from sentiment.apewisdom_source import ApeWisdomSource
 from sentiment.base import SentimentSource
-
 
 # =============================================================================
 # Mock source for testing the aggregator
@@ -63,24 +61,41 @@ class TestSentimentAggregator:
     @pytest.mark.asyncio
     async def test_all_sources_succeed(self) -> None:
         sources = [
-            MockSource("Reddit", {
-                "posts": [RedditPost(subreddit="pennystocks", title="TEST to the moon", score=50)],
-                "mention_count": 5,
-            }),
-            MockSource("ApeWisdom", {
-                "apewisdom_rank": 3,
-                "apewisdom_mentions": 42,
-                "apewisdom_upvotes": 1200,
-            }),
-            MockSource("SEC EDGAR", {
-                "filings": [SECFiling(form_type="4", filed_date=datetime.now(UTC),
-                                      transaction_type="Purchase")],
-                "insider_buys": 1,
-                "insider_sells": 0,
-            }),
-            MockSource("News", {
-                "articles": [NewsArticle(title="TEST Corp announces partnership")],
-            }),
+            MockSource(
+                "Reddit",
+                {
+                    "posts": [
+                        RedditPost(subreddit="pennystocks", title="TEST to the moon", score=50)
+                    ],
+                    "mention_count": 5,
+                },
+            ),
+            MockSource(
+                "ApeWisdom",
+                {
+                    "apewisdom_rank": 3,
+                    "apewisdom_mentions": 42,
+                    "apewisdom_upvotes": 1200,
+                },
+            ),
+            MockSource(
+                "SEC EDGAR",
+                {
+                    "filings": [
+                        SECFiling(
+                            form_type="4", filed_date=datetime.now(UTC), transaction_type="Purchase"
+                        )
+                    ],
+                    "insider_buys": 1,
+                    "insider_sells": 0,
+                },
+            ),
+            MockSource(
+                "News",
+                {
+                    "articles": [NewsArticle(title="TEST Corp announces partnership")],
+                },
+            ),
         ]
 
         agg = SentimentAggregator(sources)
@@ -101,15 +116,21 @@ class TestSentimentAggregator:
     @pytest.mark.asyncio
     async def test_partial_failure(self) -> None:
         sources = [
-            MockSource("Reddit", {
-                "posts": [RedditPost(subreddit="pennystocks", title="TEST", score=10)],
-                "mention_count": 1,
-            }),
+            MockSource(
+                "Reddit",
+                {
+                    "posts": [RedditPost(subreddit="pennystocks", title="TEST", score=10)],
+                    "mention_count": 1,
+                },
+            ),
             MockSource("ApeWisdom", should_fail=True),
             MockSource("SEC EDGAR", should_fail=True),
-            MockSource("News", {
-                "articles": [NewsArticle(title="Some news")],
-            }),
+            MockSource(
+                "News",
+                {
+                    "articles": [NewsArticle(title="Some news")],
+                },
+            ),
         ]
 
         agg = SentimentAggregator(sources)
@@ -202,10 +223,22 @@ class TestApeWisdomSource:
             200,
             json={
                 "results": [
-                    {"ticker": "AAPL", "rank": 1, "mentions": "500", "upvotes": "12000",
-                     "rank_24h_ago": "2", "mentions_24h_ago": "450"},
-                    {"ticker": "TSLA", "rank": 2, "mentions": "300", "upvotes": "8000",
-                     "rank_24h_ago": "1", "mentions_24h_ago": "350"},
+                    {
+                        "ticker": "AAPL",
+                        "rank": 1,
+                        "mentions": "500",
+                        "upvotes": "12000",
+                        "rank_24h_ago": "2",
+                        "mentions_24h_ago": "450",
+                    },
+                    {
+                        "ticker": "TSLA",
+                        "rank": 2,
+                        "mentions": "300",
+                        "upvotes": "8000",
+                        "rank_24h_ago": "1",
+                        "mentions_24h_ago": "350",
+                    },
                 ],
             },
             request=httpx.Request("GET", "https://apewisdom.io/api/v1.0/filter/all-stocks"),
@@ -229,8 +262,18 @@ class TestApeWisdomSource:
     async def test_fetch_ticker_not_found(self) -> None:
         mock_response = httpx.Response(
             200,
-            json={"results": [{"ticker": "AAPL", "rank": 1, "mentions": "100", "upvotes": "5000",
-                                "rank_24h_ago": "1", "mentions_24h_ago": "90"}]},
+            json={
+                "results": [
+                    {
+                        "ticker": "AAPL",
+                        "rank": 1,
+                        "mentions": "100",
+                        "upvotes": "5000",
+                        "rank_24h_ago": "1",
+                        "mentions_24h_ago": "90",
+                    }
+                ]
+            },
             request=httpx.Request("GET", "https://apewisdom.io/api/v1.0/filter/all-stocks"),
         )
 
@@ -288,13 +331,23 @@ class TestApeWisdomSource:
         """After a successful fetch, a subsequent API failure returns stale cache."""
         success_response = httpx.Response(
             200,
-            json={"results": [{"ticker": "AAPL", "rank": 1, "mentions": "100",
-                                "upvotes": "5000", "rank_24h_ago": "2",
-                                "mentions_24h_ago": "90"}]},
+            json={
+                "results": [
+                    {
+                        "ticker": "AAPL",
+                        "rank": 1,
+                        "mentions": "100",
+                        "upvotes": "5000",
+                        "rank_24h_ago": "2",
+                        "mentions_24h_ago": "90",
+                    }
+                ]
+            },
             request=httpx.Request("GET", "https://apewisdom.io/api/v1.0/filter/all-stocks"),
         )
         error_response = httpx.Response(
-            500, text="Server Error",
+            500,
+            text="Server Error",
             request=httpx.Request("GET", "https://apewisdom.io/api/v1.0/filter/all-stocks"),
         )
 
@@ -439,7 +492,12 @@ class TestAlphaVantageSource:
     async def test_fetch_rate_limit_note(self) -> None:
         mock_response = httpx.Response(
             200,
-            json={"Note": "Thank you for using Alpha Vantage! Our standard API rate limit is 25 requests per day."},
+            json={
+                "Note": (
+                    "Thank you for using Alpha Vantage! Our standard API rate "
+                    "limit is 25 requests per day."
+                )
+            },
             request=httpx.Request("GET", "https://www.alphavantage.co/query"),
         )
 
@@ -483,10 +541,18 @@ class TestAlphaVantageSource:
 
     def test_extract_ticker_sentiment_found(self) -> None:
         sentiments = [
-            {"ticker": "AAPL", "relevance_score": "0.9", "ticker_sentiment_score": "0.5",
-             "ticker_sentiment_label": "Bullish"},
-            {"ticker": "MSFT", "relevance_score": "0.3", "ticker_sentiment_score": "0.1",
-             "ticker_sentiment_label": "Neutral"},
+            {
+                "ticker": "AAPL",
+                "relevance_score": "0.9",
+                "ticker_sentiment_score": "0.5",
+                "ticker_sentiment_label": "Bullish",
+            },
+            {
+                "ticker": "MSFT",
+                "relevance_score": "0.3",
+                "ticker_sentiment_score": "0.1",
+                "ticker_sentiment_label": "Neutral",
+            },
         ]
         rel, score, label = AlphaVantageSource._extract_ticker_sentiment(sentiments, "AAPL")
         assert rel == 0.9
@@ -494,8 +560,14 @@ class TestAlphaVantageSource:
         assert label == "Bullish"
 
     def test_extract_ticker_sentiment_not_found(self) -> None:
-        sentiments = [{"ticker": "MSFT", "relevance_score": "0.3",
-                       "ticker_sentiment_score": "0.1", "ticker_sentiment_label": "Neutral"}]
+        sentiments = [
+            {
+                "ticker": "MSFT",
+                "relevance_score": "0.3",
+                "ticker_sentiment_score": "0.1",
+                "ticker_sentiment_label": "Neutral",
+            }
+        ]
         rel, score, label = AlphaVantageSource._extract_ticker_sentiment(sentiments, "AAPL")
         assert rel == 0.0
         assert score == 0.0
@@ -520,7 +592,8 @@ class TestSentimentData:
             apewisdom_upvotes=1200,
             alphavantage_articles=[
                 AlphaVantageNewsSentiment(
-                    title="Big news", source="Reuters",
+                    title="Big news",
+                    source="Reuters",
                     ticker_sentiment_label="Bullish",
                 ),
             ],

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -86,9 +86,7 @@ class TestInsiders:
     @patch(f"{_INSIDERS_MODULE}.fetch_form4_xml", new_callable=AsyncMock)
     @patch(f"{_INSIDERS_MODULE}.get_company_filings", new_callable=AsyncMock)
     @patch(f"{_INSIDERS_MODULE}.resolve_ticker_to_cik", new_callable=AsyncMock)
-    async def test_insiders_basic(
-        self, mock_cik, mock_filings, mock_xml, mock_parse, client
-    ):
+    async def test_insiders_basic(self, mock_cik, mock_filings, mock_xml, mock_parse, client):
         filing = _make_filing_ref()
         mock_cik.return_value = "0001234567"
         mock_filings.return_value = [filing]
@@ -146,8 +144,11 @@ class TestCusipCachePersistence:
         """CUSIP mappings can be persisted to DB and reloaded."""
         from dashboard.deps import get_db
         from data.sec_13f_provider import (
-            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+            _cusip_cache,
+            _persist_cusip_mappings,
+            load_cusip_cache,
         )
+
         db = get_db()
 
         # Clear in-memory cache
@@ -155,6 +156,7 @@ class TestCusipCachePersistence:
 
         # Persist some mappings
         import data.sec_13f_provider as provider
+
         provider._db_ref = db
         await _persist_cusip_mappings({"037833100": "AAPL", "594918104": "MSFT"})
 
@@ -172,11 +174,15 @@ class TestCusipCachePersistence:
         """Persisting a CUSIP that already exists updates the ticker."""
         from dashboard.deps import get_db
         from data.sec_13f_provider import (
-            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+            _cusip_cache,
+            _persist_cusip_mappings,
+            load_cusip_cache,
         )
+
         db = get_db()
 
         import data.sec_13f_provider as provider
+
         provider._db_ref = db
 
         # First mapping
@@ -197,6 +203,7 @@ class TestParseXmlFigi:
 
     def test_parse_xml_with_figi(self):
         from data.sec_13f_provider import _parse_13f_xml
+
         xml = """<?xml version="1.0"?>
         <informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
           <infoTable>
@@ -218,6 +225,7 @@ class TestParseXmlFigi:
 
     def test_parse_xml_without_figi(self):
         from data.sec_13f_provider import _parse_13f_xml
+
         xml = """<?xml version="1.0"?>
         <informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">
           <infoTable>
@@ -239,8 +247,11 @@ class TestSecNameMapping:
     @pytest.mark.asyncio
     async def test_name_matching_resolves_cusips(self):
         from data.sec_13f_provider import (
-            _cusip_cache, _name_to_ticker, map_cusips_to_tickers,
+            _cusip_cache,
+            _name_to_ticker,
+            map_cusips_to_tickers,
         )
+
         _cusip_cache.clear()
         # Simulate loaded SEC name map
         _name_to_ticker.clear()
@@ -270,6 +281,7 @@ class TestSecNameMapping:
     @pytest.mark.asyncio
     async def test_cache_hit_skips_name_matching(self):
         from data.sec_13f_provider import _cusip_cache, map_cusips_to_tickers
+
         _cusip_cache.clear()
         _cusip_cache["CACHED123"] = "CACHED"
 
@@ -284,6 +296,7 @@ class TestOpenFIGICachePreFilter:
     @pytest.mark.asyncio
     async def test_cached_cusips_skip_api_call(self):
         from data.sec_13f_provider import _cusip_cache, _openfigi_lookup
+
         _cusip_cache.clear()
         _cusip_cache["CACHED01"] = "AAPL"
         _cusip_cache["CACHED02"] = "MSFT"
@@ -307,11 +320,15 @@ class TestBulkCusipPersistence:
     async def test_bulk_persist_multiple_mappings(self, app):
         from dashboard.deps import get_db
         from data.sec_13f_provider import (
-            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+            _cusip_cache,
+            _persist_cusip_mappings,
+            load_cusip_cache,
         )
+
         db = get_db()
 
         import data.sec_13f_provider as provider
+
         provider._db_ref = db
         _cusip_cache.clear()
 
@@ -336,11 +353,15 @@ class TestBulkCusipPersistence:
     async def test_bulk_upsert_updates_existing(self, app):
         from dashboard.deps import get_db
         from data.sec_13f_provider import (
-            _cusip_cache, load_cusip_cache, _persist_cusip_mappings,
+            _cusip_cache,
+            _persist_cusip_mappings,
+            load_cusip_cache,
         )
+
         db = get_db()
 
         import data.sec_13f_provider as provider
+
         provider._db_ref = db
 
         # Initial persist
@@ -401,8 +422,20 @@ class TestGet13FHoldings:
     @patch(f"{_13F_MODULE}.get_holdings", new_callable=AsyncMock)
     async def test_get_holdings(self, mock_holdings, mock_cusip_map, client):
         mock_holdings.return_value = [
-            {"cusip": "037833100", "name": "APPLE INC", "title": "COM", "shares": 905560, "value": 150_000_000},
-            {"cusip": "594918104", "name": "MICROSOFT CORP", "title": "COM", "shares": 315200, "value": 120_000_000},
+            {
+                "cusip": "037833100",
+                "name": "APPLE INC",
+                "title": "COM",
+                "shares": 905560,
+                "value": 150_000_000,
+            },
+            {
+                "cusip": "594918104",
+                "name": "MICROSOFT CORP",
+                "title": "COM",
+                "shares": 315200,
+                "value": 120_000_000,
+            },
         ]
         mock_cusip_map.return_value = {
             "037833100": "AAPL",
@@ -428,11 +461,18 @@ class TestGet13FHoldings:
     async def test_holdings_cache_prevents_refetch(self, mock_holdings, mock_cusip_map, client):
         """Second request for same filing should use cache, not re-call provider."""
         from dashboard.routes.filings_13f import _resolved_cache
+
         # Clear cache for clean test
         _resolved_cache.clear()
 
         mock_holdings.return_value = [
-            {"cusip": "037833100", "name": "APPLE INC", "title": "COM", "shares": 100, "value": 1000},
+            {
+                "cusip": "037833100",
+                "name": "APPLE INC",
+                "title": "COM",
+                "shares": 100,
+                "value": 1000,
+            },
         ]
         mock_cusip_map.return_value = {"037833100": "AAPL"}
 
@@ -466,11 +506,19 @@ class TestGet13FHoldings:
     @patch(f"{_13F_MODULE}.get_holdings", new_callable=AsyncMock)
     async def test_get_holdings_download(self, mock_holdings, mock_cusip_map, client):
         mock_holdings.return_value = [
-            {"cusip": "037833100", "name": "APPLE INC", "title": "COM", "shares": 905560, "value": 150_000_000},
+            {
+                "cusip": "037833100",
+                "name": "APPLE INC",
+                "title": "COM",
+                "shares": 905560,
+                "value": 150_000_000,
+            },
         ]
         mock_cusip_map.return_value = {"037833100": "AAPL"}
 
-        resp = await client.get("/api/13f/holdings/download?cik=0001067983&accession=0001234567-25-000001")
+        resp = await client.get(
+            "/api/13f/holdings/download?cik=0001067983&accession=0001234567-25-000001"
+        )
         assert resp.status_code == 200
         assert "text/csv" in resp.headers["content-type"]
         assert "attachment" in resp.headers["content-disposition"]

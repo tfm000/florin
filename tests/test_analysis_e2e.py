@@ -10,9 +10,8 @@ Covers:
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -34,7 +33,6 @@ from dashboard.app import create_app
 from dashboard.deps import set_state
 from db.database import Database
 from db.models import ReportORM
-
 
 # =============================================================================
 # Fixtures
@@ -156,7 +154,9 @@ class TestE2ESingleMode:
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(), filings=_make_filings(),
+            _make_alert(),
+            _make_sentiment(),
+            filings=_make_filings(),
         )
 
         assert report.mode == "single"
@@ -174,7 +174,8 @@ class TestE2ESingleMode:
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             filings=_make_filings(),
             analysis_types=["announcement"],
         )
@@ -191,7 +192,8 @@ class TestE2ESingleMode:
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 
@@ -220,7 +222,8 @@ class TestE2EConsensusMode:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 
@@ -239,7 +242,8 @@ class TestE2EConsensusMode:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             filings=_make_filings(),
         )
 
@@ -265,7 +269,8 @@ class TestReportSerialisation:
         gen = ReportGenerator({"test": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             filings=_make_filings(),
         )
 
@@ -286,6 +291,7 @@ class TestReportSerialisation:
 
         # Save to DB
         from dashboard.deps import get_db
+
         db = get_db()
         async with db.session() as session:
             session.add(orm)
@@ -293,10 +299,9 @@ class TestReportSerialisation:
 
         # Read back
         from sqlalchemy import select
+
         async with db.session() as session:
-            result = await session.execute(
-                select(ReportORM).where(ReportORM.ticker == "TEST")
-            )
+            result = await session.execute(select(ReportORM).where(ReportORM.ticker == "TEST"))
             loaded = result.scalar()
 
         assert loaded is not None
@@ -347,7 +352,8 @@ class TestNoAPIKeys:
         gen = ReportGenerator({}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 
@@ -363,7 +369,8 @@ class TestNoAPIKeys:
         gen = ConsensusGenerator({}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 
@@ -399,7 +406,8 @@ class TestNoAPIKeys:
         gen = ReportGenerator({"broken": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 
@@ -421,7 +429,8 @@ class TestNoAPIKeys:
         gen = ReportGenerator({"crashing": analyser}, settings)
 
         report = await gen.generate(
-            _make_alert(), _make_sentiment(),
+            _make_alert(),
+            _make_sentiment(),
             analysis_types=["sentiment"],
         )
 

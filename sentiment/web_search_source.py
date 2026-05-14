@@ -124,12 +124,14 @@ class WebSearchSource(SentimentSource):
             if not title:
                 continue
 
-            results.append(WebSearchResult(
-                title=title,
-                snippet=item.get("body", "").strip(),
-                url=item.get("url", ""),
-                source=item.get("source", ""),
-                date=item.get("date", ""),
-            ))
+            results.append(
+                WebSearchResult(
+                    title=title,
+                    snippet=item.get("body", "").strip(),
+                    url=item.get("url", ""),
+                    source=item.get("source", ""),
+                    date=item.get("date", ""),
+                )
+            )
 
         return results

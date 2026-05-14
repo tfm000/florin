@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -21,7 +21,6 @@ from db.database import Database
 from db.models import SavedScreenerORM, ScreenerAlertLogORM
 from scanner.screener_alert_service import ScreenerAlertService
 from telegram_bot.formatters import format_screener_alert_message
-
 
 # =============================================================================
 # Fixtures
@@ -42,7 +41,8 @@ async def db():
 async def app(db):
     """Create a test app with in-memory database."""
     settings = Settings(
-        alpaca_api_key="test", alpaca_api_secret="test",
+        alpaca_api_key="test",
+        alpaca_api_secret="test",
         database_url="sqlite+aiosqlite://",
     )
     event_bus = EventBus()
@@ -167,12 +167,14 @@ class TestScreenerAlertService:
 
         # Log an alert for AAPL today
         async with db.session() as session:
-            session.add(ScreenerAlertLogORM(
-                screener_id=seed_screener,
-                ticker="AAPL",
-                price=150.0,
-                sent_at=datetime.now(UTC),
-            ))
+            session.add(
+                ScreenerAlertLogORM(
+                    screener_id=seed_screener,
+                    ticker="AAPL",
+                    price=150.0,
+                    sent_at=datetime.now(UTC),
+                )
+            )
             await session.commit()
 
         alerted = await svc._get_alerted_tickers_today(seed_screener)
@@ -185,6 +187,7 @@ class TestScreenerAlertService:
         # Set a non-zero counter
         async with db.session() as session:
             from sqlalchemy import select
+
             result = await session.execute(
                 select(SavedScreenerORM).where(SavedScreenerORM.id == seed_screener)
             )
@@ -198,6 +201,7 @@ class TestScreenerAlertService:
 
         async with db.session() as session:
             from sqlalchemy import select
+
             result = await session.execute(
                 select(SavedScreenerORM).where(SavedScreenerORM.id == seed_screener)
             )
@@ -209,17 +213,19 @@ class TestScreenerAlertService:
         """Should persist alert to screener_alert_log."""
         svc = ScreenerAlertService(db, EventBus())
         result = ScreenerResult(
-            ticker="MSFT", name="Microsoft", price=400.0,
-            change_pct=2.5, sector="Technology",
+            ticker="MSFT",
+            name="Microsoft",
+            price=400.0,
+            change_pct=2.5,
+            sector="Technology",
         )
         await svc._log_alert(seed_screener, result)
 
         async with db.session() as session:
             from sqlalchemy import select
+
             res = await session.execute(
-                select(ScreenerAlertLogORM).where(
-                    ScreenerAlertLogORM.screener_id == seed_screener
-                )
+                select(ScreenerAlertLogORM).where(ScreenerAlertLogORM.screener_id == seed_screener)
             )
             logs = res.scalars().all()
             assert len(logs) == 1
@@ -237,7 +243,10 @@ class TestScreenerAlertService:
             ScreenerResult(ticker="AAPL", name="Apple", price=180.0, change_pct=1.5),
         ]
 
-        with patch("scanner.screener_alert_service.run_screen", return_value=(mock_results, len(mock_results))):
+        with patch(
+            "scanner.screener_alert_service.run_screen",
+            return_value=(mock_results, len(mock_results)),
+        ):
             # Subscribe before running
             events = []
 
@@ -248,9 +257,11 @@ class TestScreenerAlertService:
                         break
 
             import asyncio
+
             # Load the screener ORM
             async with db.session() as session:
                 from sqlalchemy import select
+
                 result = await session.execute(
                     select(SavedScreenerORM).where(SavedScreenerORM.id == seed_screener)
                 )
@@ -276,6 +287,7 @@ class TestScreenerAlertService:
         # Set alerts_sent_today to max_alerts_per_day - 1
         async with db.session() as session:
             from sqlalchemy import select
+
             result = await session.execute(
                 select(SavedScreenerORM).where(SavedScreenerORM.id == seed_screener)
             )
@@ -289,9 +301,13 @@ class TestScreenerAlertService:
             ScreenerResult(ticker="MSFT", name="Microsoft", price=400.0),
         ]
 
-        with patch("scanner.screener_alert_service.run_screen", return_value=(mock_results, len(mock_results))):
+        with patch(
+            "scanner.screener_alert_service.run_screen",
+            return_value=(mock_results, len(mock_results)),
+        ):
             async with db.session() as session:
                 from sqlalchemy import select
+
                 result = await session.execute(
                     select(SavedScreenerORM).where(SavedScreenerORM.id == seed_screener)
                 )
@@ -302,17 +318,16 @@ class TestScreenerAlertService:
         # Should have logged only 1 alert (5 - 4 = 1 remaining)
         async with db.session() as session:
             from sqlalchemy import select
+
             logs = await session.execute(
-                select(ScreenerAlertLogORM).where(
-                    ScreenerAlertLogORM.screener_id == seed_screener
-                )
+                select(ScreenerAlertLogORM).where(ScreenerAlertLogORM.screener_id == seed_screener)
             )
             assert len(logs.scalars().all()) == 1
 
     def test_summarize_filters(self):
         svc = ScreenerAlertService.__new__(ScreenerAlertService)
         assert "Technology" in svc._summarize_filters({"sector": "Technology"})
-        assert "All US assets" == svc._summarize_filters({})
+        assert svc._summarize_filters({}) == "All US assets"
         summary = svc._summarize_filters({"price_min": 10, "price_max": 500})
         assert "$10" in summary
         assert "$500" in summary
@@ -403,13 +418,15 @@ class TestScreenerAlertEndpoints:
         """Should return alert log entries."""
         async with db.session() as session:
             for ticker in ["AAPL", "MSFT", "NVDA"]:
-                session.add(ScreenerAlertLogORM(
-                    screener_id=seed_screener,
-                    ticker=ticker,
-                    price=100.0,
-                    change_pct=1.5,
-                    sent_at=datetime.now(UTC),
-                ))
+                session.add(
+                    ScreenerAlertLogORM(
+                        screener_id=seed_screener,
+                        ticker=ticker,
+                        price=100.0,
+                        change_pct=1.5,
+                        sent_at=datetime.now(UTC),
+                    )
+                )
             await session.commit()
 
         resp = await client.get(f"/api/screener/saved/{seed_screener}/alerts")
@@ -449,18 +466,20 @@ class TestScreenerAlertEndpoints:
 
 class TestScreenerAlertFormatter:
     def test_basic_formatting(self):
-        msg = format_screener_alert_message({
-            "screener_name": "High Cap Tech",
-            "ticker": "AAPL",
-            "name": "Apple Inc",
-            "price": 180.50,
-            "change_pct": 2.35,
-            "market_cap": 2800000000000,
-            "volume": 45000000,
-            "sector": "Technology",
-            "exchange": "NMS",
-            "filters_summary": "Price: $100-$500 | Technology",
-        })
+        msg = format_screener_alert_message(
+            {
+                "screener_name": "High Cap Tech",
+                "ticker": "AAPL",
+                "name": "Apple Inc",
+                "price": 180.50,
+                "change_pct": 2.35,
+                "market_cap": 2800000000000,
+                "volume": 45000000,
+                "sector": "Technology",
+                "exchange": "NMS",
+                "filters_summary": "Price: $100-$500 | Technology",
+            }
+        )
         assert "AAPL" in msg
         assert "Apple" in msg
         assert "High Cap Tech" in msg
@@ -468,10 +487,12 @@ class TestScreenerAlertFormatter:
         assert "Technology" in msg
 
     def test_negative_change(self):
-        msg = format_screener_alert_message({
-            "ticker": "TSLA",
-            "change_pct": -3.5,
-        })
+        msg = format_screener_alert_message(
+            {
+                "ticker": "TSLA",
+                "change_pct": -3.5,
+            }
+        )
         assert "TSLA" in msg
         assert "\\-3\\.50" in msg
 
@@ -481,22 +502,28 @@ class TestScreenerAlertFormatter:
         assert "XYZ" in msg
 
     def test_large_market_cap_formatting(self):
-        msg = format_screener_alert_message({
-            "ticker": "AAPL",
-            "market_cap": 2_800_000_000_000,
-        })
+        msg = format_screener_alert_message(
+            {
+                "ticker": "AAPL",
+                "market_cap": 2_800_000_000_000,
+            }
+        )
         assert "2\\.8T" in msg
 
     def test_billion_market_cap_formatting(self):
-        msg = format_screener_alert_message({
-            "ticker": "XYZ",
-            "market_cap": 50_000_000_000,
-        })
+        msg = format_screener_alert_message(
+            {
+                "ticker": "XYZ",
+                "market_cap": 50_000_000_000,
+            }
+        )
         assert "50\\.0B" in msg
 
     def test_million_market_cap_formatting(self):
-        msg = format_screener_alert_message({
-            "ticker": "XYZ",
-            "market_cap": 500_000_000,
-        })
+        msg = format_screener_alert_message(
+            {
+                "ticker": "XYZ",
+                "market_cap": 500_000_000,
+            }
+        )
         assert "500M" in msg

@@ -14,9 +14,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from sentiment.aggregator import SentimentAggregator, SOURCE_TIMEOUT_SECONDS
+from sentiment.aggregator import SentimentAggregator
 from sentiment.base import SentimentSource
-
 
 # ---------------------------------------------------------------------------
 # Mock source implementation
@@ -108,6 +107,7 @@ class TestFetchTimeoutReturnsPartialResults:
 
         # Patch the timeout to be very short so the test runs quickly
         import sentiment.aggregator as agg_module
+
         original_timeout = agg_module.SOURCE_TIMEOUT_SECONDS
         agg_module.SOURCE_TIMEOUT_SECONDS = 0.1
         try:

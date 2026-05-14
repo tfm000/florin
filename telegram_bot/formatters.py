@@ -9,7 +9,6 @@ from __future__ import annotations
 from core.models import (
     AccountSummary,
     AnalysisReport,
-    AnalysisResult,
     Position,
     Recommendation,
 )
@@ -125,12 +124,7 @@ def format_position_message(pos: Position) -> str:
     pnl_emoji = "🟢" if pnl >= 0 else "🔴"
     pnl_str = escape_md(f"${pnl:+.2f} ({pnl_pct:+.1f}%)")
 
-    return (
-        f"*{ticker}* {pnl_emoji}\n"
-        f"  Qty: {qty} @ {avg}\n"
-        f"  Now: {cur}\n"
-        f"  P&L: {pnl_str}"
-    )
+    return f"*{ticker}* {pnl_emoji}\n  Qty: {qty} @ {avg}\n  Now: {cur}\n  P&L: {pnl_str}"
 
 
 def format_positions_list(positions: list[Position]) -> str:
@@ -152,42 +146,45 @@ def format_positions_list(positions: list[Position]) -> str:
 
     pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
     lines.append(escape_md("━" * 25))
-    lines.append(
-        f"{pnl_emoji} *Total P&L:* {escape_md(f'${total_pnl:+.2f}')}"
-    )
-    lines.append(
-        f"💰 *Market Value:* {escape_md(f'${total_value:.2f}')}"
-    )
+    lines.append(f"{pnl_emoji} *Total P&L:* {escape_md(f'${total_pnl:+.2f}')}")
+    lines.append(f"💰 *Market Value:* {escape_md(f'${total_value:.2f}')}")
 
     return "\n".join(lines)
 
 
 def format_account_summary(acc: AccountSummary) -> str:
     """Format account summary."""
-    return "\n".join([
-        "💳 *Account Summary*",
-        escape_md("━" * 25),
-        f"💵 Cash: {escape_md(f'{acc.currency} {acc.cash_available:.2f}')}",
-        f"📈 Invested: {escape_md(f'{acc.currency} {acc.invested_value:.2f}')}",
-        f"💰 Total: {escape_md(f'{acc.currency} {acc.total_value:.2f}')}",
-        f"📊 Unrealised P&L: {escape_md(f'{acc.currency} {acc.unrealised_pnl:+.2f}')}",
-        f"✅ Realised P&L: {escape_md(f'{acc.currency} {acc.realised_pnl:+.2f}')}",
-    ])
+    return "\n".join(
+        [
+            "💳 *Account Summary*",
+            escape_md("━" * 25),
+            f"💵 Cash: {escape_md(f'{acc.currency} {acc.cash_available:.2f}')}",
+            f"📈 Invested: {escape_md(f'{acc.currency} {acc.invested_value:.2f}')}",
+            f"💰 Total: {escape_md(f'{acc.currency} {acc.total_value:.2f}')}",
+            f"📊 Unrealised P&L: {escape_md(f'{acc.currency} {acc.unrealised_pnl:+.2f}')}",
+            f"✅ Realised P&L: {escape_md(f'{acc.currency} {acc.realised_pnl:+.2f}')}",
+        ]
+    )
 
 
 def format_trade_confirmation(
-    ticker: str, side: str, quantity: float, price: float,
+    ticker: str,
+    side: str,
+    quantity: float,
+    price: float,
 ) -> str:
     """Format trade confirmation message."""
     emoji = "🟢" if side == "BUY" else "🔴"
     total = quantity * price
-    return "\n".join([
-        f"{emoji} *Trade Executed*",
-        f"  {escape_md(side)} {escape_md(ticker)}",
-        f"  Qty: {escape_md(f'{quantity:.4f}')}",
-        f"  Price: {escape_md(f'${price:.4f}')}",
-        f"  Total: {escape_md(f'${total:.2f}')}",
-    ])
+    return "\n".join(
+        [
+            f"{emoji} *Trade Executed*",
+            f"  {escape_md(side)} {escape_md(ticker)}",
+            f"  Qty: {escape_md(f'{quantity:.4f}')}",
+            f"  Price: {escape_md(f'${price:.4f}')}",
+            f"  Total: {escape_md(f'${total:.2f}')}",
+        ]
+    )
 
 
 def format_screener_alert_message(alert_data: dict) -> str:
@@ -273,5 +270,3 @@ def _recommendation_emoji(rec: Recommendation) -> str:
         Recommendation.AVOID: "⚠️",
         Recommendation.STRONG_AVOID: "🛑",
     }.get(rec, "❓")
-
-

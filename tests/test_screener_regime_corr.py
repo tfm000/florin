@@ -2,10 +2,10 @@
 
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -18,6 +18,7 @@ from db.database import Database
 def _generate_history(days: int, start_price: float = 100.0, seed: int = 42) -> list[dict]:
     """Generate synthetic OHLCV history ending today."""
     from datetime import date, timedelta
+
     rng = np.random.default_rng(seed)
     history = []
     price = start_price
@@ -28,14 +29,16 @@ def _generate_history(days: int, start_price: float = 100.0, seed: int = 42) -> 
         high = price * (1 + abs(rng.normal(0, 0.005)))
         low = price * (1 - abs(rng.normal(0, 0.005)))
         d = start + timedelta(days=i)
-        history.append({
-            "date": d.isoformat(),
-            "open": round(price * 0.999, 2),
-            "high": round(high, 2),
-            "low": round(low, 2),
-            "close": round(price, 2),
-            "volume": 50_000_000 + rng.integers(-5_000_000, 5_000_000),
-        })
+        history.append(
+            {
+                "date": d.isoformat(),
+                "open": round(price * 0.999, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "close": round(price, 2),
+                "volume": 50_000_000 + rng.integers(-5_000_000, 5_000_000),
+            }
+        )
     return history
 
 
@@ -62,7 +65,9 @@ def _ensure_statsmodels_modules():
             sys.modules[name] = mod
     # Wire up the parent-child attributes
     sys.modules["statsmodels"].tsa = sys.modules["statsmodels.tsa"]
-    sys.modules["statsmodels.tsa"].regime_switching = sys.modules["statsmodels.tsa.regime_switching"]
+    sys.modules["statsmodels.tsa"].regime_switching = sys.modules[
+        "statsmodels.tsa.regime_switching"
+    ]
     mreg = sys.modules["statsmodels.tsa.regime_switching.markov_regression"]
     sys.modules["statsmodels.tsa.regime_switching"].markov_regression = mreg
     mreg.MarkovRegression = MagicMock()
@@ -106,6 +111,7 @@ async def client(app):
 # ---------------------------------------------------------------------------
 # Screener routes
 # ---------------------------------------------------------------------------
+
 
 class TestScreener:
     @pytest.mark.asyncio
@@ -158,8 +164,10 @@ class TestScreener:
             ],
         }
 
-        with patch("yfinance.screen", return_value=mock_resp), \
-             patch("yfinance.EquityQuery", MagicMock()):
+        with (
+            patch("yfinance.screen", return_value=mock_resp),
+            patch("yfinance.EquityQuery", MagicMock()),
+        ):
             resp = await client.get("/api/screener")
 
         assert resp.status_code == 200
@@ -193,11 +201,11 @@ class TestScreener:
         }
 
         mock_eq = MagicMock()
-        with patch("yfinance.screen", return_value=mock_resp) as mock_screen, \
-             patch("yfinance.EquityQuery", mock_eq):
-            resp = await client.get(
-                "/api/screener?price_min=10&price_max=500&sector=Technology"
-            )
+        with (
+            patch("yfinance.screen", return_value=mock_resp),
+            patch("yfinance.EquityQuery", mock_eq),
+        ):
+            resp = await client.get("/api/screener?price_min=10&price_max=500&sector=Technology")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -206,7 +214,9 @@ class TestScreener:
         # EquityQuery should have been called with sector filter among others
         eq_calls = mock_eq.call_args_list
         # Verify sector filter was constructed
-        sector_calls = [c for c in eq_calls if len(c[0]) >= 2 and c[0][1] == ["sector", "Technology"]]
+        sector_calls = [
+            c for c in eq_calls if len(c[0]) >= 2 and c[0][1] == ["sector", "Technology"]
+        ]
         assert len(sector_calls) > 0
 
     @pytest.mark.asyncio
@@ -216,8 +226,10 @@ class TestScreener:
 
         mock_resp = {"total": 0, "quotes": []}
 
-        with patch("yfinance.screen", return_value=mock_resp), \
-             patch("yfinance.EquityQuery", MagicMock()):
+        with (
+            patch("yfinance.screen", return_value=mock_resp),
+            patch("yfinance.EquityQuery", MagicMock()),
+        ):
             resp = await client.get("/api/screener")
 
         assert resp.status_code == 200
@@ -229,6 +241,7 @@ class TestScreener:
 # ---------------------------------------------------------------------------
 # Regime routes
 # ---------------------------------------------------------------------------
+
 
 class TestRegime:
     @pytest.mark.asyncio
@@ -353,6 +366,7 @@ class TestRegime:
 # Correlation routes
 # ---------------------------------------------------------------------------
 
+
 class TestCorrelation:
     @pytest.mark.asyncio
     async def test_correlation_basic(self, client):
@@ -442,12 +456,15 @@ class TestSavedScreenerCRUD:
 
     @pytest.mark.asyncio
     async def test_create_saved_screener(self, client):
-        resp = await client.post("/api/screener/saved", json={
-            "name": "High Cap Tech",
-            "filters": {"sector": "Technology", "market_cap_min": 1e9},
-            "sort_by": "intradaymarketcap",
-            "sort_asc": False,
-        })
+        resp = await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "High Cap Tech",
+                "filters": {"sector": "Technology", "market_cap_min": 1e9},
+                "sort_by": "intradaymarketcap",
+                "sort_asc": False,
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "High Cap Tech"
@@ -456,12 +473,20 @@ class TestSavedScreenerCRUD:
 
     @pytest.mark.asyncio
     async def test_list_saved_screeners(self, client):
-        await client.post("/api/screener/saved", json={
-            "name": "Screener A", "filters": {"price_min": 10},
-        })
-        await client.post("/api/screener/saved", json={
-            "name": "Screener B", "filters": {"price_max": 50},
-        })
+        await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Screener A",
+                "filters": {"price_min": 10},
+            },
+        )
+        await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Screener B",
+                "filters": {"price_max": 50},
+            },
+        )
         resp = await client.get("/api/screener/saved")
         assert resp.status_code == 200
         items = resp.json()
@@ -471,9 +496,13 @@ class TestSavedScreenerCRUD:
 
     @pytest.mark.asyncio
     async def test_get_saved_screener_by_id(self, client):
-        create_resp = await client.post("/api/screener/saved", json={
-            "name": "Lookup Test", "filters": {"exchange": "NYQ"},
-        })
+        create_resp = await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Lookup Test",
+                "filters": {"exchange": "NYQ"},
+            },
+        )
         sid = create_resp.json()["id"]
         resp = await client.get(f"/api/screener/saved/{sid}")
         assert resp.status_code == 200
@@ -486,22 +515,34 @@ class TestSavedScreenerCRUD:
 
     @pytest.mark.asyncio
     async def test_update_saved_screener(self, client):
-        create_resp = await client.post("/api/screener/saved", json={
-            "name": "Update Me", "filters": {"price_min": 5},
-        })
+        create_resp = await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Update Me",
+                "filters": {"price_min": 5},
+            },
+        )
         sid = create_resp.json()["id"]
-        resp = await client.put(f"/api/screener/saved/{sid}", json={
-            "name": "Updated Name", "filters": {"price_min": 10, "sector": "Energy"},
-        })
+        resp = await client.put(
+            f"/api/screener/saved/{sid}",
+            json={
+                "name": "Updated Name",
+                "filters": {"price_min": 10, "sector": "Energy"},
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Updated Name"
         assert resp.json()["filters"]["sector"] == "Energy"
 
     @pytest.mark.asyncio
     async def test_delete_saved_screener(self, client):
-        create_resp = await client.post("/api/screener/saved", json={
-            "name": "Delete Me", "filters": {},
-        })
+        create_resp = await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Delete Me",
+                "filters": {},
+            },
+        )
         sid = create_resp.json()["id"]
         resp = await client.delete(f"/api/screener/saved/{sid}")
         assert resp.status_code == 200
@@ -511,10 +552,18 @@ class TestSavedScreenerCRUD:
 
     @pytest.mark.asyncio
     async def test_duplicate_name_returns_409(self, client):
-        await client.post("/api/screener/saved", json={
-            "name": "Unique Name", "filters": {},
-        })
-        resp = await client.post("/api/screener/saved", json={
-            "name": "Unique Name", "filters": {"price_min": 1},
-        })
+        await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Unique Name",
+                "filters": {},
+            },
+        )
+        resp = await client.post(
+            "/api/screener/saved",
+            json={
+                "name": "Unique Name",
+                "filters": {"price_min": 1},
+            },
+        )
         assert resp.status_code == 409

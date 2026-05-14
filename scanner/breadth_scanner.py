@@ -123,7 +123,9 @@ async def discover_tickers(exchange: str = DEFAULT_EXCHANGES) -> list[str]:
         if not results or offset >= total:
             break
 
-    logger.info("Breadth scanner: discovered %d equities for exchanges %s", len(all_tickers), exchange)
+    logger.info(
+        "Breadth scanner: discovered %d equities for exchanges %s", len(all_tickers), exchange
+    )
     return all_tickers
 
 
@@ -144,20 +146,25 @@ async def save_breadth_snapshot(db: Database, data: dict) -> None:
             logger.debug("Breadth snapshot already exists for %s hour %d, skipping", date_str, hour)
             return
 
-        session.add(BreadthSnapshotORM(
-            date=date_str,
-            hour=hour,
-            advancing=data["advancing"],
-            declining=data["declining"],
-            unchanged=data["unchanged"],
-            total=data["total"],
-            ad_ratio=data["ad_ratio"],
-        ))
+        session.add(
+            BreadthSnapshotORM(
+                date=date_str,
+                hour=hour,
+                advancing=data["advancing"],
+                declining=data["declining"],
+                unchanged=data["unchanged"],
+                total=data["total"],
+                ad_ratio=data["ad_ratio"],
+            )
+        )
         await session.commit()
 
     logger.info(
         "Breadth snapshot saved: %d adv / %d dec / %d unch (ratio %.2f)",
-        data["advancing"], data["declining"], data["unchanged"], data["ad_ratio"],
+        data["advancing"],
+        data["declining"],
+        data["unchanged"],
+        data["ad_ratio"],
     )
 
 

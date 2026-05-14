@@ -12,9 +12,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -28,7 +26,6 @@ from sentiment.sec_8k_source import (
     _extract_8k_items,
     _strip_html_to_text,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -216,8 +213,12 @@ class TestSEC8KSourceFetch:
         source = SEC8KSource()
 
         with (
-            patch("sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik,
-            patch("sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock) as mock_filings,
+            patch(
+                "sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
             patch("sentiment.sec_8k_source.sec_rate_limit", new_callable=AsyncMock),
         ):
             mock_cik.return_value = "320193"
@@ -265,8 +266,12 @@ class TestSEC8KSourceFetch:
         source = SEC8KSource()
 
         with (
-            patch("sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik,
-            patch("sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock) as mock_filings,
+            patch(
+                "sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
         ):
             mock_cik.return_value = "320193"
             mock_filings.return_value = []
@@ -281,8 +286,12 @@ class TestSEC8KSourceFetch:
         source = SEC8KSource()
 
         with (
-            patch("sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik,
-            patch("sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock) as mock_filings,
+            patch(
+                "sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
             patch("sentiment.sec_8k_source.sec_rate_limit", new_callable=AsyncMock),
         ):
             mock_cik.return_value = "320193"
@@ -321,8 +330,12 @@ class TestTextTruncation:
         long_html = "<p>" + "x" * (MAX_TEXT_LENGTH + 5000) + "</p>"
 
         with (
-            patch("sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik,
-            patch("sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock) as mock_filings,
+            patch(
+                "sentiment.sec_8k_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_8k_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
             patch("sentiment.sec_8k_source.sec_rate_limit", new_callable=AsyncMock),
         ):
             mock_cik.return_value = "320193"

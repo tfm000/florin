@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.settings import Settings
     from core.events import EventBus
-    from db.database import Database
     from dashboard.ws import ConnectionManager
+    from db.database import Database
 
 _state: dict = {}
 
@@ -22,15 +22,15 @@ def set_state(key: str, value: object) -> None:
     _state[key] = value
 
 
-def get_db() -> "Database":
+def get_db() -> Database:
     return _state["db"]
 
 
-def get_event_bus() -> "EventBus":
+def get_event_bus() -> EventBus:
     return _state["event_bus"]
 
 
-def get_settings() -> "Settings":
+def get_settings() -> Settings:
     return _state["settings"]
 
 
@@ -38,7 +38,7 @@ def get_broker():
     return _state.get("broker")
 
 
-def get_ws_manager() -> "ConnectionManager":
+def get_ws_manager() -> ConnectionManager:
     return _state["ws_manager"]
 
 

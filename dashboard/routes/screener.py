@@ -44,10 +44,16 @@ async def screen_stocks(
     pe_max: float = Query(default=0, description="0 = no limit"),
     dividend_yield_min: float = Query(default=0, ge=0),
     sector: str = Query(default="", description="Filter by sector name"),
-    region: str = Query(default="", description="Region code(s): us, gb, de, jp, ca, hk, etc. Empty = default"),
+    region: str = Query(
+        default="", description="Region code(s): us, gb, de, jp, ca, hk, etc. Empty = default"
+    ),
     exchange: str = Query(default="", description="Exchange codes: NMS, NYQ, PCX, LSE, etc."),
-    asset_type: str = Query(default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"),
-    momentum_min: float | None = Query(default=None, description="Min return % for momentum filter"),
+    asset_type: str = Query(
+        default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"
+    ),
+    momentum_min: float | None = Query(
+        default=None, description="Min return % for momentum filter"
+    ),
     momentum_max: float | None = Query(default=None, description="Max return % (None = no limit)"),
     momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
     sort_by: str = Query(default="intradaymarketcap", description="Sort field"),
@@ -58,18 +64,32 @@ async def screen_stocks(
 ):
     """General-purpose multi-factor stock screener with momentum filtering."""
     results, total = await run_screen(
-        price_min=price_min, price_max=price_max,
-        market_cap_min=market_cap_min, market_cap_max=market_cap_max,
-        pe_min=pe_min, pe_max=pe_max,
+        price_min=price_min,
+        price_max=price_max,
+        market_cap_min=market_cap_min,
+        market_cap_max=market_cap_max,
+        pe_min=pe_min,
+        pe_max=pe_max,
         dividend_yield_min=dividend_yield_min,
-        region=region, sector=sector, exchange=exchange, asset_type=asset_type,
-        sort_by=sort_by, sort_asc=sort_asc, offset=offset, limit=limit, yf=yf,
+        region=region,
+        sector=sector,
+        exchange=exchange,
+        asset_type=asset_type,
+        sort_by=sort_by,
+        sort_asc=sort_asc,
+        offset=offset,
+        limit=limit,
+        yf=yf,
     )
 
     # Apply momentum post-filter if requested
     if momentum_period and (momentum_min is not None or momentum_max is not None):
         results = await apply_momentum_filter(
-            results, momentum_min, momentum_max, momentum_period, yf,
+            results,
+            momentum_min,
+            momentum_max,
+            momentum_period,
+            yf,
         )
         total = len(results)
 
@@ -238,6 +258,7 @@ async def delete_saved_screener(screener_id: str, session=Depends(get_db_session
 
 class AlertSettingsUpdate(BaseModel):
     """Update alert-related settings on a saved screener."""
+
     is_alert_active: bool | None = None
     max_alerts_per_day: int | None = Field(None, ge=1, le=100)
     run_interval_seconds: int | None = Field(None, ge=60, le=86400)
@@ -247,6 +268,7 @@ class AlertSettingsUpdate(BaseModel):
 
 class ScreenerAlertLogResponse(BaseModel):
     """Single entry in the screener alert log."""
+
     id: str
     screener_id: str
     ticker: str
@@ -283,9 +305,11 @@ async def update_alert_settings(
         valid = {"announcement", "sentiment"}
         if not req.analysis_types:
             from core.exceptions import ValidationError
+
             raise ValidationError("analysis_types cannot be empty — at least one type is required")
         if not all(t in valid for t in req.analysis_types):
             from core.exceptions import ValidationError
+
             raise ValidationError(f"analysis_types must be a subset of {sorted(valid)}")
         orm.analysis_types = json.dumps(req.analysis_types)
 

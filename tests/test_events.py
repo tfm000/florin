@@ -142,9 +142,7 @@ class TestEventBus:
     async def test_event_has_source(self):
         """Events carry the source string."""
         bus = EventBus()
-        event = await bus.publish(
-            EventType.SCANNER_STATUS, "data", source="test_source"
-        )
+        event = await bus.publish(EventType.SCANNER_STATUS, "data", source="test_source")
         assert event.source == "test_source"
 
     @pytest.mark.asyncio

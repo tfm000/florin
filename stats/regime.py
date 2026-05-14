@@ -71,17 +71,21 @@ def fit_markov_regimes(
         regimes: list[dict] = []
         for i in range(len(dates)):
             # Preserve full timestamp for intraday; truncate to date for daily
-            date_str = dates[i] if is_intraday else (dates[i][:10] if len(dates[i]) > 10 else dates[i])
+            date_str = (
+                dates[i] if is_intraday else (dates[i][:10] if len(dates[i]) > 10 else dates[i])
+            )
             cmp_str = dates[i][:10] if len(dates[i]) > 10 else dates[i]
             if display_start and cmp_str < display_start:
                 continue
             if display_end and cmp_str > display_end:
                 continue
-            regimes.append({
-                "date": date_str,
-                "regime": int(regime_assignments[i]),
-                "probability": round(float(regime_probs[i]), 4),
-            })
+            regimes.append(
+                {
+                    "date": date_str,
+                    "regime": int(regime_assignments[i]),
+                    "probability": round(float(regime_probs[i]), 4),
+                }
+            )
 
         # Per-regime stats from FULL history
         stats: list[dict] = []
@@ -90,12 +94,16 @@ def fit_markov_regimes(
             if mask.sum() == 0:
                 continue
             regime_rets = returns_scaled[mask] / 100  # unscale
-            stats.append({
-                "regime": r,
-                "mean_return": round(float(np.mean(regime_rets)) * annualize_factor * 100, 2),
-                "volatility": round(float(np.std(regime_rets)) * np.sqrt(annualize_factor) * 100, 2),
-                "count": int(mask.sum()),
-            })
+            stats.append(
+                {
+                    "regime": r,
+                    "mean_return": round(float(np.mean(regime_rets)) * annualize_factor * 100, 2),
+                    "volatility": round(
+                        float(np.std(regime_rets)) * np.sqrt(annualize_factor) * 100, 2
+                    ),
+                    "count": int(mask.sum()),
+                }
+            )
 
         # Sort regimes by volatility (low vol = regime 0)
         stats.sort(key=lambda s: s["volatility"])

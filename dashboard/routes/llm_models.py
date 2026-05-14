@@ -9,9 +9,9 @@ API keys are **never** returned unmasked in responses.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import UTC, datetime
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -66,45 +66,54 @@ _VALID_HOSTS = {h["id"] for h in _HOSTS}
 
 # ── Request / Response schemas ────────────────────────────────────────────────
 
+
 class CreateLLMModel(BaseModel):
     """Request body for creating a new LLM model registration."""
+
     host: str = Field(
-        ..., description="Provider host: anthropic-cli, openrouter, gemini, groq",
+        ...,
+        description="Provider host: anthropic-cli, openrouter, gemini, groq",
     )
-    model: str = Field(..., min_length=1, description="Model identifier (e.g. claude-sonnet-4-20250514)")
+    model: str = Field(
+        ..., min_length=1, description="Model identifier (e.g. claude-sonnet-4-20250514)"
+    )
     api_key: str = Field(default="", description="API key (optional for CLI-auth providers)")
     thinking_mode: str = Field(default="low", description="Thinking depth (anthropic-cli only)")
 
 
 class UpdateLLMModel(BaseModel):
     """Request body for updating an existing LLM model registration."""
-    model: Optional[str] = None
-    api_key: Optional[str] = None
-    enabled: Optional[bool] = None
-    thinking_mode: Optional[str] = None
+
+    model: str | None = None
+    api_key: str | None = None
+    enabled: bool | None = None
+    thinking_mode: str | None = None
 
 
 class LLMModelResponse(BaseModel):
     """Response model for a registered LLM model (API key masked)."""
+
     id: str
     host: str
     model: str
     api_key_masked: str
     display_name: str
     enabled: bool
-    thinking_mode: Optional[str] = None
+    thinking_mode: str | None = None
 
 
 class LLMSettingsUpdate(BaseModel):
     """Request body for updating LLM analysis settings."""
-    mode: Optional[str] = None  # "single" | "consensus"
-    announcement_model_id: Optional[str] = None
-    sentiment_model_id: Optional[str] = None
-    consensus_leader_model_id: Optional[str] = None
-    user_context: Optional[str] = None
+
+    mode: str | None = None  # "single" | "consensus"
+    announcement_model_id: str | None = None
+    sentiment_model_id: str | None = None
+    consensus_leader_model_id: str | None = None
+    user_context: str | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _mask_key(key: str) -> str:
     """Mask an API key for safe display.
@@ -156,6 +165,7 @@ async def _trigger_refresh() -> None:
 
 
 # ── Model CRUD endpoints ─────────────────────────────────────────────────────
+
 
 @router.get("/llm-models/hosts")
 async def list_hosts() -> list[dict]:
@@ -417,16 +427,19 @@ def _create_temp_analyser(
 
     if host == "groq":
         from analysis.groq_analyser import GroqAnalyser
+
         temp = Settings(groq_api_key=api_key, groq_model=model)
         return GroqAnalyser(temp)
 
     if host == "gemini":
         from analysis.gemini_analyser import GeminiAnalyser
+
         temp = Settings(gemini_api_key=api_key, gemini_model=model)
         return GeminiAnalyser(temp)
 
     if host == "anthropic-cli":
         from analysis.claude_analyser import ClaudeAnalyser
+
         temp = Settings(
             anthropic_api_key=api_key,
             claude_model=model,
@@ -436,6 +449,7 @@ def _create_temp_analyser(
 
     if host == "openrouter":
         from analysis.openrouter_analyser import OpenRouterAnalyser
+
         temp = Settings(openrouter_api_key=api_key, openrouter_model=model)
         return OpenRouterAnalyser(temp)
 
@@ -443,6 +457,7 @@ def _create_temp_analyser(
 
 
 # ── LLM analysis settings endpoints ──────────────────────────────────────────
+
 
 @router.get("/llm-settings")
 async def get_llm_settings() -> dict:
@@ -483,12 +498,11 @@ async def update_llm_settings(payload: LLMSettingsUpdate) -> dict:
     updated_keys: list[str] = []
 
     # Validate mode
-    if payload.mode is not None:
-        if payload.mode not in ("single", "consensus"):
-            raise HTTPException(
-                status_code=400,
-                detail="mode must be 'single' or 'consensus'",
-            )
+    if payload.mode is not None and payload.mode not in ("single", "consensus"):
+        raise HTTPException(
+            status_code=400,
+            detail="mode must be 'single' or 'consensus'",
+        )
 
     # Validate model IDs exist and are enabled
     model_id_fields = {
@@ -567,9 +581,7 @@ def _apply_setting(settings, key: str, value: str) -> None:
     elif hasattr(current, "value"):
         # Enum
         enum_cls = type(current)
-        try:
+        with contextlib.suppress(ValueError):
             setattr(settings, key, enum_cls(value))
-        except ValueError:
-            pass
     else:
         setattr(settings, key, value)

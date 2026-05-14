@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
 from dashboard.deps import get_db
 from db.models import TradeORM

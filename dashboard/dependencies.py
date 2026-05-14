@@ -37,19 +37,19 @@ if TYPE_CHECKING:
     from data.yfinance_provider import YFinanceProvider
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session() -> AsyncGenerator[AsyncSession]:
     """Yield an async DB session. Auto-commits on success, rolls back on error."""
     db = get_db()
     async with db.session() as session:
         yield session
 
 
-def get_settings_dep() -> "Settings":
+def get_settings_dep() -> Settings:
     """Return the application settings."""
     return get_settings()
 
 
-def get_yfinance_dep() -> "YFinanceProvider":
+def get_yfinance_dep() -> YFinanceProvider:
     """Return the yfinance provider."""
     provider = get_yfinance_provider()
     if provider is None:
@@ -57,7 +57,7 @@ def get_yfinance_dep() -> "YFinanceProvider":
     return provider
 
 
-def get_broker_dep() -> "Broker":
+def get_broker_dep() -> Broker:
     """Return the broker, raising 503 if not configured."""
     broker = get_broker()
     if broker is None:
@@ -65,7 +65,7 @@ def get_broker_dep() -> "Broker":
     return broker
 
 
-def get_event_bus_dep() -> "EventBus":
+def get_event_bus_dep() -> EventBus:
     """Return the event bus."""
     return get_event_bus()
 

@@ -4,8 +4,9 @@ CRITICAL: These tests verify that paper_mode=True makes it IMPOSSIBLE
 for orders to reach the inner (potentially live) broker.
 """
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from broker.base import Broker
 from broker.paper_broker import PaperBroker
@@ -18,7 +19,6 @@ from core.models import (
     OrderType,
     Position,
     Side,
-    TradeRecord,
 )
 
 

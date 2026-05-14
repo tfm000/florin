@@ -19,13 +19,10 @@ from analysis.groq_analyser import GroqAnalyser
 from analysis.openrouter_analyser import OpenRouterAnalyser
 from config.settings import Settings
 from core.models import (
-    AnalysisResult,
-    AnalysisType,
     Recommendation,
 )
 from dashboard.routes.llm_models import _create_temp_analyser
-from tests.test_analysis import make_alert, make_filings, make_mock_analyser, make_sentiment
-
+from tests.test_analysis import make_alert, make_mock_analyser, make_sentiment
 
 # =============================================================================
 # Factory tests
@@ -103,7 +100,9 @@ class TestConsensusEdgeCases:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.mode == "consensus"
@@ -131,7 +130,9 @@ class TestConsensusEdgeCases:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.mode == "consensus"
@@ -157,7 +158,9 @@ class TestConsensusEdgeCases:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.mode == "consensus"

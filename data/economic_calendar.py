@@ -187,12 +187,18 @@ _AV_REFRESH_INTERVAL = 86400  # 24 hours — macro data doesn't change intraday;
 
 # Map indicator_key → BIS country code for rate history lookups
 _INDICATOR_TO_BIS: dict[str, str] = {
-    "us_rate": "US", "fed_rate": "US",
-    "xm_rate": "XM", "ecb_rate": "XM",
-    "gb_rate": "GB", "jp_rate": "JP",
-    "ca_rate": "CA", "boc_rate": "CA",
-    "au_rate": "AU", "nz_rate": "NZ",
-    "ch_rate": "CH", "se_rate": "SE",
+    "us_rate": "US",
+    "fed_rate": "US",
+    "xm_rate": "XM",
+    "ecb_rate": "XM",
+    "gb_rate": "GB",
+    "jp_rate": "JP",
+    "ca_rate": "CA",
+    "boc_rate": "CA",
+    "au_rate": "AU",
+    "nz_rate": "NZ",
+    "ch_rate": "CH",
+    "se_rate": "SE",
     "no_rate": "NO",
 }
 
@@ -291,7 +297,9 @@ class EconomicCalendarService:
         # 0s delay fails 4/5. Using 1 req/1.5sec pacing.
         # Note: this quota is shared with sentiment/alphavantage_source.py.
         self._av_limiter: AsyncRateLimiter = AsyncRateLimiter(
-            max_requests=1, window_seconds=1.5, name="AV-EconCalendar",
+            max_requests=1,
+            window_seconds=1.5,
+            name="AV-EconCalendar",
         )
         # Seed the limiter so even the first request waits (prevents burst on startup)
         self._av_limiter._last_request_time = time.monotonic()
@@ -307,7 +315,9 @@ class EconomicCalendarService:
     # -----------------------------------------------------------------------
 
     async def get_events(
-        self, start_date: str = "", end_date: str = "",
+        self,
+        start_date: str = "",
+        end_date: str = "",
     ) -> list[dict]:
         """Read cached economic events from DB, filtered by date range.
 
@@ -355,7 +365,9 @@ class EconomicCalendarService:
         ]
 
     async def get_indicator_history(
-        self, indicator_key: str, months: int = 36,
+        self,
+        indicator_key: str,
+        months: int = 36,
     ) -> list[dict]:
         """Return historical readings for a specific indicator.
 
@@ -392,7 +404,9 @@ class EconomicCalendarService:
         return []
 
     async def _read_history_from_db(
-        self, indicator_key: str, limit: int,
+        self,
+        indicator_key: str,
+        limit: int,
     ) -> list[dict]:
         """Read historical readings for an indicator from the DB cache.
 
@@ -525,21 +539,25 @@ class EconomicCalendarService:
             except ValueError:
                 continue
 
-            events.append(EconomicEventORM(
-                event_key=f"fomc_decision_{date_str}",
-                date=date_str,
-                event="FOMC Rate Decision",
-                country="US",
-                country_name="United States",
-                institution="Federal Reserve",
-                category="Monetary Policy",
-                importance="high",
-                description="Federal Open Market Committee interest rate decision and policy statement.",
-                frequency="8x/year",
-                source="fed_rss",
-                indicator_key="fed_rate",
-                fetched_at=datetime.now(UTC),
-            ))
+            events.append(
+                EconomicEventORM(
+                    event_key=f"fomc_decision_{date_str}",
+                    date=date_str,
+                    event="FOMC Rate Decision",
+                    country="US",
+                    country_name="United States",
+                    institution="Federal Reserve",
+                    category="Monetary Policy",
+                    importance="high",
+                    description=(
+                        "Federal Open Market Committee interest rate decision and policy statement."
+                    ),
+                    frequency="8x/year",
+                    source="fed_rss",
+                    indicator_key="fed_rate",
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
         return events
 
@@ -589,24 +607,26 @@ class EconomicCalendarService:
                     continue
 
                 rate_str = f"{rate_val:.2f}%"
-                events.append(EconomicEventORM(
-                    event_key=f"ecb_rate_{date_str}",
-                    date=date_str,
-                    event="ECB Main Refinancing Rate",
-                    country="EU",
-                    country_name="Eurozone",
-                    institution="European Central Bank",
-                    category="Monetary Policy",
-                    importance="high",
-                    actual=rate_str,
-                    previous=prev_rate,
-                    unit="%",
-                    description="ECB main refinancing operations rate (minimum bid rate).",
-                    frequency="6-week cycle",
-                    source="ecb_api",
-                    indicator_key="ecb_rate",
-                    fetched_at=datetime.now(UTC),
-                ))
+                events.append(
+                    EconomicEventORM(
+                        event_key=f"ecb_rate_{date_str}",
+                        date=date_str,
+                        event="ECB Main Refinancing Rate",
+                        country="EU",
+                        country_name="Eurozone",
+                        institution="European Central Bank",
+                        category="Monetary Policy",
+                        importance="high",
+                        actual=rate_str,
+                        previous=prev_rate,
+                        unit="%",
+                        description="ECB main refinancing operations rate (minimum bid rate).",
+                        frequency="6-week cycle",
+                        source="ecb_api",
+                        indicator_key="ecb_rate",
+                        fetched_at=datetime.now(UTC),
+                    )
+                )
                 prev_rate = rate_str
 
         except (KeyError, IndexError, TypeError, ValueError):
@@ -641,24 +661,26 @@ class EconomicCalendarService:
 
             # Only create event on rate changes (or first observation)
             if rate_str != prev_rate:
-                events.append(EconomicEventORM(
-                    event_key=f"boc_rate_{date_str}",
-                    date=date_str,
-                    event="BOC Policy Rate Decision",
-                    country="CA",
-                    country_name="Canada",
-                    institution="Bank of Canada",
-                    category="Monetary Policy",
-                    importance="high",
-                    actual=rate_str,
-                    previous=prev_rate,
-                    unit="%",
-                    description="Bank of Canada overnight rate target.",
-                    frequency="8x/year",
-                    source="boc_api",
-                    indicator_key="boc_rate",
-                    fetched_at=datetime.now(UTC),
-                ))
+                events.append(
+                    EconomicEventORM(
+                        event_key=f"boc_rate_{date_str}",
+                        date=date_str,
+                        event="BOC Policy Rate Decision",
+                        country="CA",
+                        country_name="Canada",
+                        institution="Bank of Canada",
+                        category="Monetary Policy",
+                        importance="high",
+                        actual=rate_str,
+                        previous=prev_rate,
+                        unit="%",
+                        description="Bank of Canada overnight rate target.",
+                        frequency="8x/year",
+                        source="boc_api",
+                        indicator_key="boc_rate",
+                        fetched_at=datetime.now(UTC),
+                    )
+                )
             prev_rate = rate_str
 
         return events
@@ -684,23 +706,25 @@ class EconomicCalendarService:
             meta = G10_COUNTRIES.get(code, {})
             rate_str = f"{r['rate']:.2f}%"
 
-            events.append(EconomicEventORM(
-                event_key=f"bis_{code.lower()}_rate_{eff_date}",
-                date=eff_date,
-                event=f"{meta.get('central_bank', code)} Policy Rate",
-                country=code if code != "XM" else "EU",
-                country_name=meta.get("country", ""),
-                institution=meta.get("central_bank", ""),
-                category="Monetary Policy",
-                importance="high",
-                actual=rate_str,
-                unit="%",
-                description=f"Policy rate for {meta.get('country', code)}.",
-                frequency="Varies",
-                source="bis",
-                indicator_key=f"{code.lower()}_rate",
-                fetched_at=datetime.now(UTC),
-            ))
+            events.append(
+                EconomicEventORM(
+                    event_key=f"bis_{code.lower()}_rate_{eff_date}",
+                    date=eff_date,
+                    event=f"{meta.get('central_bank', code)} Policy Rate",
+                    country=code if code != "XM" else "EU",
+                    country_name=meta.get("country", ""),
+                    institution=meta.get("central_bank", ""),
+                    category="Monetary Policy",
+                    importance="high",
+                    actual=rate_str,
+                    unit="%",
+                    description=f"Policy rate for {meta.get('country', code)}.",
+                    frequency="Varies",
+                    source="bis",
+                    indicator_key=f"{code.lower()}_rate",
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
         return events
 
@@ -762,7 +786,8 @@ class EconomicCalendarService:
                         day = d_match.group(2) or d_match.group(1)
                         try:
                             dt = datetime.strptime(
-                                f"{month_str} {day} {year}", "%B %d %Y",
+                                f"{month_str} {day} {year}",
+                                "%B %d %Y",
                             )
                             date_str = dt.strftime("%Y-%m-%d")
                         except ValueError:
@@ -771,22 +796,24 @@ class EconomicCalendarService:
 
                         if date_str >= today and date_str not in seen:
                             seen.add(date_str)
-                            events.append(EconomicEventORM(
-                                event_key=f"fomc_meeting_{date_str}",
-                                date=date_str,
-                                event="FOMC Meeting",
-                                country="US",
-                                country_name="United States",
-                                institution="Federal Reserve",
-                                category="Monetary Policy",
-                                importance="high",
-                                actual="",
-                                description="Federal Open Market Committee policy meeting.",
-                                frequency="8x/year",
-                                source="fed_calendar",
-                                indicator_key="fed_rate",
-                                fetched_at=datetime.now(UTC),
-                            ))
+                            events.append(
+                                EconomicEventORM(
+                                    event_key=f"fomc_meeting_{date_str}",
+                                    date=date_str,
+                                    event="FOMC Meeting",
+                                    country="US",
+                                    country_name="United States",
+                                    institution="Federal Reserve",
+                                    category="Monetary Policy",
+                                    importance="high",
+                                    actual="",
+                                    description="Federal Open Market Committee policy meeting.",
+                                    frequency="8x/year",
+                                    source="fed_calendar",
+                                    indicator_key="fed_rate",
+                                    fetched_at=datetime.now(UTC),
+                                )
+                            )
                         j += 2
                         continue
                 j += 1
@@ -831,21 +858,23 @@ class EconomicCalendarService:
                 continue
             seen.add(date_str)
 
-            events.append(EconomicEventORM(
-                event_key=f"ecb_gc_{date_str}",
-                date=date_str,
-                event="ECB Governing Council Meeting",
-                country="EU",
-                country_name="Eurozone",
-                institution="European Central Bank",
-                category="Monetary Policy",
-                importance="high",
-                description="ECB Governing Council monetary policy meeting.",
-                frequency="6-week cycle",
-                source="ecb_calendar",
-                indicator_key="ecb_rate",
-                fetched_at=datetime.now(UTC),
-            ))
+            events.append(
+                EconomicEventORM(
+                    event_key=f"ecb_gc_{date_str}",
+                    date=date_str,
+                    event="ECB Governing Council Meeting",
+                    country="EU",
+                    country_name="Eurozone",
+                    institution="European Central Bank",
+                    category="Monetary Policy",
+                    importance="high",
+                    description="ECB Governing Council monetary policy meeting.",
+                    frequency="6-week cycle",
+                    source="ecb_calendar",
+                    indicator_key="ecb_rate",
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
         return events
 
@@ -883,21 +912,23 @@ class EconomicCalendarService:
                 continue
             seen.add(date_str)
 
-            events.append(EconomicEventORM(
-                event_key=f"boe_mpc_{date_str}",
-                date=date_str,
-                event="BOE MPC Meeting",
-                country="GB",
-                country_name="United Kingdom",
-                institution="Bank of England",
-                category="Monetary Policy",
-                importance="high",
-                description="Bank of England Monetary Policy Committee interest rate decision.",
-                frequency="8x/year",
-                source="boe_calendar",
-                indicator_key="gb_rate",
-                fetched_at=datetime.now(UTC),
-            ))
+            events.append(
+                EconomicEventORM(
+                    event_key=f"boe_mpc_{date_str}",
+                    date=date_str,
+                    event="BOE MPC Meeting",
+                    country="GB",
+                    country_name="United Kingdom",
+                    institution="Bank of England",
+                    category="Monetary Policy",
+                    importance="high",
+                    description="Bank of England Monetary Policy Committee interest rate decision.",
+                    frequency="8x/year",
+                    source="boe_calendar",
+                    indicator_key="gb_rate",
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
         return events
 
@@ -937,21 +968,23 @@ class EconomicCalendarService:
 
                 if date_str > today and date_str not in seen:
                     seen.add(date_str)
-                    events.append(EconomicEventORM(
-                        event_key=f"boj_mpm_{date_str}",
-                        date=date_str,
-                        event="BOJ Monetary Policy Meeting",
-                        country="JP",
-                        country_name="Japan",
-                        institution="Bank of Japan",
-                        category="Monetary Policy",
-                        importance="high",
-                        description="Bank of Japan Monetary Policy Meeting.",
-                        frequency="8x/year",
-                        source="boj_calendar",
-                        indicator_key="jp_rate",
-                        fetched_at=datetime.now(UTC),
-                    ))
+                    events.append(
+                        EconomicEventORM(
+                            event_key=f"boj_mpm_{date_str}",
+                            date=date_str,
+                            event="BOJ Monetary Policy Meeting",
+                            country="JP",
+                            country_name="Japan",
+                            institution="Bank of Japan",
+                            category="Monetary Policy",
+                            importance="high",
+                            description="Bank of Japan Monetary Policy Meeting.",
+                            frequency="8x/year",
+                            source="boj_calendar",
+                            indicator_key="jp_rate",
+                            fetched_at=datetime.now(UTC),
+                        )
+                    )
                     break  # Use the first valid year match
 
         return events
@@ -986,7 +1019,9 @@ class EconomicCalendarService:
         await self._upsert_events(all_events)
 
     async def _fetch_av_indicator(
-        self, key: str, cfg: dict[str, str],
+        self,
+        key: str,
+        cfg: dict[str, str],
     ) -> list[EconomicEventORM]:
         """Fetch a single AV indicator time series and create events.
 
@@ -1036,29 +1071,33 @@ class EconomicCalendarService:
                 if pv and pv != ".":
                     prev_value = _format_av_value(pv, unit)
 
-            events.append(EconomicEventORM(
-                event_key=f"{key}_{date_str}",
-                date=date_str,
-                event=cfg["event"],
-                country="US",
-                country_name="United States",
-                institution=cfg["institution"],
-                category=cfg["category"],
-                importance=cfg["importance"],
-                actual=formatted,
-                previous=prev_value,
-                unit=cfg["unit"],
-                description=cfg["description"],
-                frequency=cfg["frequency"],
-                source="alpha_vantage",
-                indicator_key=key,
-                fetched_at=datetime.now(UTC),
-            ))
+            events.append(
+                EconomicEventORM(
+                    event_key=f"{key}_{date_str}",
+                    date=date_str,
+                    event=cfg["event"],
+                    country="US",
+                    country_name="United States",
+                    institution=cfg["institution"],
+                    category=cfg["category"],
+                    importance=cfg["importance"],
+                    actual=formatted,
+                    previous=prev_value,
+                    unit=cfg["unit"],
+                    description=cfg["description"],
+                    frequency=cfg["frequency"],
+                    source="alpha_vantage",
+                    indicator_key=key,
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
         return events
 
     async def _fetch_av_history(
-        self, function: str, limit: int,
+        self,
+        function: str,
+        limit: int,
     ) -> list[dict]:
         """Fetch raw historical readings from Alpha Vantage for a chart.
 
@@ -1095,7 +1134,9 @@ class EconomicCalendarService:
         return result
 
     async def _fetch_bis_rate_history(
-        self, bis_code: str, limit: int,
+        self,
+        bis_code: str,
+        limit: int,
     ) -> list[dict]:
         """Fetch monthly policy rate timeseries from the BIS CBPOL API.
 
@@ -1164,9 +1205,7 @@ class EconomicCalendarService:
                 for ev in events:
                     # Check if exists
                     result = await session.execute(
-                        select(EconomicEventORM).where(
-                            EconomicEventORM.event_key == ev.event_key
-                        )
+                        select(EconomicEventORM).where(EconomicEventORM.event_key == ev.event_key)
                     )
                     existing = result.scalar()
 

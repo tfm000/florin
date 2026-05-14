@@ -42,13 +42,14 @@ async def _execute_buy(
 
         if result.success:
             msg = format_trade_confirmation(
-                ticker, "BUY", result.filled_quantity, result.filled_price,
+                ticker,
+                "BUY",
+                result.filled_quantity,
+                result.filled_price,
             )
             await query.message.answer(msg)
         else:
-            await query.message.answer(
-                f"❌ Order failed: {escape_md(result.error_message)}"
-            )
+            await query.message.answer(f"❌ Order failed: {escape_md(result.error_message)}")
     except (ConnectionError, TimeoutError) as e:
         logger.error("Broker connection error placing buy for %s: %s", ticker, e)
         await query.message.answer(f"❌ Broker error: {escape_md(str(e))}")
@@ -135,13 +136,14 @@ def register_callback_handlers(
 
             if result.success:
                 msg = format_trade_confirmation(
-                    ticker, "SELL", result.filled_quantity, result.filled_price,
+                    ticker,
+                    "SELL",
+                    result.filled_quantity,
+                    result.filled_price,
                 )
                 await query.message.answer(msg)
             else:
-                await query.message.answer(
-                    f"❌ Sell failed: {escape_md(result.error_message)}"
-                )
+                await query.message.answer(f"❌ Sell failed: {escape_md(result.error_message)}")
 
         except (ConnectionError, TimeoutError) as e:
             logger.error("Broker error selling %s: %s", ticker, e)
@@ -149,7 +151,6 @@ def register_callback_handlers(
         except ValueError as e:
             logger.error("Invalid sell order for %s: %s", ticker, e)
             await query.message.answer(f"❌ Order error: {escape_md(str(e))}")
-
 
     @dp.callback_query(lambda c: c.data and c.data.startswith("screener_buy:"))
     async def cb_screener_buy(query: CallbackQuery) -> None:

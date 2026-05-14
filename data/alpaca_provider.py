@@ -19,10 +19,12 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 import websockets
@@ -93,6 +95,7 @@ class AlpacaProvider(MarketDataProvider):
             try:
                 remaining_int = int(remaining)
                 import time as _time
+
                 reset_ts = int(reset)
                 now_ts = int(_time.time())
                 window_remaining = max(reset_ts - now_ts, 1)
@@ -102,7 +105,8 @@ class AlpacaProvider(MarketDataProvider):
                     delay = window_remaining
                     logger.warning(
                         "Alpaca rate limit nearly exhausted (%d remaining), waiting %ds",
-                        remaining_int, delay,
+                        remaining_int,
+                        delay,
                     )
                 elif remaining_int <= 20:
                     # Getting low — spread remaining requests across the window
@@ -138,10 +142,8 @@ class AlpacaProvider(MarketDataProvider):
 
         if self._ws_task and not self._ws_task.done():
             self._ws_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_task
-            except asyncio.CancelledError:
-                pass
 
         if self._ws:
             await self._ws.close()
@@ -246,15 +248,17 @@ class AlpacaProvider(MarketDataProvider):
 
             bars = []
             for bar in data.get("bars", []):
-                bars.append(BarData(
-                    ticker=ticker,
-                    timestamp=datetime.fromisoformat(bar["t"].replace("Z", "+00:00")),
-                    open=bar["o"],
-                    high=bar["h"],
-                    low=bar["l"],
-                    close=bar["c"],
-                    volume=bar["v"],
-                ))
+                bars.append(
+                    BarData(
+                        ticker=ticker,
+                        timestamp=datetime.fromisoformat(bar["t"].replace("Z", "+00:00")),
+                        open=bar["o"],
+                        high=bar["h"],
+                        low=bar["l"],
+                        close=bar["c"],
+                        volume=bar["v"],
+                    )
+                )
             return bars
 
         except Exception:
@@ -283,8 +287,11 @@ class AlpacaProvider(MarketDataProvider):
             raise RuntimeError("Alpaca provider not connected")
 
         if not start:
-            from core.market_hours import US_EASTERN, MARKET_OPEN
-            from datetime import datetime as dt, date
+            from datetime import date
+            from datetime import datetime as dt
+
+            from core.market_hours import MARKET_OPEN, US_EASTERN
+
             today_open = dt.combine(date.today(), MARKET_OPEN, tzinfo=US_EASTERN)
             start = today_open.isoformat()
 
@@ -339,8 +346,11 @@ class AlpacaProvider(MarketDataProvider):
             raise RuntimeError("Alpaca provider not connected")
 
         if not start:
-            from core.market_hours import US_EASTERN, MARKET_OPEN
-            from datetime import datetime as dt, date
+            from datetime import date
+            from datetime import datetime as dt
+
+            from core.market_hours import MARKET_OPEN, US_EASTERN
+
             today_open = dt.combine(date.today(), MARKET_OPEN, tzinfo=US_EASTERN)
             start = today_open.isoformat()
 
@@ -414,11 +424,13 @@ class AlpacaProvider(MarketDataProvider):
             exchange = item.get("exchange", "")
             if exchange not in target_exchanges:
                 continue
-            assets.append({
-                "symbol": item["symbol"],
-                "name": item.get("name", ""),
-                "exchange": exchange,
-            })
+            assets.append(
+                {
+                    "symbol": item["symbol"],
+                    "name": item.get("name", ""),
+                    "exchange": exchange,
+                }
+            )
 
         logger.info("Alpaca: fetched %d tradeable US equity assets", len(assets))
         return assets
@@ -445,7 +457,9 @@ class AlpacaProvider(MarketDataProvider):
 
         # Fetch snapshots in batches with adaptive rate limiting
         matched_stocks: list[StockInfo] = []
-        total_batches = (len(all_tickers) + REST_SNAPSHOT_BATCH_SIZE - 1) // REST_SNAPSHOT_BATCH_SIZE
+        total_batches = (
+            len(all_tickers) + REST_SNAPSHOT_BATCH_SIZE - 1
+        ) // REST_SNAPSHOT_BATCH_SIZE
 
         # Filter out warrants, preferred shares, and other non-standard
         # tickers that Alpaca rejects (e.g. MOBBW, CIG-C, DJTWW).
@@ -472,14 +486,16 @@ class AlpacaProvider(MarketDataProvider):
                         continue
                     if price_min <= quote.price <= price_max:
                         info = meta.get(ticker, {})
-                        matched_stocks.append(StockInfo(
-                            ticker=ticker,
-                            name=info.get("name", ""),
-                            exchange=info.get("exchange", ""),
-                            last_price=quote.price,
-                            avg_volume=quote.volume,
-                            in_universe=True,
-                        ))
+                        matched_stocks.append(
+                            StockInfo(
+                                ticker=ticker,
+                                name=info.get("name", ""),
+                                exchange=info.get("exchange", ""),
+                                last_price=quote.price,
+                                avg_volume=quote.volume,
+                                in_universe=True,
+                            )
+                        )
                         async with self._cache_lock:
                             self._cache[ticker] = quote
 
@@ -499,7 +515,10 @@ class AlpacaProvider(MarketDataProvider):
 
         logger.info(
             "Alpaca: discovered %d stocks ($%.2f–$%.2f) from %d assets",
-            len(matched_stocks), price_min, price_max, len(all_tickers),
+            len(matched_stocks),
+            price_min,
+            price_max,
+            len(all_tickers),
         )
         return matched_stocks
 
@@ -521,10 +540,8 @@ class AlpacaProvider(MarketDataProvider):
         """Stop the WebSocket background task."""
         if self._ws_task and not self._ws_task.done():
             self._ws_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_task
-            except asyncio.CancelledError:
-                pass
 
     async def stream_bars(self, tickers: list[str]) -> AsyncIterator[BarData]:
         """
@@ -536,7 +553,7 @@ class AlpacaProvider(MarketDataProvider):
             try:
                 bar = await asyncio.wait_for(self._bar_queue.get(), timeout=5.0)
                 yield bar
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     async def update_subscriptions(self, tickers: list[str]) -> None:
@@ -598,11 +615,13 @@ class AlpacaProvider(MarketDataProvider):
         logger.debug("WS welcome: %s", welcome)
 
         # Send auth
-        auth_msg = json.dumps({
-            "action": "auth",
-            "key": self._api_key,
-            "secret": self._api_secret,
-        })
+        auth_msg = json.dumps(
+            {
+                "action": "auth",
+                "key": self._api_key,
+                "secret": self._api_secret,
+            }
+        )
         await ws.send(auth_msg)
 
         # Read auth response
@@ -627,10 +646,12 @@ class AlpacaProvider(MarketDataProvider):
 
         for i in range(0, len(tickers), WS_TICKER_BATCH_SIZE):
             batch = tickers[i : i + WS_TICKER_BATCH_SIZE]
-            msg = json.dumps({
-                "action": "subscribe",
-                "bars": batch,
-            })
+            msg = json.dumps(
+                {
+                    "action": "subscribe",
+                    "bars": batch,
+                }
+            )
             await self._ws.send(msg)
             logger.debug("Subscribed to bars for %d tickers", len(batch))
 
@@ -641,10 +662,12 @@ class AlpacaProvider(MarketDataProvider):
 
         for i in range(0, len(tickers), WS_TICKER_BATCH_SIZE):
             batch = tickers[i : i + WS_TICKER_BATCH_SIZE]
-            msg = json.dumps({
-                "action": "unsubscribe",
-                "bars": batch,
-            })
+            msg = json.dumps(
+                {
+                    "action": "unsubscribe",
+                    "bars": batch,
+                }
+            )
             await self._ws.send(msg)
 
     async def _handle_ws_message(self, raw: str | bytes) -> None:
@@ -700,7 +723,9 @@ class AlpacaProvider(MarketDataProvider):
                 price=bar_data.close,
                 open_price=existing.open_price if existing else bar_data.open,
                 high=max(existing.high, bar_data.high) if existing else bar_data.high,
-                low=min(existing.low, bar_data.low) if existing and existing.low > 0 else bar_data.low,
+                low=min(existing.low, bar_data.low)
+                if existing and existing.low > 0
+                else bar_data.low,
                 prev_close=existing.prev_close if existing else 0.0,
                 volume=(existing.volume if existing else 0) + bar_data.volume,
                 timestamp=bar_data.timestamp,
@@ -720,7 +745,6 @@ class AlpacaProvider(MarketDataProvider):
         """Convert Alpaca snapshot JSON to StockQuote."""
         try:
             latest_trade = snap.get("latestTrade", {})
-            minute_bar = snap.get("minuteBar", {})
             daily_bar = snap.get("dailyBar", {})
             prev_daily = snap.get("prevDailyBar", {})
 

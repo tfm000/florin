@@ -4,28 +4,28 @@ import numpy as np
 import pytest
 
 from stats.core import (
-    simple_returns,
-    log_returns,
     annualized_return,
     annualized_volatility,
-    sharpe_ratio,
-    sortino_ratio,
-    max_drawdown,
-    max_drawdown_from_log_returns,
-    historical_var,
-    historical_cvar,
-    var_cvar,
-    distribution_stats,
-    simple_pct_change,
-    total_return,
-    period_return,
+    compute_full_stats,
     compute_return_stats,
     compute_risk_adjusted,
-    compute_full_stats,
+    distribution_stats,
+    historical_cvar,
+    historical_var,
+    log_returns,
+    max_drawdown,
+    max_drawdown_from_log_returns,
+    period_return,
+    sharpe_ratio,
+    simple_pct_change,
+    simple_returns,
+    sortino_ratio,
+    total_return,
+    var_cvar,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def prices():
@@ -40,6 +40,7 @@ def deterministic_prices():
 
 
 # ── Return computation ───────────────────────────────────────────────
+
 
 class TestReturns:
     def test_simple_returns_basic(self, prices):
@@ -62,13 +63,14 @@ class TestReturns:
         assert len(log_returns(np.array([100.0]))) == 0
 
     def test_simple_vs_log_close_for_small_returns(self, deterministic_prices):
-        s = simple_returns(deterministic_prices)
-        l = log_returns(deterministic_prices)
+        simple_r = simple_returns(deterministic_prices)
+        log_r = log_returns(deterministic_prices)
         # For small returns, simple ≈ log
-        np.testing.assert_allclose(s, l, atol=0.001)
+        np.testing.assert_allclose(simple_r, log_r, atol=0.001)
 
 
 # ── Annualised metrics ───────────────────────────────────────────────
+
 
 class TestAnnualised:
     def test_annualized_return_zero_for_empty(self):
@@ -92,6 +94,7 @@ class TestAnnualised:
 
 
 # ── Sharpe / Sortino ─────────────────────────────────────────────────
+
 
 class TestRiskAdjusted:
     def test_sharpe_with_zero_rf(self, prices):
@@ -132,12 +135,13 @@ class TestRiskAdjusted:
         # There are negative returns, so sortino should be non-zero
         excess = rets
         downside = np.minimum(excess, 0.0)
-        ds_std = np.sqrt(np.mean(downside ** 2))
+        ds_std = np.sqrt(np.mean(downside**2))
         expected = float(np.mean(excess) / ds_std * np.sqrt(252))
         assert abs(s - expected) < 1e-8
 
 
 # ── Drawdown ─────────────────────────────────────────────────────────
+
 
 class TestDrawdown:
     def test_max_drawdown_from_prices(self):
@@ -164,6 +168,7 @@ class TestDrawdown:
 
 
 # ── VaR / CVaR ───────────────────────────────────────────────────────
+
 
 class TestVaR:
     def test_historical_var_95(self):
@@ -194,6 +199,7 @@ class TestVaR:
 
 # ── Distribution stats ──────────────────────────────────────────────
 
+
 class TestDistribution:
     def test_distribution_uses_sample_std(self):
         rets_pct = np.array([1.0, -1.0, 2.0, -2.0, 1.5])
@@ -213,6 +219,7 @@ class TestDistribution:
 
 
 # ── Period return ────────────────────────────────────────────────────
+
 
 class TestSimplePctChange:
     """Tests for simple_pct_change — single source of truth for (end/start - 1) * 100."""
@@ -330,6 +337,7 @@ class TestPeriodReturn:
 
 # ── Composite ────────────────────────────────────────────────────────
 
+
 class TestComposite:
     def test_compute_return_stats(self, prices):
         rets = simple_returns(prices)
@@ -358,6 +366,7 @@ class TestComposite:
 
 # ── Parametric (Student-t) ──────────────────────────────────────────
 
+
 class TestParametric:
     """Tests for stats.parametric.fit_student_t."""
 
@@ -369,7 +378,7 @@ class TestParametric:
         assert result is None
 
     def test_fit_returns_parametric_stats(self):
-        from stats.parametric import fit_student_t, ParametricStats
+        from stats.parametric import ParametricStats, fit_student_t
 
         # Seed 1 produces non-degenerate copulax Student-t fits
         np.random.seed(1)
@@ -422,6 +431,7 @@ class TestParametric:
 
 
 # ── Return type conventions ─────────────────────────────────────────
+
 
 class TestReturnTypeConventions:
     """Verify that the codebase uses simple returns for standard statistics

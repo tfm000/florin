@@ -9,11 +9,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aiogram import Dispatcher, F
+from aiogram import Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
-
-import re
 
 from config.settings import Settings
 from core.models import OrderRequest, Side
@@ -69,11 +67,12 @@ def register_command_handlers(
         if not _authorised(message):
             return
 
+        price_range = escape_md(f"${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}")
         lines = [
             "📡 *System Status*",
             escape_md("━" * 25),
             f"🔧 Mode: {escape_md(settings.llm_mode.value)}",
-            f"💹 Price range: {escape_md(f'${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}')}",
+            f"💹 Price range: {price_range}",
             f"📊 Momentum threshold: {escape_md(f'{settings.scan_momentum_threshold:.1f}%')}",
             f"⏱ Scan interval: {escape_md(f'{settings.scan_interval_seconds}s')}",
             f"🤖 Default LLM: {escape_md(settings.llm_default_provider.value)}",
@@ -126,11 +125,12 @@ def register_command_handlers(
 
         providers = settings.get_enabled_llm_providers()
         provider_str = escape_md(", ".join(p.value for p in providers))
+        price_range = escape_md(f"${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}")
 
         lines = [
             "⚙️ *Settings*",
             escape_md("━" * 25),
-            f"Price range: {escape_md(f'${settings.scan_price_min:.2f}–${settings.scan_price_max:.2f}')}",
+            f"Price range: {price_range}",
             f"Momentum threshold: {escape_md(f'{settings.scan_momentum_threshold:.1f}%')}",
             f"Min volume: {escape_md(f'{settings.scan_min_volume:,}')}",
             f"Scan interval: {escape_md(f'{settings.scan_interval_seconds}s')}",
@@ -192,7 +192,10 @@ def register_command_handlers(
             result = await broker.place_order(order)
             if result.success:
                 msg = format_trade_confirmation(
-                    ticker, "BUY", result.filled_quantity, result.filled_price,
+                    ticker,
+                    "BUY",
+                    result.filled_quantity,
+                    result.filled_price,
                 )
                 await message.answer(msg)
             else:
@@ -215,9 +218,7 @@ def register_command_handlers(
                     order_id = order.get("id", "")
                     if order_id and await broker.cancel_order(order_id):
                         cancelled += 1
-                lines.append(
-                    f"Cancelled {escape_md(str(cancelled))} pending orders"
-                )
+                lines.append(f"Cancelled {escape_md(str(cancelled))} pending orders")
             except Exception as e:
                 lines.append(f"Error cancelling orders: {escape_md(str(e))}")
 

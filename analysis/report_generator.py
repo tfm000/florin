@@ -109,8 +109,12 @@ class ReportGenerator:
             analysis_types = ["announcement", "sentiment"]
 
         # Select analysers (may differ per role)
-        announcement_analyser = self._select_analyser("announcement") if "announcement" in analysis_types else None
-        sentiment_analyser = self._select_analyser("sentiment") if "sentiment" in analysis_types else None
+        announcement_analyser = (
+            self._select_analyser("announcement") if "announcement" in analysis_types else None
+        )
+        sentiment_analyser = (
+            self._select_analyser("sentiment") if "sentiment" in analysis_types else None
+        )
 
         # Use whichever is available for logging
         any_analyser = announcement_analyser or sentiment_analyser
@@ -128,7 +132,8 @@ class ReportGenerator:
 
         logger.info(
             "Generating single-LLM report for %s (types=%s)",
-            alert.ticker, analysis_types,
+            alert.ticker,
+            analysis_types,
         )
 
         # Build alert context for sentiment prompts
@@ -147,20 +152,27 @@ class ReportGenerator:
 
         if "announcement" in analysis_types and filings and announcement_analyser:
             tasks["announcement"] = asyncio.create_task(
-                announcement_analyser.analyse_announcements(alert.ticker, filings, self._user_context)
+                announcement_analyser.analyse_announcements(
+                    alert.ticker, filings, self._user_context
+                )
             )
 
         if "sentiment" in analysis_types and sentiment_analyser:
             tasks["sentiment"] = asyncio.create_task(
                 sentiment_analyser.analyse_sentiment(
-                    alert.ticker, sentiment, alert_context, self._user_context,
+                    alert.ticker,
+                    sentiment,
+                    alert_context,
+                    self._user_context,
                 )
             )
 
         if tasks:
             results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-            for key, result in zip(tasks.keys(), results):
-                used_analyser = announcement_analyser if key == "announcement" else sentiment_analyser
+            for key, result in zip(tasks.keys(), results, strict=True):
+                used_analyser = (
+                    announcement_analyser if key == "announcement" else sentiment_analyser
+                )
                 if isinstance(result, Exception):
                     logger.error("Analysis %s failed: %s", key, result)
                     error_result = AnalysisResult(
@@ -191,8 +203,12 @@ class ReportGenerator:
             filings=filings or [],
             announcement_analysis=announcement_result,
             sentiment_analysis=sentiment_result,
-            announcement_score=announcement_result.score if announcement_result and not announcement_result.error else None,
-            sentiment_score=sentiment_result.score if sentiment_result and not sentiment_result.error else None,
+            announcement_score=announcement_result.score
+            if announcement_result and not announcement_result.error
+            else None,
+            sentiment_score=sentiment_result.score
+            if sentiment_result and not sentiment_result.error
+            else None,
             final_recommendation=final_rec,
             final_confidence=final_conf,
             mode="single",

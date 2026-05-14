@@ -5,10 +5,9 @@ from __future__ import annotations
 import pytest
 
 from broker.paper_broker import PaperBroker
-from broker.trading212 import Trading212Broker, RateLimiter
+from broker.trading212 import RateLimiter, Trading212Broker
 from config.settings import Settings
 from core.models import OrderRequest, OrderType, Side
-
 
 # =============================================================================
 # Paper Broker tests
@@ -115,7 +114,8 @@ class TestPaperBroker:
 
         # Buy $100 worth
         order = OrderRequest(
-            ticker="TEST", side=Side.BUY,
+            ticker="TEST",
+            side=Side.BUY,
             target_value=100.0,
         )
         result = await broker.place_order(order)
@@ -161,8 +161,11 @@ class TestPaperBroker:
 
         # Limit order goes to pending
         order = OrderRequest(
-            ticker="TEST", side=Side.BUY, order_type=OrderType.LIMIT,
-            quantity=10.0, limit_price=1.50,
+            ticker="TEST",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10.0,
+            limit_price=1.50,
         )
         result = await broker.place_order(order)
         assert result.success is True
@@ -198,6 +201,7 @@ class TestTrading212Broker:
     def test_ticker_mapping(self) -> None:
         settings = Settings(t212_api_key="test", t212_api_secret="test")
         from unittest.mock import MagicMock
+
         db = MagicMock()
         broker = Trading212Broker(settings, db)
 
@@ -208,20 +212,27 @@ class TestTrading212Broker:
 
     def test_name_and_live_flag(self) -> None:
         from unittest.mock import MagicMock
+
         db = MagicMock()
 
         demo = Trading212Broker(Settings(t212_api_key="k", t212_api_secret="s"), db)
         assert "DEMO" in demo.name
         assert demo.is_live is False
 
-        live = Trading212Broker(Settings(
-            t212_api_key="k", t212_api_secret="s", t212_environment="live",
-        ), db)
+        live = Trading212Broker(
+            Settings(
+                t212_api_key="k",
+                t212_api_secret="s",
+                t212_environment="live",
+            ),
+            db,
+        )
         assert "LIVE" in live.name
         assert live.is_live is True
 
     def test_circuit_breaker_initially_closed(self) -> None:
         from unittest.mock import MagicMock
+
         db = MagicMock()
         broker = Trading212Broker(Settings(t212_api_key="k", t212_api_secret="s"), db)
         assert broker._is_circuit_open() is False
@@ -242,6 +253,7 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_different_endpoints_independent(self) -> None:
         import time
+
         limiter = RateLimiter()
 
         start = time.monotonic()

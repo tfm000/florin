@@ -19,7 +19,6 @@ import pytest
 from core.models import WebSearchResult
 from sentiment.web_search_source import WebSearchSource
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -35,14 +34,16 @@ def _make_ddgs_results(count: int = 3) -> list[dict]:
     """Create mock DuckDuckGo news results."""
     results = []
     for i in range(count):
-        results.append({
-            "title": f"Stock News {i + 1}",
-            "body": f"This is the snippet for article {i + 1}.",
-            "url": f"https://example.com/article-{i + 1}",
-            "source": f"Source {i + 1}",
-            "date": f"2026-03-{20 + i}T12:00:00+00:00",
-            "image": f"https://example.com/img-{i + 1}.jpg",
-        })
+        results.append(
+            {
+                "title": f"Stock News {i + 1}",
+                "body": f"This is the snippet for article {i + 1}.",
+                "url": f"https://example.com/article-{i + 1}",
+                "source": f"Source {i + 1}",
+                "date": f"2026-03-{20 + i}T12:00:00+00:00",
+                "image": f"https://example.com/img-{i + 1}.jpg",
+            }
+        )
     return results
 
 

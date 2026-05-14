@@ -77,7 +77,8 @@ class PaperBroker(Broker):
         self._connected = True
         logger.info(
             "Paper broker connected: initial cash = %s %.2f",
-            self._currency, self._initial_cash,
+            self._currency,
+            self._initial_cash,
         )
 
     async def disconnect(self) -> None:
@@ -92,18 +93,10 @@ class PaperBroker(Broker):
     # =========================================================================
 
     async def get_account_summary(self) -> AccountSummary:
-        invested = sum(
-            pos.quantity * pos.avg_price for pos in self._positions.values()
-        )
-        market_value = sum(
-            pos.quantity * pos.current_price for pos in self._positions.values()
-        )
+        invested = sum(pos.quantity * pos.avg_price for pos in self._positions.values())
+        market_value = sum(pos.quantity * pos.current_price for pos in self._positions.values())
         unrealised_pnl = market_value - invested
-        realised_pnl = sum(
-            t.realised_pnl or 0.0
-            for t in self._trades
-            if t.is_closing_trade
-        )
+        realised_pnl = sum(t.realised_pnl or 0.0 for t in self._trades if t.is_closing_trade)
 
         return AccountSummary(
             currency=self._currency,
@@ -147,20 +140,25 @@ class PaperBroker(Broker):
 
         # Limit and stop orders go to pending
         pending_id = uuid4().hex[:12]
-        self._pending_orders.append({
-            "id": pending_id,
-            "ticker": order.ticker,
-            "side": order.side.value,
-            "type": order.order_type.value,
-            "quantity": order.quantity,
-            "limit_price": order.limit_price,
-            "stop_price": order.stop_price,
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        self._pending_orders.append(
+            {
+                "id": pending_id,
+                "ticker": order.ticker,
+                "side": order.side.value,
+                "type": order.order_type.value,
+                "quantity": order.quantity,
+                "limit_price": order.limit_price,
+                "stop_price": order.stop_price,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        )
 
         logger.info(
             "Paper: pending %s %s %s qty=%.4f",
-            order.order_type.value, order.side.value, order.ticker, order.quantity,
+            order.order_type.value,
+            order.side.value,
+            order.ticker,
+            order.quantity,
         )
 
         return OrderResult(
@@ -187,9 +185,7 @@ class PaperBroker(Broker):
     # =========================================================================
 
     async def get_trade_history(self, limit: int = 50) -> list[TradeRecord]:
-        return sorted(
-            self._trades, key=lambda t: t.executed_at, reverse=True
-        )[:limit]
+        return sorted(self._trades, key=lambda t: t.executed_at, reverse=True)[:limit]
 
     # =========================================================================
     # Internal: fill simulation
@@ -228,7 +224,11 @@ class PaperBroker(Broker):
             return await self._execute_sell(order.ticker, quantity, fill_price, total_value)
 
     async def _execute_buy(
-        self, ticker: str, quantity: float, price: float, total_value: float,
+        self,
+        ticker: str,
+        quantity: float,
+        price: float,
+        total_value: float,
     ) -> OrderResult:
         """Execute a paper buy."""
         if total_value > self._cash:
@@ -273,9 +273,11 @@ class PaperBroker(Broker):
         )
         self._trades.append(trade)
         if len(self._trades) > self._max_trade_history:
-            self._trades = self._trades[-self._max_trade_history:]
+            self._trades = self._trades[-self._max_trade_history :]
 
-        logger.info("Paper BUY: %s qty=%.4f @ $%.4f (total=$%.2f)", ticker, quantity, price, total_value)
+        logger.info(
+            "Paper BUY: %s qty=%.4f @ $%.4f (total=$%.2f)", ticker, quantity, price, total_value
+        )
 
         return OrderResult(
             success=True,
@@ -288,7 +290,11 @@ class PaperBroker(Broker):
         )
 
     async def _execute_sell(
-        self, ticker: str, quantity: float, price: float, total_value: float,
+        self,
+        ticker: str,
+        quantity: float,
+        price: float,
+        total_value: float,
     ) -> OrderResult:
         """Execute a paper sell."""
         existing = self._positions.get(ticker)
@@ -330,11 +336,15 @@ class PaperBroker(Broker):
         )
         self._trades.append(trade)
         if len(self._trades) > self._max_trade_history:
-            self._trades = self._trades[-self._max_trade_history:]
+            self._trades = self._trades[-self._max_trade_history :]
 
         logger.info(
             "Paper SELL: %s qty=%.4f @ $%.4f P&L=$%.2f (%.1f%%)",
-            ticker, quantity, price, realised_pnl, realised_pnl_pct,
+            ticker,
+            quantity,
+            price,
+            realised_pnl,
+            realised_pnl_pct,
         )
 
         return OrderResult(

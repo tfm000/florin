@@ -8,7 +8,7 @@ aggregated fundamentals in SQLite so repeat page loads are instant.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 from sqlalchemy import delete, select
@@ -77,10 +77,7 @@ class PortfolioCacheService:
             if not rows:
                 return None
 
-            return_points = [
-                {"date": r.date, "portfolio": r.cumulative_return}
-                for r in rows
-            ]
+            return_points = [{"date": r.date, "portfolio": r.cumulative_return} for r in rows]
 
             # Recompute analytics for the sliced period
             analytics = self._recompute_analytics(return_points, portfolio_id, period)
@@ -145,12 +142,14 @@ class PortfolioCacheService:
         async with self._db.session() as session:
             # Delete existing cache
             await session.execute(
-                delete(PortfolioCacheReturnORM)
-                .where(PortfolioCacheReturnORM.portfolio_id == portfolio_id)
+                delete(PortfolioCacheReturnORM).where(
+                    PortfolioCacheReturnORM.portfolio_id == portfolio_id
+                )
             )
             await session.execute(
-                delete(PortfolioCacheMetaORM)
-                .where(PortfolioCacheMetaORM.portfolio_id == portfolio_id)
+                delete(PortfolioCacheMetaORM).where(
+                    PortfolioCacheMetaORM.portfolio_id == portfolio_id
+                )
             )
 
             # Insert meta row
@@ -158,13 +157,27 @@ class PortfolioCacheService:
                 portfolio_id=portfolio_id,
                 start_date=start_date,
                 end_date=end_date,
-                total_return=summary.get("analytics", {}).get("total_return") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "total_return", None),
-                annualized_vol=summary.get("analytics", {}).get("annualized_vol") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "annualized_vol", None),
-                sharpe=summary.get("analytics", {}).get("sharpe") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "sharpe", None),
-                sortino=summary.get("analytics", {}).get("sortino") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "sortino", None),
-                max_drawdown=summary.get("analytics", {}).get("max_drawdown") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "max_drawdown", None),
-                var_95=summary.get("analytics", {}).get("var_95") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "var_95", None),
-                cvar_95=summary.get("analytics", {}).get("cvar_95") if isinstance(summary.get("analytics"), dict) else getattr(summary.get("analytics"), "cvar_95", None),
+                total_return=summary.get("analytics", {}).get("total_return")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "total_return", None),
+                annualized_vol=summary.get("analytics", {}).get("annualized_vol")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "annualized_vol", None),
+                sharpe=summary.get("analytics", {}).get("sharpe")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "sharpe", None),
+                sortino=summary.get("analytics", {}).get("sortino")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "sortino", None),
+                max_drawdown=summary.get("analytics", {}).get("max_drawdown")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "max_drawdown", None),
+                var_95=summary.get("analytics", {}).get("var_95")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "var_95", None),
+                cvar_95=summary.get("analytics", {}).get("cvar_95")
+                if isinstance(summary.get("analytics"), dict)
+                else getattr(summary.get("analytics"), "cvar_95", None),
                 weighted_pe=summary.get("weighted_pe"),
                 weighted_forward_pe=summary.get("weighted_forward_pe"),
                 weighted_dividend_yield=summary.get("weighted_dividend_yield"),
@@ -183,34 +196,41 @@ class PortfolioCacheService:
                 min_beta=summary.get("min_beta"),
                 holdings_count=summary.get("holdings_count", 0),
                 priceable_count=summary.get("priceable_count", 0),
-                computed_at=datetime.now(timezone.utc),
+                computed_at=datetime.now(UTC),
             )
             session.add(meta)
 
             # Bulk insert return rows
             for r in returns_non_prorated:
-                session.add(PortfolioCacheReturnORM(
-                    id=generate_id(),
-                    portfolio_id=portfolio_id,
-                    date=r["date"],
-                    cumulative_return=r["portfolio"],
-                    prorated=False,
-                ))
+                session.add(
+                    PortfolioCacheReturnORM(
+                        id=generate_id(),
+                        portfolio_id=portfolio_id,
+                        date=r["date"],
+                        cumulative_return=r["portfolio"],
+                        prorated=False,
+                    )
+                )
             for r in returns_prorated:
-                session.add(PortfolioCacheReturnORM(
-                    id=generate_id(),
-                    portfolio_id=portfolio_id,
-                    date=r["date"],
-                    cumulative_return=r["portfolio"],
-                    prorated=True,
-                ))
+                session.add(
+                    PortfolioCacheReturnORM(
+                        id=generate_id(),
+                        portfolio_id=portfolio_id,
+                        date=r["date"],
+                        cumulative_return=r["portfolio"],
+                        prorated=True,
+                    )
+                )
 
             await session.commit()
 
         logger.info(
             "Saved portfolio cache for %s: %s to %s (%d non-prorated, %d prorated returns)",
-            portfolio_id, start_date, end_date,
-            len(returns_non_prorated), len(returns_prorated),
+            portfolio_id,
+            start_date,
+            end_date,
+            len(returns_non_prorated),
+            len(returns_prorated),
         )
 
     # ------------------------------------------------------------------
@@ -221,12 +241,14 @@ class PortfolioCacheService:
         """Delete all cache entries for a portfolio."""
         async with self._db.session() as session:
             await session.execute(
-                delete(PortfolioCacheReturnORM)
-                .where(PortfolioCacheReturnORM.portfolio_id == portfolio_id)
+                delete(PortfolioCacheReturnORM).where(
+                    PortfolioCacheReturnORM.portfolio_id == portfolio_id
+                )
             )
             await session.execute(
-                delete(PortfolioCacheMetaORM)
-                .where(PortfolioCacheMetaORM.portfolio_id == portfolio_id)
+                delete(PortfolioCacheMetaORM).where(
+                    PortfolioCacheMetaORM.portfolio_id == portfolio_id
+                )
             )
             await session.commit()
         logger.debug("Invalidated portfolio cache for %s", portfolio_id)
@@ -258,6 +280,7 @@ class PortfolioCacheService:
 
         try:
             from stats.core import compute_full_stats, total_return
+
             stats = compute_full_stats(prices)
             total_ret = total_return(prices) or 0.0
             return {

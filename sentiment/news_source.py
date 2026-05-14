@@ -6,6 +6,7 @@ Aggregates financial news from yfinance (Yahoo Finance news for ticker).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -58,6 +59,7 @@ class NewsSource(SentimentSource):
     async def _fetch_yfinance_news(self, ticker: str) -> list[NewsArticle]:
         """Fetch news from yfinance."""
         import asyncio
+
         import yfinance as yf
 
         def _get() -> list[NewsArticle]:
@@ -76,25 +78,24 @@ class NewsSource(SentimentSource):
                     if isinstance(pub_time, (int, float)):
                         published_at = datetime.fromtimestamp(pub_time, tz=UTC)
                     elif isinstance(pub_time, str) and pub_time:
-                        try:
+                        with contextlib.suppress(ValueError):
                             published_at = datetime.fromisoformat(pub_time.replace("Z", "+00:00"))
-                        except ValueError:
-                            pass
 
-                    articles.append(NewsArticle(
-                        title=title,
-                        source=content.get("provider", {}).get("displayName", "")
+                    articles.append(
+                        NewsArticle(
+                            title=title,
+                            source=content.get("provider", {}).get("displayName", "")
                             or item.get("publisher", ""),
-                        url=content.get("canonicalUrl", {}).get("url", "")
+                            url=content.get("canonicalUrl", {}).get("url", "")
                             or item.get("link", ""),
-                        summary=(content.get("summary", "") or "")[:300],
-                        published_at=published_at,
-                        relevance_score=1.0,
-                    ))
+                            summary=(content.get("summary", "") or "")[:300],
+                            published_at=published_at,
+                            relevance_score=1.0,
+                        )
+                    )
                 return articles[:MAX_ARTICLES]
             except Exception:
                 logger.exception("yfinance news fetch failed for %s", ticker)
                 return []
 
         return await asyncio.to_thread(_get)
-

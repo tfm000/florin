@@ -101,7 +101,9 @@ class ConsensusGenerator:
             successful = [a for a in announcement_analyses if not a.error]
             if len(successful) >= 2:
                 announcement_consensus = await self._run_leader(
-                    alert.ticker, "announcement", successful,
+                    alert.ticker,
+                    "announcement",
+                    successful,
                 )
             elif len(successful) == 1:
                 # Only 1 model — use its result directly, note in summary
@@ -112,7 +114,10 @@ class ConsensusGenerator:
                     analysis_type=AnalysisType.ANNOUNCEMENT,
                     score=single.score,
                     confidence=single.confidence,
-                    summary=f"Single analyst result (consensus requested but only 1 model available). {single.summary}",
+                    summary=(
+                        "Single analyst result (consensus requested but only 1 "
+                        f"model available). {single.summary}"
+                    ),
                     key_points=single.key_points,
                     bullish_signals=single.bullish_signals,
                     bearish_signals=single.bearish_signals,
@@ -130,7 +135,9 @@ class ConsensusGenerator:
             successful = [a for a in sentiment_analyses if not a.error]
             if len(successful) >= 2:
                 sentiment_consensus = await self._run_leader(
-                    alert.ticker, "sentiment", successful,
+                    alert.ticker,
+                    "sentiment",
+                    successful,
                 )
             elif len(successful) == 1:
                 single = successful[0]
@@ -140,7 +147,10 @@ class ConsensusGenerator:
                     analysis_type=AnalysisType.SENTIMENT,
                     score=single.score,
                     confidence=single.confidence,
-                    summary=f"Single analyst result (consensus requested but only 1 model available). {single.summary}",
+                    summary=(
+                        "Single analyst result (consensus requested but only 1 "
+                        f"model available). {single.summary}"
+                    ),
                     key_points=single.key_points,
                     bullish_signals=single.bullish_signals,
                     bearish_signals=single.bearish_signals,
@@ -178,8 +188,7 @@ class ConsensusGenerator:
         )
 
         logger.info(
-            "Consensus report for %s: rec=%s, "
-            "%d announcement analysts, %d sentiment analysts",
+            "Consensus report for %s: rec=%s, %d announcement analysts, %d sentiment analysts",
             alert.ticker,
             final_rec.value,
             len(announcement_analyses),
@@ -214,13 +223,18 @@ class ConsensusGenerator:
             if analysis_type == AnalysisType.ANNOUNCEMENT and filings is not None:
                 tasks[name] = asyncio.create_task(
                     analyser.analyse_announcements(
-                        ticker, filings, self._user_context,
+                        ticker,
+                        filings,
+                        self._user_context,
                     )
                 )
             elif analysis_type == AnalysisType.SENTIMENT and sentiment is not None:
                 tasks[name] = asyncio.create_task(
                     analyser.analyse_sentiment(
-                        ticker, sentiment, alert_context, self._user_context,
+                        ticker,
+                        sentiment,
+                        alert_context,
+                        self._user_context,
                     )
                 )
 
@@ -229,20 +243,25 @@ class ConsensusGenerator:
 
         logger.info(
             "Running %s consensus for %s across %d LLMs: %s",
-            analysis_type.value, ticker, len(tasks), list(tasks.keys()),
+            analysis_type.value,
+            ticker,
+            len(tasks),
+            list(tasks.keys()),
         )
 
         raw_results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
         results: list[AnalysisResult] = []
-        for name, raw in zip(tasks.keys(), raw_results):
+        for name, raw in zip(tasks.keys(), raw_results, strict=True):
             if isinstance(raw, Exception):
                 logger.warning("LLM %s failed in consensus: %s", name, raw)
-                results.append(AnalysisResult(
-                    provider=name,
-                    analysis_type=analysis_type,
-                    error=str(raw),
-                ))
+                results.append(
+                    AnalysisResult(
+                        provider=name,
+                        analysis_type=analysis_type,
+                        error=str(raw),
+                    )
+                )
             else:
                 results.append(raw)
 
@@ -273,12 +292,15 @@ class ConsensusGenerator:
         if not leader:
             logger.warning(
                 "Leader LLM not available (id=%s, provider=%s) — using simple average",
-                self._leader_model_id, self._meta_provider,
+                self._leader_model_id,
+                self._meta_provider,
             )
             return self._simple_average(individual_results, analysis_type_str)
 
         consensus_prompt = build_consensus_prompt(
-            ticker, analysis_type_str, individual_results,
+            ticker,
+            analysis_type_str,
+            individual_results,
         )
 
         analysis_type = (
@@ -323,11 +345,11 @@ class ConsensusGenerator:
             RuntimeError: If the leader analyser type is unsupported.
         """
         # Try Claude CLI (claude-agent-sdk)
-        if getattr(leader, '_is_claude_agent_sdk', False):
+        if getattr(leader, "_is_claude_agent_sdk", False):
             return await leader._query_claude(CONSENSUS_LEADER_SYSTEM_PROMPT, prompt)
 
         # Try OpenAI-compatible (Groq, OpenRouter)
-        if hasattr(leader, '_client') and hasattr(leader._client, 'chat'):
+        if hasattr(leader, "_client") and hasattr(leader._client, "chat"):
             response = await leader._client.chat.completions.create(
                 model=leader.model_name,
                 messages=[
@@ -341,8 +363,9 @@ class ConsensusGenerator:
             return response.choices[0].message.content or ""
 
         # Try Gemini
-        if hasattr(leader, '_client') and hasattr(leader._client, 'aio'):
+        if hasattr(leader, "_client") and hasattr(leader._client, "aio"):
             from google.genai import types
+
             config = types.GenerateContentConfig(
                 system_instruction=CONSENSUS_LEADER_SYSTEM_PROMPT,
                 temperature=0.3,

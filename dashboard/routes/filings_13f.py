@@ -46,6 +46,7 @@ async def search_13f_filers(
 ):
     """Search for institutional filers by name."""
     from data.sec_13f_provider import search_filers
+
     results = await search_filers(q)
     return [FilerResult(**r) for r in results]
 
@@ -56,6 +57,7 @@ async def get_13f_filings(
 ):
     """Get list of 13F-HR filings for a filer."""
     from data.sec_13f_provider import get_filings
+
     filings = await get_filings(cik)
     return [FilingResult(**f) for f in filings if f.get("accession")]
 
@@ -87,15 +89,17 @@ async def get_13f_holdings(
     for h in holdings:
         cusip = h.get("cusip", "")
         value = h.get("value", 0)
-        results.append(HoldingResult(
-            cusip=cusip,
-            ticker=ticker_map.get(cusip, ""),
-            name=h.get("name", ""),
-            title=h.get("title", ""),
-            shares=h.get("shares", 0),
-            value=value,
-            weight=round(value / total_value * 100, 2) if total_value > 0 else 0,
-        ))
+        results.append(
+            HoldingResult(
+                cusip=cusip,
+                ticker=ticker_map.get(cusip, ""),
+                name=h.get("name", ""),
+                title=h.get("title", ""),
+                shares=h.get("shares", 0),
+                value=value,
+                weight=round(value / total_value * 100, 2) if total_value > 0 else 0,
+            )
+        )
 
     # Sort by value descending
     results.sort(key=lambda r: r.value, reverse=True)

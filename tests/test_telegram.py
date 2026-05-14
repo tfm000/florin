@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from core.models import AccountSummary, Position
 from telegram_bot.formatters import (
     escape_md,
     format_account_summary,
@@ -9,7 +10,6 @@ from telegram_bot.formatters import (
     format_positions_list,
     format_trade_confirmation,
 )
-from core.models import AccountSummary, Position
 
 
 class TestEscapeMd:

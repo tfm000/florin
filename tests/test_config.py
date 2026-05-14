@@ -50,6 +50,7 @@ class TestSettingsProperties:
 class TestGetEnabledLLMProviders:
     def test_empty_when_no_keys(self):
         from unittest.mock import patch
+
         with patch("config.settings._claude_sdk_available", return_value=False):
             s = Settings()
             providers = s.get_enabled_llm_providers()
@@ -72,6 +73,7 @@ class TestGetEnabledLLMProviders:
 
     def test_excludes_unconfigured_cloud_providers(self):
         from unittest.mock import patch
+
         with patch("config.settings._claude_sdk_available", return_value=False):
             s = Settings()
             providers = s.get_enabled_llm_providers()
@@ -94,6 +96,7 @@ class TestLoadDbOverrides:
         s = Settings(scan_interval_seconds=120)
         # Monkey-patch the global singleton for this test
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -115,6 +118,7 @@ class TestLoadDbOverrides:
 
         s = Settings(scan_price_max=5.0)
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -136,6 +140,7 @@ class TestLoadDbOverrides:
 
         s = Settings()
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -157,6 +162,7 @@ class TestLoadDbOverrides:
 
         s = Settings(llm_default_provider=LLMProvider.GROQ)
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:

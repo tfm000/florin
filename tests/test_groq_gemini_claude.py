@@ -13,11 +13,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from claude_agent_sdk import AssistantMessage, TextBlock
 
 from analysis.claude_analyser import ClaudeAnalyser
 from analysis.gemini_analyser import GeminiAnalyser
 from analysis.groq_analyser import GroqAnalyser
-from claude_agent_sdk import AssistantMessage, TextBlock
 from config.settings import LLMProvider, Settings
 from core.models import (
     AnalysisResult,
@@ -26,7 +26,6 @@ from core.models import (
     Recommendation,
     SentimentData,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -54,15 +53,17 @@ def _make_filings() -> list[Form8KFiling]:
 
 def _make_valid_json_response() -> str:
     """Return a valid JSON string matching the expected analysis schema."""
-    return json.dumps({
-        "score": 6.5,
-        "confidence": 0.85,
-        "bullish_signals": ["Strong momentum", "Positive sentiment"],
-        "bearish_signals": ["Low market cap"],
-        "recommendation": "BUY",
-        "summary": "Promising penny stock with strong momentum.",
-        "key_points": ["Volume spike", "Social buzz"],
-    })
+    return json.dumps(
+        {
+            "score": 6.5,
+            "confidence": 0.85,
+            "bullish_signals": ["Strong momentum", "Positive sentiment"],
+            "bearish_signals": ["Low market cap"],
+            "recommendation": "BUY",
+            "summary": "Promising penny stock with strong momentum.",
+            "key_points": ["Volume spike", "Social buzz"],
+        }
+    )
 
 
 def _mock_completion_response(content: str) -> SimpleNamespace:
@@ -191,9 +192,7 @@ class TestGroqAnalyser:
     async def test_health_check_failure(self, analyser: GroqAnalyser) -> None:
         """Health check should return False when the API fails."""
         analyser._client.models = MagicMock()
-        analyser._client.models.list = AsyncMock(
-            side_effect=Exception("Connection refused")
-        )
+        analyser._client.models.list = AsyncMock(side_effect=Exception("Connection refused"))
 
         assert await analyser.health_check() is False
 
@@ -291,9 +290,7 @@ class TestClaudeCLIAnalyser:
 
     @pytest.mark.asyncio
     @patch("analysis.claude_analyser.query")
-    async def test_analyse_api_error(
-        self, mock_query: MagicMock, analyser: ClaudeAnalyser
-    ) -> None:
+    async def test_analyse_api_error(self, mock_query: MagicMock, analyser: ClaudeAnalyser) -> None:
         """API errors should produce an AnalysisResult with the error field set."""
         mock_query.side_effect = Exception("Overloaded")
 
@@ -387,9 +384,7 @@ class TestGeminiAnalyser:
         mock_response = _mock_gemini_response(_make_valid_json_response())
         analyser._client.aio = MagicMock()
         analyser._client.aio.models = MagicMock()
-        analyser._client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 
@@ -411,9 +406,7 @@ class TestGeminiAnalyser:
         mock_response = _mock_gemini_response(_make_valid_json_response())
         analyser._client.aio = MagicMock()
         analyser._client.aio.models = MagicMock()
-        analyser._client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         result = await analyser.analyse_announcements("TEST", _make_filings())
 
@@ -445,9 +438,7 @@ class TestGeminiAnalyser:
         mock_response = _mock_gemini_response("ok")
         analyser._client.aio = MagicMock()
         analyser._client.aio.models = MagicMock()
-        analyser._client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         assert await analyser.health_check() is True
 
@@ -468,9 +459,7 @@ class TestGeminiAnalyser:
         mock_response = SimpleNamespace(text=None)
         analyser._client.aio = MagicMock()
         analyser._client.aio.models = MagicMock()
-        analyser._client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         assert await analyser.health_check() is False
 
@@ -480,9 +469,7 @@ class TestGeminiAnalyser:
         mock_response = _mock_gemini_response("")
         analyser._client.aio = MagicMock()
         analyser._client.aio.models = MagicMock()
-        analyser._client.aio.models.generate_content = AsyncMock(
-            return_value=mock_response
-        )
+        analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
         result = await analyser.analyse_sentiment("TEST", _make_sentiment())
 

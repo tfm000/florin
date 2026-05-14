@@ -12,7 +12,6 @@ import asyncio
 import logging
 import math
 import time
-from functools import lru_cache
 from typing import Any
 
 import yfinance as yf
@@ -32,6 +31,13 @@ INFO_TTL = 3600  # 1 hour (asset info — sector/PE/beta change slowly)
 MACRO_TTL = 60  # 1 minute (indices, commodities, crypto, FX)
 HISTORY_TTL = 3600  # 1 hour (daily OHLCV doesn't change intraday)
 SEARCH_TTL = 300  # 5 minutes
+
+# yfinance returns a tiny sentinel implied-volatility (~2e-5) for strikes where IV
+# is undefined (e.g. deep ITM). Treat anything at or below this as "no IV".
+SENTINEL_IV = 0.00002
+
+# Page size for the yfinance equity screener pagination loop.
+_SCREEN_PAGE_SIZE = 250
 
 
 def _normalize_dividend_yield(raw: float | None) -> float | None:
@@ -67,10 +73,12 @@ def _normalize_pe(pe: float | None, eps: float | None) -> float | None:
 def _effective_ttl(ttl: float) -> float:
     """Return the TTL to use: short during market hours, until next open otherwise."""
     from core.market_hours import is_market_open, next_market_open
+
     if is_market_open():
         return ttl
     # Market closed — cache until next open
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
     seconds_until_open = (next_market_open(now) - now).total_seconds()
     return max(seconds_until_open, ttl)
@@ -105,14 +113,22 @@ _SLICEABLE_PERIODS = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y"}
 
 # Map yfinance period strings to approximate day counts for date slicing
 _PERIOD_DAYS = {
-    "1d": 1, "5d": 5, "1mo": 31, "3mo": 93,
-    "6mo": 183, "1y": 366, "2y": 731, "3y": 1095, "5y": 1827,
+    "1d": 1,
+    "5d": 5,
+    "1mo": 31,
+    "3mo": 93,
+    "6mo": 183,
+    "1y": 366,
+    "2y": 731,
+    "3y": 1095,
+    "5y": 1827,
 }
 
 
 def _period_cutoff(period: str) -> str | None:
     """Return the ISO date string N days ago for a given period, or None if unknown."""
     from datetime import date, timedelta
+
     days = _PERIOD_DAYS.get(period)
     if days is None:
         return None
@@ -232,11 +248,21 @@ class YFinanceProvider:
             # Download the wide period (5y or max) for cache benefit
             if can_slice or period == "max":
                 chunk_result = await asyncio.to_thread(
-                    self._download_chunk, uncached, fetch_period, interval, "", "",
+                    self._download_chunk,
+                    uncached,
+                    fetch_period,
+                    interval,
+                    "",
+                    "",
                 )
             else:
                 chunk_result = await asyncio.to_thread(
-                    self._download_chunk, uncached, period, interval, start, end,
+                    self._download_chunk,
+                    uncached,
+                    period,
+                    interval,
+                    start,
+                    end,
                 )
 
             # Cache wide data and slice for result
@@ -317,7 +343,8 @@ class YFinanceProvider:
                 # yfinance bug: mixed tz-aware/tz-naive DatetimeIndex in batch.
                 # Fall back to individual downloads.
                 logger.warning(
-                    "Batch download hit tz mismatch for %d tickers, falling back to individual downloads",
+                    "Batch download hit tz mismatch for %d tickers, falling back "
+                    "to individual downloads",
                     len(tickers),
                 )
                 result: dict[str, list[dict]] = {}
@@ -350,14 +377,16 @@ class YFinanceProvider:
             if close is None or (isinstance(close, float) and math.isnan(close)):
                 # Skip NaN rows (delisted periods)
                 continue
-            records.append({
-                "date": str(idx),
-                "open": float(row.get("Open", 0)),
-                "high": float(row.get("High", 0)),
-                "low": float(row.get("Low", 0)),
-                "close": float(close),
-                "volume": int(row.get("Volume", 0)),
-            })
+            records.append(
+                {
+                    "date": str(idx),
+                    "open": float(row.get("Open", 0)),
+                    "high": float(row.get("High", 0)),
+                    "low": float(row.get("Low", 0)),
+                    "close": float(close),
+                    "volume": int(row.get("Volume", 0)),
+                }
+            )
         return records
 
     async def get_info_batch(
@@ -611,7 +640,9 @@ class YFinanceProvider:
         return result
 
     async def get_performance_metrics(
-        self, ticker: str, period: str = "3y",
+        self,
+        ticker: str,
+        period: str = "3y",
     ) -> dict:
         """Sharpe, max drawdown, period returns from history."""
         history = await self.get_history(ticker, period=period, interval="1d")
@@ -619,8 +650,12 @@ class YFinanceProvider:
             return {}
 
         import numpy as np
+
         from stats.core import (
-            simple_returns, sharpe_ratio, max_drawdown, period_return,
+            max_drawdown,
+            period_return,
+            sharpe_ratio,
+            simple_returns,
         )
 
         closes = np.array([h["close"] for h in history if h["close"] > 0])
@@ -652,15 +687,18 @@ class YFinanceProvider:
                 articles = []
                 for item in news:
                     content = item.get("content", {}) if isinstance(item, dict) else {}
-                    articles.append({
-                        "title": content.get("title") or item.get("title", ""),
-                        "publisher": content.get("provider", {}).get("displayName", "")
+                    articles.append(
+                        {
+                            "title": content.get("title") or item.get("title", ""),
+                            "publisher": content.get("provider", {}).get("displayName", "")
                             or item.get("publisher", ""),
-                        "url": content.get("canonicalUrl", {}).get("url", "")
+                            "url": content.get("canonicalUrl", {}).get("url", "")
                             or item.get("link", ""),
-                        "published_at": content.get("pubDate") or item.get("providerPublishTime", ""),
-                        "summary": content.get("summary", "") or "",
-                    })
+                            "published_at": content.get("pubDate")
+                            or item.get("providerPublishTime", ""),
+                            "summary": content.get("summary", "") or "",
+                        }
+                    )
                 return articles
             except Exception:
                 logger.exception("yfinance news failed for %s", ticker)
@@ -671,7 +709,9 @@ class YFinanceProvider:
         return result
 
     async def enrich_batch(
-        self, tickers: list[str], max_calls: int = 50,
+        self,
+        tickers: list[str],
+        max_calls: int = 50,
     ) -> dict[str, dict[str, Any]]:
         """Batch enrichment: market_cap, sector, industry, shares_outstanding."""
         results: dict[str, dict[str, Any]] = {}
@@ -701,6 +741,7 @@ class YFinanceProvider:
         No return-based filtering — just price/market_cap.
         Uses yf.EquityQuery + yf.screen() (yfinance >= 1.0).
         """
+
         def _screen() -> list[StockInfo]:
             try:
                 from yfinance import EquityQuery, screen
@@ -714,39 +755,51 @@ class YFinanceProvider:
                     EquityQuery("gt", ["intradayprice", price_min]),
                     EquityQuery("lt", ["intradayprice", price_max]),
                     EquityQuery("eq", ["region", "us"]),
-                    EquityQuery("or", [
-                        EquityQuery("eq", ["exchange", "NMS"]),   # NASDAQ Global Select
-                        EquityQuery("eq", ["exchange", "NGM"]),   # NASDAQ Global Market
-                        EquityQuery("eq", ["exchange", "NCM"]),   # NASDAQ Capital Market
-                        EquityQuery("eq", ["exchange", "NYQ"]),   # NYSE
-                        EquityQuery("eq", ["exchange", "ASE"]),   # NYSE American (AMEX)
-                    ]),
+                    EquityQuery(
+                        "or",
+                        [
+                            EquityQuery("eq", ["exchange", "NMS"]),  # NASDAQ Global Select
+                            EquityQuery("eq", ["exchange", "NGM"]),  # NASDAQ Global Market
+                            EquityQuery("eq", ["exchange", "NCM"]),  # NASDAQ Capital Market
+                            EquityQuery("eq", ["exchange", "NYQ"]),  # NYSE
+                            EquityQuery("eq", ["exchange", "ASE"]),  # NYSE American (AMEX)
+                        ],
+                    ),
                     EquityQuery("gt", ["intradaymarketcap", max(market_cap_min, 1)]),
                 ]
                 if market_cap_max:
                     operands.append(EquityQuery("lt", ["intradaymarketcap", market_cap_max]))
 
                 query = EquityQuery("and", operands)
-                PAGE_SIZE = 250
 
                 # First request to get total count
-                resp = screen(query, size=PAGE_SIZE, offset=0,
-                              sortField="intradaymarketcap", sortAsc=True)
+                resp = screen(
+                    query,
+                    size=_SCREEN_PAGE_SIZE,
+                    offset=0,
+                    sortField="intradaymarketcap",
+                    sortAsc=True,
+                )
                 total = resp.get("total", 0) if resp else 0
                 all_quotes = resp.get("quotes", []) if resp else []
 
                 # Paginate through ALL results — yfinance is free with no rate limit.
                 # This ensures we don't miss any matching stocks.
                 # Typically ~1700 results = 7 pages = ~2 seconds.
-                offset = PAGE_SIZE
+                offset = _SCREEN_PAGE_SIZE
                 while offset < total:
-                    resp = screen(query, size=PAGE_SIZE, offset=offset,
-                                  sortField="intradaymarketcap", sortAsc=True)
+                    resp = screen(
+                        query,
+                        size=_SCREEN_PAGE_SIZE,
+                        offset=offset,
+                        sortField="intradaymarketcap",
+                        sortAsc=True,
+                    )
                     quotes = resp.get("quotes", []) if resp else []
                     if not quotes:
                         break
                     all_quotes.extend(quotes)
-                    offset += PAGE_SIZE
+                    offset += _SCREEN_PAGE_SIZE
 
                 # Deduplicate by symbol
                 seen = set()
@@ -756,22 +809,25 @@ class YFinanceProvider:
                     if not symbol or symbol in seen:
                         continue
                     seen.add(symbol)
-                    stocks.append(StockInfo(
-                        ticker=symbol,
-                        name=q.get("shortName") or q.get("longName", ""),
-                        exchange=q.get("exchange", ""),
-                        sector=q.get("sector", ""),
-                        industry=q.get("industry", ""),
-                        market_cap=q.get("marketCap"),
-                        avg_volume=q.get("averageDailyVolume3Month", 0) or 0,
-                        last_price=q.get("regularMarketPrice", 0.0) or 0.0,
-                        shares_outstanding=q.get("sharesOutstanding"),
-                        in_universe=True,
-                    ))
+                    stocks.append(
+                        StockInfo(
+                            ticker=symbol,
+                            name=q.get("shortName") or q.get("longName", ""),
+                            exchange=q.get("exchange", ""),
+                            sector=q.get("sector", ""),
+                            industry=q.get("industry", ""),
+                            market_cap=q.get("marketCap"),
+                            avg_volume=q.get("averageDailyVolume3Month", 0) or 0,
+                            last_price=q.get("regularMarketPrice", 0.0) or 0.0,
+                            shares_outstanding=q.get("sharesOutstanding"),
+                            in_universe=True,
+                        )
+                    )
 
                 logger.info(
                     "yfinance screener: %d/%d stocks on NASDAQ/NYSE/AMEX",
-                    len(stocks), total,
+                    len(stocks),
+                    total,
                 )
                 return stocks
             except Exception:
@@ -801,10 +857,13 @@ class YFinanceProvider:
                             return float(mh.loc[key, "Value"])
                         except (KeyError, TypeError):
                             return default
+
                     result["major"] = {
                         "insiders_pct": round(_mh_val("insidersPercentHeld") * 100, 2),
                         "institutions_pct": round(_mh_val("institutionsPercentHeld") * 100, 2),
-                        "institutions_float_pct": round(_mh_val("institutionsFloatPercentHeld") * 100, 2),
+                        "institutions_float_pct": round(
+                            _mh_val("institutionsFloatPercentHeld") * 100, 2
+                        ),
                         "institutions_count": int(_mh_val("institutionsCount")),
                     }
 
@@ -812,27 +871,31 @@ class YFinanceProvider:
                 ih = t.institutional_holders
                 if ih is not None and not ih.empty:
                     for _, row in ih.head(15).iterrows():
-                        result["institutional"].append({
-                            "holder": str(row.get("Holder", "")),
-                            "shares": int(row.get("Shares", 0)),
-                            "value": float(row.get("Value", 0)),
-                            "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
-                            "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
-                            "date_reported": str(row.get("Date Reported", ""))[:10],
-                        })
+                        result["institutional"].append(
+                            {
+                                "holder": str(row.get("Holder", "")),
+                                "shares": int(row.get("Shares", 0)),
+                                "value": float(row.get("Value", 0)),
+                                "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
+                                "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
+                                "date_reported": str(row.get("Date Reported", ""))[:10],
+                            }
+                        )
 
                 # Top mutual fund holders
                 mfh = t.mutualfund_holders
                 if mfh is not None and not mfh.empty:
                     for _, row in mfh.head(10).iterrows():
-                        result["mutual_fund"].append({
-                            "holder": str(row.get("Holder", "")),
-                            "shares": int(row.get("Shares", 0)),
-                            "value": float(row.get("Value", 0)),
-                            "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
-                            "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
-                            "date_reported": str(row.get("Date Reported", ""))[:10],
-                        })
+                        result["mutual_fund"].append(
+                            {
+                                "holder": str(row.get("Holder", "")),
+                                "shares": int(row.get("Shares", 0)),
+                                "value": float(row.get("Value", 0)),
+                                "pct_held": round(float(row.get("pctHeld", 0)) * 100, 4),
+                                "pct_change": round(float(row.get("pctChange", 0)) * 100, 2),
+                                "date_reported": str(row.get("Date Reported", ""))[:10],
+                            }
+                        )
 
             except Exception:
                 logger.exception("Failed to get holders for %s", ticker)
@@ -896,7 +959,6 @@ class YFinanceProvider:
         }
 
         def _get() -> dict:
-            import pandas as pd
 
             tenor_data: dict[str, dict[str, float]] = {}  # tenor -> {date_str: yield}
             all_dates: set[str] = set()
@@ -920,16 +982,16 @@ class YFinanceProvider:
             tenors_out = {}
             for label in ["3M", "2Y", "5Y", "10Y", "30Y"]:
                 if label in tenor_data:
-                    tenors_out[label] = [
-                        tenor_data[label].get(d) for d in sorted_dates
-                    ]
+                    tenors_out[label] = [tenor_data[label].get(d) for d in sorted_dates]
 
             return {"dates": sorted_dates, "tenors": tenors_out}
 
         return await asyncio.to_thread(_get)
 
     async def get_put_call_iv_spread(
-        self, ticker: str = "SPY", expiry: str | None = None,
+        self,
+        ticker: str = "SPY",
+        expiry: str | None = None,
     ) -> dict:
         """
         Put-call implied volatility spread for an equity (default SPY).
@@ -942,6 +1004,7 @@ class YFinanceProvider:
         - term_structure: ATM put-call IV spread across multiple expiries
         - available_expiries: all expiry dates for date comparison
         """
+
         def _get() -> dict:
             try:
                 t = yf.Ticker(ticker)
@@ -949,8 +1012,13 @@ class YFinanceProvider:
                 spot = info.get("regularMarketPrice") or info.get("previousClose") or 0
                 expirations = t.options
                 if not expirations or spot <= 0:
-                    return {"spot": spot, "ticker": ticker, "available_expiries": [],
-                            "skew": [], "term_structure": []}
+                    return {
+                        "spot": spot,
+                        "ticker": ticker,
+                        "available_expiries": [],
+                        "skew": [],
+                        "term_structure": [],
+                    }
 
                 available_expiries = list(expirations[:20])
 
@@ -964,10 +1032,9 @@ class YFinanceProvider:
                     for candidate in expirations[:5]:
                         try:
                             ch = t.option_chain(candidate)
-                            valid = (
-                                (ch.puts["impliedVolatility"] > SENTINEL_IV).sum()
-                                + (ch.calls["impliedVolatility"] > SENTINEL_IV).sum()
-                            )
+                            valid = (ch.puts["impliedVolatility"] > SENTINEL_IV).sum() + (
+                                ch.calls["impliedVolatility"] > SENTINEL_IV
+                            ).sum()
                             if valid > best_count:
                                 best_count = valid
                                 best_exp = candidate
@@ -985,7 +1052,6 @@ class YFinanceProvider:
                 #
                 # OTM rule: puts are OTM when strike < spot, calls when strike > spot.
                 # At the single nearest ATM strike, average both.
-                SENTINEL_IV = 0.00002  # yfinance sentinel for undefined IV
                 strike_min = spot * 0.75
                 strike_max = spot * 1.25
 
@@ -993,17 +1059,21 @@ class YFinanceProvider:
                 calls_range = calls[
                     (calls["strike"] >= strike_min) & (calls["strike"] <= strike_max)
                 ]
-                puts_range = puts[
-                    (puts["strike"] >= strike_min) & (puts["strike"] <= strike_max)
-                ]
+                puts_range = puts[(puts["strike"] >= strike_min) & (puts["strike"] <= strike_max)]
 
                 # IV maps exclude sentinel values (deep ITM where IV is undefined)
                 call_iv_all = {
-                    s: iv for s, iv in zip(calls_range["strike"], calls_range["impliedVolatility"])
+                    s: iv
+                    for s, iv in zip(
+                        calls_range["strike"], calls_range["impliedVolatility"], strict=True
+                    )
                     if iv > SENTINEL_IV
                 }
                 put_iv_all = {
-                    s: iv for s, iv in zip(puts_range["strike"], puts_range["impliedVolatility"])
+                    s: iv
+                    for s, iv in zip(
+                        puts_range["strike"], puts_range["impliedVolatility"], strict=True
+                    )
                     if iv > SENTINEL_IV
                 }
 
@@ -1062,21 +1132,25 @@ class YFinanceProvider:
                 for exp_date in expirations[:12]:
                     try:
                         ch = t.option_chain(exp_date)
-                        # Filter out sentinel IV (0.00001) before finding ATM
+                        # Filter out sentinel IV (see SENTINEL_IV) before finding ATM
                         valid_calls = ch.calls[ch.calls["impliedVolatility"] > SENTINEL_IV]
                         valid_puts = ch.puts[ch.puts["impliedVolatility"] > SENTINEL_IV]
                         if valid_calls.empty or valid_puts.empty:
                             continue
-                        atm_call = valid_calls.iloc[(valid_calls["strike"] - spot).abs().argsort()[:1]]
+                        atm_call = valid_calls.iloc[
+                            (valid_calls["strike"] - spot).abs().argsort()[:1]
+                        ]
                         atm_put = valid_puts.iloc[(valid_puts["strike"] - spot).abs().argsort()[:1]]
                         c_iv = float(atm_call["impliedVolatility"].iloc[0])
                         p_iv = float(atm_put["impliedVolatility"].iloc[0])
-                        term_structure.append({
-                            "expiry": exp_date,
-                            "call_iv": round(c_iv * 100, 2),
-                            "put_iv": round(p_iv * 100, 2),
-                            "spread": round((p_iv - c_iv) * 100, 2),
-                        })
+                        term_structure.append(
+                            {
+                                "expiry": exp_date,
+                                "call_iv": round(c_iv * 100, 2),
+                                "put_iv": round(p_iv * 100, 2),
+                                "spread": round((p_iv - c_iv) * 100, 2),
+                            }
+                        )
                     except Exception:
                         continue
 
@@ -1090,8 +1164,13 @@ class YFinanceProvider:
                 }
             except Exception:
                 logger.exception("Failed to get put-call IV spread for %s", ticker)
-                return {"ticker": ticker, "spot": 0, "available_expiries": [],
-                        "skew": [], "term_structure": []}
+                return {
+                    "ticker": ticker,
+                    "spot": 0,
+                    "available_expiries": [],
+                    "skew": [],
+                    "term_structure": [],
+                }
 
         cache_key = f"iv_spread:{ticker}:{expiry or 'auto'}"
         cached = _get_cached(cache_key, INFO_TTL)
@@ -1113,11 +1192,26 @@ class YFinanceProvider:
 
         # Fallback: hardcoded values (only used if fetcher not configured)
         return [
-            {"country": "United States", "central_bank": "Federal Reserve", "rate": 4.50, "currency": "USD"},
+            {
+                "country": "United States",
+                "central_bank": "Federal Reserve",
+                "rate": 4.50,
+                "currency": "USD",
+            },
             {"country": "Eurozone", "central_bank": "ECB", "rate": 2.65, "currency": "EUR"},
-            {"country": "United Kingdom", "central_bank": "Bank of England", "rate": 4.50, "currency": "GBP"},
+            {
+                "country": "United Kingdom",
+                "central_bank": "Bank of England",
+                "rate": 4.50,
+                "currency": "GBP",
+            },
             {"country": "Japan", "central_bank": "Bank of Japan", "rate": 0.50, "currency": "JPY"},
-            {"country": "Canada", "central_bank": "Bank of Canada", "rate": 2.75, "currency": "CAD"},
+            {
+                "country": "Canada",
+                "central_bank": "Bank of Canada",
+                "rate": 2.75,
+                "currency": "CAD",
+            },
             {"country": "Australia", "central_bank": "RBA", "rate": 4.10, "currency": "AUD"},
             {"country": "New Zealand", "central_bank": "RBNZ", "rate": 3.75, "currency": "NZD"},
             {"country": "Switzerland", "central_bank": "SNB", "rate": 0.25, "currency": "CHF"},

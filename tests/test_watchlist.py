@@ -1,7 +1,8 @@
 """Tests for Watchlist CRUD API endpoints."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -117,11 +118,14 @@ class TestWatchlistCRUD:
 
     @pytest.mark.asyncio
     async def test_add_with_custom_asset_type(self, client):
-        resp = await client.post("/api/watchlist", json={
-            "ticker": "BTC-USD",
-            "asset_type": "crypto",
-            "notes": "Bitcoin tracking",
-        })
+        resp = await client.post(
+            "/api/watchlist",
+            json={
+                "ticker": "BTC-USD",
+                "asset_type": "crypto",
+                "notes": "Bitcoin tracking",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["asset_type"] == "crypto"
         assert resp.json()["notes"] == "Bitcoin tracking"

@@ -43,16 +43,23 @@ G10_COUNTRIES: dict[str, dict] = {
 
 _COUNTRY_KEYS = "+".join(G10_COUNTRIES.keys())
 _BIS_URL = (
-    f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/"
-    f"M.{_COUNTRY_KEYS}?format=csv"
+    f"https://stats.bis.org/api/v2/data/dataflow/BIS/WS_CBPOL/1.0/M.{_COUNTRY_KEYS}?format=csv"
 )
 
 _CACHE_TTL = 86400  # 24 hours
 
 # Hardcoded seed values — used only when both API and DB are empty (first run)
 _SEED_RATES: dict[str, float] = {
-    "US": 4.50, "XM": 2.65, "GB": 4.50, "JP": 0.50, "CA": 2.75,
-    "AU": 4.10, "NZ": 3.75, "CH": 0.25, "SE": 2.25, "NO": 4.50,
+    "US": 4.50,
+    "XM": 2.65,
+    "GB": 4.50,
+    "JP": 0.50,
+    "CA": 2.75,
+    "AU": 4.10,
+    "NZ": 3.75,
+    "CH": 0.25,
+    "SE": 2.25,
+    "NO": 4.50,
 }
 
 
@@ -137,14 +144,16 @@ class PolicyRateFetcher:
         for code, meta in G10_COUNTRIES.items():
             if code in latest:
                 eff_date, rate = latest[code]
-                rates.append({
-                    "country": meta["country"],
-                    "central_bank": meta["central_bank"],
-                    "rate": rate,
-                    "currency": meta["currency"],
-                    "effective_date": eff_date,
-                    "country_code": code,
-                })
+                rates.append(
+                    {
+                        "country": meta["country"],
+                        "central_bank": meta["central_bank"],
+                        "rate": rate,
+                        "currency": meta["currency"],
+                        "effective_date": eff_date,
+                        "country_code": code,
+                    }
+                )
 
         logger.info("Fetched %d policy rates from BIS CBPOL API", len(rates))
         return rates
@@ -155,9 +164,7 @@ class PolicyRateFetcher:
             async with self._db.session() as session:
                 for r in rates:
                     result = await session.execute(
-                        select(PolicyRateORM).where(
-                            PolicyRateORM.country_code == r["country_code"]
-                        )
+                        select(PolicyRateORM).where(PolicyRateORM.country_code == r["country_code"])
                     )
                     existing = result.scalar()
                     if existing:
@@ -165,14 +172,16 @@ class PolicyRateFetcher:
                         existing.effective_date = r.get("effective_date", "")
                         existing.fetched_at = datetime.now(UTC)
                     else:
-                        session.add(PolicyRateORM(
-                            country_code=r["country_code"],
-                            country=r["country"],
-                            central_bank=r["central_bank"],
-                            currency=r["currency"],
-                            rate=r["rate"],
-                            effective_date=r.get("effective_date", ""),
-                        ))
+                        session.add(
+                            PolicyRateORM(
+                                country_code=r["country_code"],
+                                country=r["country"],
+                                central_bank=r["central_bank"],
+                                currency=r["currency"],
+                                rate=r["rate"],
+                                effective_date=r.get("effective_date", ""),
+                            )
+                        )
                 await session.commit()
         except Exception:
             logger.exception("Failed to persist policy rates")

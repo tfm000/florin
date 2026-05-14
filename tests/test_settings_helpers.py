@@ -1,6 +1,6 @@
 """Tests for dashboard settings route helper functions."""
 
-from config.settings import LLMMode, LLMProvider, Settings
+from config.settings import LLMMode, Settings
 from dashboard.routes.settings import _apply_setting, _mask, _needs_restart
 
 

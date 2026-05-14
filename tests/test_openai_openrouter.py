@@ -8,12 +8,13 @@ base_url configuration, and settings integration (provider enablement).
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from analysis.openrouter_analyser import OpenRouterAnalyser, _OPENROUTER_BASE_URL
+from analysis.openrouter_analyser import _OPENROUTER_BASE_URL, OpenRouterAnalyser
 from config.settings import LLMProvider, Settings
 from core.models import (
     AnalysisResult,
@@ -22,8 +23,6 @@ from core.models import (
     Recommendation,
     SentimentData,
 )
-from datetime import UTC, datetime
-
 
 # =============================================================================
 # Fixtures
@@ -51,15 +50,17 @@ def _make_filings() -> list[Form8KFiling]:
 
 def _make_valid_json_response() -> str:
     """Return a valid JSON string matching the expected analysis schema."""
-    return json.dumps({
-        "score": 6.5,
-        "confidence": 0.85,
-        "bullish_signals": ["Strong momentum", "Positive sentiment"],
-        "bearish_signals": ["Low market cap"],
-        "recommendation": "BUY",
-        "summary": "Promising penny stock with strong momentum.",
-        "key_points": ["Volume spike", "Social buzz"],
-    })
+    return json.dumps(
+        {
+            "score": 6.5,
+            "confidence": 0.85,
+            "bullish_signals": ["Strong momentum", "Positive sentiment"],
+            "bearish_signals": ["Low market cap"],
+            "recommendation": "BUY",
+            "summary": "Promising penny stock with strong momentum.",
+            "key_points": ["Volume spike", "Social buzz"],
+        }
+    )
 
 
 def _mock_completion_response(content: str) -> MagicMock:
@@ -171,9 +172,7 @@ class TestOpenRouterAnalyser:
         """Health check should return True when the API responds."""
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
-        analyser._client.chat.completions.create = AsyncMock(
-            return_value=_mock_health_response()
-        )
+        analyser._client.chat.completions.create = AsyncMock(return_value=_mock_health_response())
 
         assert await analyser.health_check() is True
 
@@ -182,9 +181,7 @@ class TestOpenRouterAnalyser:
         """Health check should return False when the API fails."""
         analyser._client.chat = MagicMock()
         analyser._client.chat.completions = MagicMock()
-        analyser._client.chat.completions.create = AsyncMock(
-            side_effect=Exception("Unauthorized")
-        )
+        analyser._client.chat.completions.create = AsyncMock(side_effect=Exception("Unauthorized"))
 
         assert await analyser.health_check() is False
 

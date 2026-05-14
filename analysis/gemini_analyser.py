@@ -152,7 +152,11 @@ class GeminiAnalyser(LLMAnalyser):
             latency = int((time.monotonic() - start) * 1000)
 
             return parse_llm_response(
-                raw, self.provider_name, self._model_name_str, analysis_type, latency,
+                raw,
+                self.provider_name,
+                self._model_name_str,
+                analysis_type,
+                latency,
             )
 
         except Exception as e:

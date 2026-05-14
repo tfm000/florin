@@ -10,11 +10,8 @@ These provide consistent, typed responses across all endpoints:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
-
-T = TypeVar("T")
 
 
 class ErrorResponse(BaseModel):
@@ -26,7 +23,7 @@ class ErrorResponse(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse[T](BaseModel):
     """Wrapper for paginated list responses."""
 
     items: list[T]

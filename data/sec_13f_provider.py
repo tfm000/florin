@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
 from xml.etree import ElementTree
 
 import httpx
@@ -47,8 +46,9 @@ async def load_cusip_cache(db) -> None:
     """Hydrate the in-memory CUSIP cache from DB and load SEC name→ticker map."""
     global _db_ref
     _db_ref = db
-    from db.models import CusipTickerORM
     from sqlalchemy import select
+
+    from db.models import CusipTickerORM
 
     async with db.session() as session:
         result = await session.execute(select(CusipTickerORM))
@@ -64,7 +64,8 @@ async def _load_sec_name_map() -> None:
     """Load SEC company_tickers.json to build issuer name → ticker lookup."""
     try:
         async with httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT}, timeout=15.0,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15.0,
         ) as client:
             resp = await client.get("https://www.sec.gov/files/company_tickers.json")
             if resp.status_code == 200:
@@ -83,18 +84,22 @@ async def _persist_cusip_mappings(mappings: dict[str, str]) -> None:
     """Persist new CUSIP→ticker mappings to the database using bulk upsert."""
     if not _db_ref or not mappings:
         return
-    from datetime import datetime, UTC
-    from db.models import CusipTickerORM
+    from datetime import UTC, datetime
+
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from db.models import CusipTickerORM
 
     async with _persist_lock:
         try:
             async with _db_ref.session() as session:
                 now = datetime.now(UTC)
-                stmt = sqlite_insert(CusipTickerORM).values([
-                    {"cusip": cusip, "ticker": ticker, "updated_at": now}
-                    for cusip, ticker in mappings.items()
-                ])
+                stmt = sqlite_insert(CusipTickerORM).values(
+                    [
+                        {"cusip": cusip, "ticker": ticker, "updated_at": now}
+                        for cusip, ticker in mappings.items()
+                    ]
+                )
                 stmt = stmt.on_conflict_do_update(
                     index_elements=["cusip"],
                     set_={"ticker": stmt.excluded.ticker, "updated_at": stmt.excluded.updated_at},
@@ -118,7 +123,8 @@ async def search_filers(query: str) -> list[dict]:
     await _sec_rate_limit()
     try:
         async with httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT}, timeout=15.0,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15.0,
         ) as client:
             resp = await client.get(
                 "https://efts.sec.gov/LATEST/search-index",
@@ -144,11 +150,13 @@ async def search_filers(query: str) -> list[dict]:
                 # display_names format: "COMPANY NAME  (CIK 0001234567)"
                 raw_name = names[0] if names else ""
                 name = raw_name.split("(CIK")[0].strip() if "(CIK" in raw_name else raw_name
-                filers.append({
-                    "cik": cik,
-                    "name": name,
-                    "filing_date": src.get("file_date", ""),
-                })
+                filers.append(
+                    {
+                        "cik": cik,
+                        "name": name,
+                        "filing_date": src.get("file_date", ""),
+                    }
+                )
             return filers
 
     except Exception:
@@ -163,7 +171,8 @@ async def get_filings(cik: str) -> list[dict]:
     cik_padded = cik.zfill(10)
     try:
         async with httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT}, timeout=15.0,
+            headers={"User-Agent": USER_AGENT},
+            timeout=15.0,
         ) as client:
             resp = await client.get(
                 f"{SEC_SUBMISSIONS_URL}/CIK{cik_padded}.json",
@@ -182,11 +191,13 @@ async def get_filings(cik: str) -> list[dict]:
             for i, form in enumerate(forms):
                 if form != "13F-HR":
                     continue
-                filings.append({
-                    "accession": accessions[i].replace("-", ""),
-                    "date": dates[i],
-                    "document": docs[i] if i < len(docs) else "",
-                })
+                filings.append(
+                    {
+                        "accession": accessions[i].replace("-", ""),
+                        "date": dates[i],
+                        "document": docs[i] if i < len(docs) else "",
+                    }
+                )
 
             return filings[:20]
 
@@ -203,7 +214,9 @@ async def get_holdings(cik: str, accession: str) -> list[dict]:
 
     try:
         async with httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT}, timeout=30.0, follow_redirects=True,
+            headers={"User-Agent": USER_AGENT},
+            timeout=30.0,
+            follow_redirects=True,
         ) as client:
             # Find the infotable XML file
             index_resp = await client.get(f"{url}/index.json")
@@ -213,7 +226,8 @@ async def get_holdings(cik: str, accession: str) -> list[dict]:
             index_data = index_resp.json()
             xml_file = None
             xml_items = [
-                item for item in index_data.get("directory", {}).get("item", [])
+                item
+                for item in index_data.get("directory", {}).get("item", [])
                 if item.get("name", "").lower().endswith(".xml")
             ]
             # Priority 1: filename contains "infotable"
@@ -255,11 +269,11 @@ def _parse_13f_xml(xml_text: str) -> list[dict]:
     holdings = []
     try:
         # Handle namespace
-        xml_text = xml_text.replace('xmlns=', 'xmlns_disabled=')
+        xml_text = xml_text.replace("xmlns=", "xmlns_disabled=")
         root = ElementTree.fromstring(xml_text)
 
         for entry in root.iter():
-            if 'infoTable' in entry.tag:
+            if "infoTable" in entry.tag:
                 holding = {}
                 for child in entry:
                     tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
@@ -383,7 +397,8 @@ async def map_cusips_to_tickers(
 
 
 async def _openfigi_lookup(
-    jobs: list[dict], cusips: list[str],
+    jobs: list[dict],
+    cusips: list[str],
 ) -> dict[str, str]:
     """Call OpenFIGI API in batches and return CUSIP→ticker mappings.
 
@@ -398,7 +413,7 @@ async def _openfigi_lookup(
     # Re-check cache to skip CUSIPs resolved by a concurrent request
     filtered_jobs = []
     filtered_cusips = []
-    for job, cusip in zip(jobs, cusips):
+    for job, cusip in zip(jobs, cusips, strict=True):
         if cusip in _cusip_cache:
             mapped[cusip] = _cusip_cache[cusip]
         else:
@@ -410,13 +425,14 @@ async def _openfigi_lookup(
 
     # Determine rate limits from API key
     from config.settings import get_settings
+
     api_key = get_settings().openfigi_api_key
     if api_key:
         batch_size = 100
-        batch_delay = 0.3   # ~20 req/6s, well under 25 req/6s limit
+        batch_delay = 0.3  # ~20 req/6s, well under 25 req/6s limit
     else:
         batch_size = 10
-        batch_delay = 2.5   # ~24 req/min, under 25 req/min limit
+        batch_delay = 2.5  # ~24 req/min, under 25 req/min limit
 
     headers: dict[str, str] = {"Content-Type": "application/json"}
     if api_key:
@@ -426,8 +442,8 @@ async def _openfigi_lookup(
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 for i in range(0, len(filtered_jobs), batch_size):
-                    batch_jobs = filtered_jobs[i:i + batch_size]
-                    batch_cusips = filtered_cusips[i:i + batch_size]
+                    batch_jobs = filtered_jobs[i : i + batch_size]
+                    batch_cusips = filtered_cusips[i : i + batch_size]
 
                     for attempt in range(3):
                         resp = await client.post(
@@ -453,7 +469,9 @@ async def _openfigi_lookup(
                             wait = 7 if api_key else 30
                             logger.warning(
                                 "OpenFIGI %d, waiting %ds (attempt %d)",
-                                resp.status_code, wait, attempt + 1,
+                                resp.status_code,
+                                wait,
+                                attempt + 1,
                             )
                             await asyncio.sleep(wait)
                         else:

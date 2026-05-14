@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import praw
@@ -75,7 +75,9 @@ class RedditSource(SentimentSource):
             return {"posts": [], "mention_count": 0}
 
     async def _search_subreddits(
-        self, ticker: str, company_name: str,
+        self,
+        ticker: str,
+        company_name: str,
     ) -> list[RedditPost]:
         """Search all configured subreddits for ticker mentions."""
         reddit = self._get_reddit()
@@ -93,7 +95,10 @@ class RedditSource(SentimentSource):
             for query in queries:
                 try:
                     posts = await asyncio.to_thread(
-                        self._search_subreddit, reddit, subreddit_name, query,
+                        self._search_subreddit,
+                        reddit,
+                        subreddit_name,
+                        query,
                     )
                     # Deduplicate by URL
                     existing_urls = {p.url for p in all_posts}
@@ -106,23 +111,27 @@ class RedditSource(SentimentSource):
                         break
 
                 except Exception:
-                    logger.warning(
-                        "Reddit search failed: r/%s query=%s", subreddit_name, query
-                    )
+                    logger.warning("Reddit search failed: r/%s query=%s", subreddit_name, query)
 
         # Sort by score descending
         all_posts.sort(key=lambda p: p.score, reverse=True)
         return all_posts[:MAX_TOTAL_POSTS]
 
     def _search_subreddit(
-        self, reddit: praw.Reddit, subreddit_name: str, query: str,
+        self,
+        reddit: praw.Reddit,
+        subreddit_name: str,
+        query: str,
     ) -> list[RedditPost]:
         """Synchronous search — called via asyncio.to_thread."""
         posts: list[RedditPost] = []
         subreddit = reddit.subreddit(subreddit_name)
 
         for submission in subreddit.search(
-            query, sort="relevance", time_filter="week", limit=MAX_POSTS_PER_SUBREDDIT,
+            query,
+            sort="relevance",
+            time_filter="week",
+            limit=MAX_POSTS_PER_SUBREDDIT,
         ):
             post = self._parse_submission(submission, subreddit_name)
             if post:
@@ -131,7 +140,9 @@ class RedditSource(SentimentSource):
         return posts
 
     def _parse_submission(
-        self, submission: Submission, subreddit_name: str,
+        self,
+        submission: Submission,
+        subreddit_name: str,
     ) -> RedditPost | None:
         """Convert a PRAW Submission to our RedditPost model."""
         try:
@@ -143,10 +154,12 @@ class RedditSource(SentimentSource):
             if author:
                 author_name = str(author.name) if hasattr(author, "name") else ""
                 try:
-                    author_karma = getattr(author, "link_karma", 0) + getattr(author, "comment_karma", 0)
+                    author_karma = getattr(author, "link_karma", 0) + getattr(
+                        author, "comment_karma", 0
+                    )
                     created = getattr(author, "created_utc", 0)
                     if created:
-                        age = datetime.now(timezone.utc) - datetime.fromtimestamp(created, tz=timezone.utc)
+                        age = datetime.now(UTC) - datetime.fromtimestamp(created, tz=UTC)
                         account_age_days = age.days
                 except Exception:
                     pass  # Author may be suspended/deleted
@@ -162,7 +175,7 @@ class RedditSource(SentimentSource):
                 author=author_name,
                 author_karma=author_karma,
                 account_age_days=account_age_days,
-                created_at=datetime.fromtimestamp(submission.created_utc, tz=timezone.utc),
+                created_at=datetime.fromtimestamp(submission.created_utc, tz=UTC),
             )
         except Exception:
             logger.warning("Failed to parse Reddit submission")

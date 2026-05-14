@@ -63,8 +63,8 @@ class FlorinBot:
         self._dp = Dispatcher()
 
         # Register handlers
-        from telegram_bot.handlers.commands import register_command_handlers
         from telegram_bot.handlers.callbacks import register_callback_handlers
+        from telegram_bot.handlers.commands import register_command_handlers
 
         register_command_handlers(self._dp, self._settings, self._broker)
         register_callback_handlers(self._dp, self._settings, self._broker)
@@ -101,17 +101,19 @@ class FlorinBot:
             return None
 
         try:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="📈 BUY", callback_data="buy"),
-                    InlineKeyboardButton(text="❌ DENY", callback_data="deny"),
-                ],
-                [
-                    InlineKeyboardButton(text="📋 Full Report", callback_data="report"),
-                ],
-            ])
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📈 BUY", callback_data="buy"),
+                        InlineKeyboardButton(text="❌ DENY", callback_data="deny"),
+                    ],
+                    [
+                        InlineKeyboardButton(text="📋 Full Report", callback_data="report"),
+                    ],
+                ]
+            )
 
             result = await self._bot.send_message(
                 chat_id=self._chat_id,
@@ -134,20 +136,22 @@ class FlorinBot:
             return None
 
         try:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
             buttons = []
             if ticker:
-                buttons.append([
-                    InlineKeyboardButton(
-                        text="📈 BUY",
-                        callback_data=f"screener_buy:{ticker}",
-                    ),
-                    InlineKeyboardButton(
-                        text="⏭ PASS",
-                        callback_data="screener_pass",
-                    ),
-                ])
+                buttons.append(
+                    [
+                        InlineKeyboardButton(
+                            text="📈 BUY",
+                            callback_data=f"screener_buy:{ticker}",
+                        ),
+                        InlineKeyboardButton(
+                            text="⏭ PASS",
+                            callback_data="screener_pass",
+                        ),
+                    ]
+                )
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
 

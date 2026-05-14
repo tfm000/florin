@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from typing import Any
 from xml.etree import ElementTree
 
 import httpx
@@ -57,7 +56,9 @@ async def scrape_all_feeds(feeds: dict[str, str] | None = None) -> list[RawArtic
         feeds = DEFAULT_FEEDS
 
     all_articles = []
-    async with httpx.AsyncClient(headers=HEADERS, timeout=_TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        headers=HEADERS, timeout=_TIMEOUT, follow_redirects=True
+    ) as client:
         for source_name, url in feeds.items():
             try:
                 articles = await _scrape_feed(client, url, source_name)
@@ -89,7 +90,12 @@ async def _scrape_feed(client: httpx.AsyncClient, url: str, source: str) -> list
     text = resp.text
 
     # Check if it's RSS/Atom XML
-    if "xml" in content_type or text.strip().startswith("<?xml") or text.strip().startswith("<rss") or text.strip().startswith("<feed"):
+    if (
+        "xml" in content_type
+        or text.strip().startswith("<?xml")
+        or text.strip().startswith("<rss")
+        or text.strip().startswith("<feed")
+    ):
         return _parse_feed_xml(text, source)
 
     return []
@@ -117,16 +123,17 @@ def _parse_feed_xml(xml_text: str, source: str) -> list[RawArticle]:
             continue
 
         if title:
-            articles.append(RawArticle(
-                headline=title.strip(),
-                excerpt=_clean_html(desc)[:400] if desc else "",
-                url=link or "",
-                pub_date=pub_date,
-                source=source,
-            ))
+            articles.append(
+                RawArticle(
+                    headline=title.strip(),
+                    excerpt=_clean_html(desc)[:400] if desc else "",
+                    url=link or "",
+                    pub_date=pub_date,
+                    source=source,
+                )
+            )
 
     # Atom: <entry>
-    ns = {"atom": "http://www.w3.org/2005/Atom"}
     for entry in root.iter("{http://www.w3.org/2005/Atom}entry"):
         title_el = entry.find("{http://www.w3.org/2005/Atom}title")
         link_el = entry.find("{http://www.w3.org/2005/Atom}link")
@@ -137,20 +144,26 @@ def _parse_feed_xml(xml_text: str, source: str) -> list[RawArticle]:
         title = title_el.text if title_el is not None else ""
         link = link_el.get("href", "") if link_el is not None else ""
         summary = summary_el.text if summary_el is not None else ""
-        date_str = (published_el or updated_el).text if (published_el is not None or updated_el is not None) else ""
+        date_str = (
+            (published_el or updated_el).text
+            if (published_el is not None or updated_el is not None)
+            else ""
+        )
 
         pub_date = _parse_date(date_str)
         if pub_date and pub_date < cutoff:
             continue
 
         if title:
-            articles.append(RawArticle(
-                headline=title.strip(),
-                excerpt=_clean_html(summary)[:400] if summary else "",
-                url=link,
-                pub_date=pub_date,
-                source=source,
-            ))
+            articles.append(
+                RawArticle(
+                    headline=title.strip(),
+                    excerpt=_clean_html(summary)[:400] if summary else "",
+                    url=link,
+                    pub_date=pub_date,
+                    source=source,
+                )
+            )
 
     return articles[:_MAX_ARTICLES]
 

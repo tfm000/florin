@@ -10,10 +10,10 @@ import logging
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 
 from core.exceptions import ConflictError, NotFoundError
-from dashboard.dependencies import get_db_session, get_data_provider_dep, get_yfinance_dep
+from dashboard.dependencies import get_data_provider_dep, get_db_session, get_yfinance_dep
 from db.models import PortfolioHoldingORM, PortfolioORM
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ router = APIRouter(tags=["portfolio"])
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
+
 
 class PortfolioCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
@@ -66,7 +67,7 @@ class IntradayAnalytics(BaseModel):
     portfolio_id: str
     interval: str
     daily_return: float = 0  # % return from open
-    daily_vol: float = 0     # non-annualised volatility of intraday returns
+    daily_vol: float = 0  # non-annualised volatility of intraday returns
 
 
 class IntradayReturnPoint(BaseModel):
@@ -145,6 +146,7 @@ class PortfolioRegimeResponse(BaseModel):
 
 class PortfolioSummary(BaseModel):
     """Consolidated response: analytics + returns + holdings in one payload."""
+
     portfolio_id: str
     period: str
     analytics: PortfolioAnalytics
@@ -172,6 +174,7 @@ class PortfolioSummary(BaseModel):
 
 class HoldingsInfoPageResponse(BaseModel):
     """Paginated holdings info for progressive enrichment."""
+
     portfolio_id: str
     holdings: list[HoldingInfo]
     offset: int
@@ -182,6 +185,7 @@ class HoldingsInfoPageResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_priceable_ticker(ticker: str) -> bool:
     """Return True if ticker is suitable for price history lookup.
@@ -197,9 +201,7 @@ def _is_priceable_ticker(ticker: str) -> bool:
         return False
     if ticker[0].isdigit():
         return False
-    if any(s in ticker for s in ("-WT", "-WS", "-UN", "-RT")):
-        return False
-    return True
+    return not any(s in ticker for s in ("-WT", "-WS", "-UN", "-RT"))
 
 
 def _priceable_weights(holdings, rescale: float | None = None) -> dict[str, float]:
@@ -275,6 +277,7 @@ async def _fetch_histories(tickers, yf, period="1y", start="", end=""):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/portfolios", response_model=list[PortfolioResponse])
 async def list_portfolios(session=Depends(get_db_session)):
     result = await session.execute(select(PortfolioORM).order_by(PortfolioORM.created_at.desc()))
@@ -299,11 +302,16 @@ async def list_portfolios(session=Depends(get_db_session)):
 
     responses = []
     for p in portfolios:
-        responses.append(PortfolioResponse(
-            id=p.id, name=p.name, group=p.group, description=p.description,
-            holdings=holdings_by_portfolio.get(p.id, []),
-            created_at=str(p.created_at),
-        ))
+        responses.append(
+            PortfolioResponse(
+                id=p.id,
+                name=p.name,
+                group=p.group,
+                description=p.description,
+                holdings=holdings_by_portfolio.get(p.id, []),
+                created_at=str(p.created_at),
+            )
+        )
     return responses
 
 
@@ -318,8 +326,11 @@ async def create_portfolio(req: PortfolioCreate, session=Depends(get_db_session)
     await session.commit()
     await session.refresh(portfolio)
     return PortfolioResponse(
-        id=portfolio.id, name=portfolio.name, group=portfolio.group,
-        description=portfolio.description, created_at=str(portfolio.created_at),
+        id=portfolio.id,
+        name=portfolio.name,
+        group=portfolio.group,
+        description=portfolio.description,
+        created_at=str(portfolio.created_at),
     )
 
 
@@ -356,13 +367,16 @@ async def delete_portfolio(portfolio_id: str, session=Depends(get_db_session)):
     if not portfolio:
         raise NotFoundError("Portfolio not found")
 
-    await session.execute(delete(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == portfolio_id))
+    await session.execute(
+        delete(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == portfolio_id)
+    )
     await session.delete(portfolio)
     await session.commit()
 
     # Invalidate cache
     from dashboard.deps import get_db
     from dashboard.services.portfolio_cache import PortfolioCacheService
+
     try:
         await PortfolioCacheService(get_db()).invalidate(portfolio_id)
     except Exception:
@@ -391,16 +405,23 @@ async def update_holdings(
             raise HTTPException(403, "13F portfolio holdings cannot be modified")
 
     # Replace all holdings
-    await session.execute(delete(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == portfolio_id))
+    await session.execute(
+        delete(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == portfolio_id)
+    )
     for h in holdings:
-        session.add(PortfolioHoldingORM(
-            portfolio_id=portfolio_id, ticker=h.ticker.upper(), weight=h.weight,
-        ))
+        session.add(
+            PortfolioHoldingORM(
+                portfolio_id=portfolio_id,
+                ticker=h.ticker.upper(),
+                weight=h.weight,
+            )
+        )
     await session.commit()
 
     # Invalidate cache on holdings change
     from dashboard.deps import get_db
     from dashboard.services.portfolio_cache import PortfolioCacheService
+
     try:
         await PortfolioCacheService(get_db()).invalidate(portfolio_id)
     except Exception:
@@ -418,7 +439,8 @@ async def get_holdings_info(
     session=Depends(get_db_session),
     yf=Depends(get_yfinance_dep),
 ):
-    """Get enriched holdings data with sector/industry/fundamentals, per-holding return/vol, and weighted averages."""
+    """Get enriched holdings data with sector/industry/fundamentals, per-holding
+    return/vol, and weighted averages."""
     result = await session.execute(
         select(PortfolioHoldingORM).where(PortfolioHoldingORM.portfolio_id == portfolio_id)
     )
@@ -431,24 +453,24 @@ async def get_holdings_info(
 
     # Only fetch price data / info for priceable tickers (skip bonds)
     priceable = [_is_priceable_ticker(t) for t in tickers]
-    priceable_tickers = [t for t, ok in zip(tickers, priceable) if ok]
+    priceable_tickers = [t for t, ok in zip(tickers, priceable, strict=True) if ok]
 
     info_tasks = [yf.get_info(t) for t in priceable_tickers]
     history_tasks = list(_fetch_histories_coros(priceable_tickers, yf, period, start, end))
     all_results = await asyncio.gather(*info_tasks, *history_tasks)
 
-    priceable_infos = all_results[:len(priceable_tickers)]
-    priceable_histories = all_results[len(priceable_tickers):]
+    priceable_infos = all_results[: len(priceable_tickers)]
+    priceable_histories = all_results[len(priceable_tickers) :]
 
     # Build lookup maps for priceable results
-    info_map = dict(zip(priceable_tickers, priceable_infos))
-    history_map = dict(zip(priceable_tickers, priceable_histories))
+    info_map = dict(zip(priceable_tickers, priceable_infos, strict=True))
+    history_map = dict(zip(priceable_tickers, priceable_histories, strict=True))
 
     # Map back to full ticker list (non-priceable get empty defaults)
     infos = [info_map.get(t, {}) for t in tickers]
     histories = [history_map.get(t, []) for t in tickers]
 
-    from stats.core import simple_pct_change, simple_returns, annualized_volatility
+    from stats.core import annualized_volatility, simple_pct_change, simple_returns
 
     holding_infos = []
     for i, info in enumerate(infos):
@@ -471,20 +493,22 @@ async def get_holdings_info(
             except Exception:
                 pass
 
-        holding_infos.append(HoldingInfo(
-            ticker=t,
-            weight=weights[t],
-            sector=info.get("sector", ""),
-            industry=info.get("industry", ""),
-            pe_ratio=info.get("pe_ratio"),
-            forward_pe=info.get("forward_pe"),
-            dividend_yield=info.get("dividend_yield"),
-            beta=info.get("beta"),
-            market_cap=info.get("market_cap"),
-            current_price=info.get("current_price"),
-            period_return=p_return,
-            period_vol=p_vol,
-        ))
+        holding_infos.append(
+            HoldingInfo(
+                ticker=t,
+                weight=weights[t],
+                sector=info.get("sector", ""),
+                industry=info.get("industry", ""),
+                pe_ratio=info.get("pe_ratio"),
+                forward_pe=info.get("forward_pe"),
+                dividend_yield=info.get("dividend_yield"),
+                beta=info.get("beta"),
+                market_cap=info.get("market_cap"),
+                current_price=info.get("current_price"),
+                period_return=p_return,
+                period_vol=p_vol,
+            )
+        )
 
     # Compute weighted averages (exclude nulls, renormalize weights)
     _pe_fields = {"pe_ratio", "forward_pe"}
@@ -530,7 +554,10 @@ async def get_portfolio_analytics(
     period: str = Query(default="1y"),
     start: str = Query(default=""),
     end: str = Query(default=""),
-    rescale_weights: float | None = Query(default=100, description="Rescale priceable weights to sum to this %. Null = use raw weights."),
+    rescale_weights: float | None = Query(
+        default=100,
+        description="Rescale priceable weights to sum to this %. Null = use raw weights.",
+    ),
     session=Depends(get_db_session),
     yf=Depends(get_yfinance_dep),
 ):
@@ -548,11 +575,15 @@ async def get_portfolio_analytics(
 
     # Fetch risk-free rate for portfolio's primary currency (USD default)
     from dashboard.deps import get_rf_fetcher
+
     rf_fetcher = get_rf_fetcher()
 
     # Pre-compute common dates so we can align rf rates
     port_prices, common = await asyncio.to_thread(
-        _build_portfolio_prices, tickers, weights, histories,
+        _build_portfolio_prices,
+        tickers,
+        weights,
+        histories,
     )
     if port_prices is None:
         return PortfolioAnalytics(portfolio_id=portfolio_id, period=period)
@@ -594,7 +625,10 @@ async def get_portfolio_returns(
     start: str = Query(default=""),
     end: str = Query(default=""),
     prorated: bool = Query(default=False),
-    rescale_weights: float | None = Query(default=100, description="Rescale priceable weights to sum to this %. Null = use raw weights."),
+    rescale_weights: float | None = Query(
+        default=100,
+        description="Rescale priceable weights to sum to this %. Null = use raw weights.",
+    ),
     session=Depends(get_db_session),
     yf=Depends(get_yfinance_dep),
 ):
@@ -669,10 +703,12 @@ async def get_portfolio_returns(
             if prorated and active_weight > 0 and active_weight < target_total:
                 port_return = port_return * (target_total / active_weight)
 
-            points.append({
-                "date": d,
-                "portfolio": round(port_return, 2),
-            })
+            points.append(
+                {
+                    "date": d,
+                    "portfolio": round(port_return, 2),
+                }
+            )
 
         return points
 
@@ -690,13 +726,19 @@ async def get_portfolio_regime(
     period: str = Query(default="1y"),
     start: str = Query(default=""),
     end: str = Query(default=""),
-    rescale_weights: float | None = Query(default=100, description="Rescale priceable weights to sum to this %. Null = use raw weights."),
+    rescale_weights: float | None = Query(
+        default=100,
+        description="Rescale priceable weights to sum to this %. Null = use raw weights.",
+    ),
     session=Depends(get_db_session),
     yf=Depends(get_yfinance_dep),
 ):
     """Detect regimes on weighted portfolio returns using Markov switching."""
     empty = PortfolioRegimeResponse(
-        portfolio_id=portfolio_id, n_regimes=n_regimes, regimes=[], stats=[],
+        portfolio_id=portfolio_id,
+        n_regimes=n_regimes,
+        regimes=[],
+        stats=[],
     )
 
     holdings = await _fetch_holdings(portfolio_id, session)
@@ -710,6 +752,7 @@ async def get_portfolio_regime(
 
     # Single fetch — reuses summary endpoint's 5y cache
     from data.yfinance_provider import _period_cutoff
+
     history_map = await yf.get_histories_batch(tickers, period="5y")
     max_histories = [history_map.get(t, []) for t in tickers]
 
@@ -738,8 +781,11 @@ async def get_portfolio_regime(
             return_dates = common[1:]  # dates aligned to returns
 
             return fit_markov_regimes(
-                scaled, return_dates, n_regimes,
-                display_start=display_start, display_end=display_end,
+                scaled,
+                return_dates,
+                n_regimes,
+                display_start=display_start,
+                display_end=display_end,
             )
         except Exception:
             logger.exception("Portfolio regime computation failed")
@@ -761,6 +807,7 @@ async def get_portfolio_regime(
 # Consolidated summary endpoint
 # ---------------------------------------------------------------------------
 
+
 async def _compute_full_summary(
     portfolio_id: str,
     period: str,
@@ -780,8 +827,11 @@ async def _compute_full_summary(
     all_holdings = await _fetch_holdings(portfolio_id, session)
     empty_analytics = PortfolioAnalytics(portfolio_id=portfolio_id, period=period)
     empty = PortfolioSummary(
-        portfolio_id=portfolio_id, period=period,
-        analytics=empty_analytics, returns=[], holdings=[],
+        portfolio_id=portfolio_id,
+        period=period,
+        analytics=empty_analytics,
+        returns=[],
+        holdings=[],
     )
 
     if not all_holdings:
@@ -794,20 +844,24 @@ async def _compute_full_summary(
     priceable_count = len(tickers)
 
     if not tickers:
-        bond_holdings = [
-            HoldingInfo(ticker=h.ticker, weight=h.weight)
-            for h in all_holdings
-        ]
+        bond_holdings = [HoldingInfo(ticker=h.ticker, weight=h.weight) for h in all_holdings]
         empty_with_bonds = PortfolioSummary(
-            portfolio_id=portfolio_id, period=period,
-            analytics=empty_analytics, returns=[], holdings=bond_holdings,
-            holdings_count=holdings_count, priceable_count=0,
+            portfolio_id=portfolio_id,
+            period=period,
+            analytics=empty_analytics,
+            returns=[],
+            holdings=bond_holdings,
+            holdings_count=holdings_count,
+            priceable_count=0,
         )
         return empty_with_bonds, [], []
 
     # --- Single batch download for all priceable histories ---
     history_map = await yf.get_histories_batch(
-        tickers, period=period, start=start, end=end,
+        tickers,
+        period=period,
+        start=start,
+        end=end,
     )
 
     # Sort tickers by weight descending for info enrichment priority
@@ -816,12 +870,16 @@ async def _compute_full_summary(
 
     # --- Parallel: fetch info for top N + risk-free rates ---
     from dashboard.deps import get_rf_fetcher
+
     rf_fetcher = get_rf_fetcher()
 
     # Build portfolio prices for analytics (needs to happen before rf fetch)
     histories_list = [history_map.get(t, []) for t in tickers]
     port_prices, common = await asyncio.to_thread(
-        _build_portfolio_prices, tickers, weights, histories_list,
+        _build_portfolio_prices,
+        tickers,
+        weights,
+        histories_list,
     )
 
     # Fetch info and rf rates in parallel
@@ -843,6 +901,7 @@ async def _compute_full_summary(
 
         def _compute_analytics(prices, rf_daily_rates):
             from stats.core import compute_full_stats, total_return
+
             stats = compute_full_stats(prices, rf_daily_rates)
             total_ret = total_return(prices) or 0.0
             return {
@@ -858,7 +917,8 @@ async def _compute_full_summary(
         analytics_dict = await asyncio.to_thread(_compute_analytics, port_prices, rf_daily)
 
     analytics = PortfolioAnalytics(
-        portfolio_id=portfolio_id, period=period,
+        portfolio_id=portfolio_id,
+        period=period,
         **(analytics_dict or {}),
     )
 
@@ -923,7 +983,7 @@ async def _compute_full_summary(
 
     # --- Build holdings info ---
     def _build_holdings():
-        from stats.core import simple_pct_change, simple_returns, annualized_volatility
+        from stats.core import annualized_volatility, simple_pct_change, simple_returns
 
         holding_infos = []
         for t in tickers_by_weight:
@@ -946,19 +1006,22 @@ async def _compute_full_summary(
                 except Exception:
                     pass
 
-            holding_infos.append(HoldingInfo(
-                ticker=t, weight=raw_weight,
-                sector=info.get("sector", ""),
-                industry=info.get("industry", ""),
-                pe_ratio=info.get("pe_ratio"),
-                forward_pe=info.get("forward_pe"),
-                dividend_yield=info.get("dividend_yield"),
-                beta=info.get("beta"),
-                market_cap=info.get("market_cap"),
-                current_price=info.get("current_price"),
-                period_return=p_return,
-                period_vol=p_vol,
-            ))
+            holding_infos.append(
+                HoldingInfo(
+                    ticker=t,
+                    weight=raw_weight,
+                    sector=info.get("sector", ""),
+                    industry=info.get("industry", ""),
+                    pe_ratio=info.get("pe_ratio"),
+                    forward_pe=info.get("forward_pe"),
+                    dividend_yield=info.get("dividend_yield"),
+                    beta=info.get("beta"),
+                    market_cap=info.get("market_cap"),
+                    current_price=info.get("current_price"),
+                    period_return=p_return,
+                    period_vol=p_vol,
+                )
+            )
 
         # Append non-priceable holdings (bonds) at the end
         for h in all_holdings:
@@ -975,9 +1038,9 @@ async def _compute_full_summary(
     def _vals(field: str) -> list[float]:
         is_pe = field in _pe_fields
         return [
-            v for h in holding_infos
-            if (v := getattr(h, field)) is not None
-            and (not is_pe or _is_valid_pe_for_agg(v))
+            v
+            for h in holding_infos
+            if (v := getattr(h, field)) is not None and (not is_pe or _is_valid_pe_for_agg(v))
         ]
 
     def _weighted_avg(field: str) -> float | None:
@@ -1043,15 +1106,29 @@ async def get_portfolio_summary(
     start: str = Query(default=""),
     end: str = Query(default=""),
     prorated: bool = Query(default=False),
-    rescale_weights: float | None = Query(default=100, description="Rescale priceable weights to sum to this %. Null = use raw weights."),
-    info_top_n: int = Query(default=50, ge=0, description="Fetch info for top N holdings by weight. 0 = skip info enrichment."),
+    rescale_weights: float | None = Query(
+        default=100,
+        description="Rescale priceable weights to sum to this %. Null = use raw weights.",
+    ),
+    info_top_n: int = Query(
+        default=50,
+        ge=0,
+        description="Fetch info for top N holdings by weight. 0 = skip info enrichment.",
+    ),
     session=Depends(get_db_session),
     yf=Depends(get_yfinance_dep),
 ):
     """Consolidated portfolio analysis: analytics + cumulative returns + holdings info."""
     summary, _, _ = await _compute_full_summary(
-        portfolio_id, period, start, end, prorated,
-        rescale_weights, info_top_n, session, yf,
+        portfolio_id,
+        period,
+        start,
+        end,
+        prorated,
+        rescale_weights,
+        info_top_n,
+        session,
+        yf,
     )
     return summary
 
@@ -1070,7 +1147,9 @@ async def stream_portfolio_summary(
 ):
     """SSE stream: emit cached data immediately, then fresh data after recomputation."""
     import json
+
     from fastapi.responses import StreamingResponse
+
     from dashboard.deps import get_db
     from dashboard.services.portfolio_cache import PortfolioCacheService
 
@@ -1079,26 +1158,39 @@ async def stream_portfolio_summary(
     async def event_generator():
         # Phase 1: try to serve from cache
         cached = await cache_svc.get_cached_summary(
-            portfolio_id, period, prorated, start, end,
+            portfolio_id,
+            period,
+            prorated,
+            start,
+            end,
         )
         if cached:
             yield f"event: cached\ndata: {json.dumps(cached, default=str)}\n\n"
         else:
-            yield f"event: loading\ndata: {{}}\n\n"
+            yield "event: loading\ndata: {}\n\n"
 
         # Phase 2: full recomputation
         try:
             summary, prorated_returns, non_prorated_returns = await _compute_full_summary(
-                portfolio_id, period, start, end, prorated,
-                rescale_weights, info_top_n, session, yf,
+                portfolio_id,
+                period,
+                start,
+                end,
+                prorated,
+                rescale_weights,
+                info_top_n,
+                session,
+                yf,
             )
 
             # Phase 3: save to cache
             summary_dict = summary.model_dump()
             try:
                 await cache_svc.save_summary(
-                    portfolio_id, summary_dict,
-                    prorated_returns, non_prorated_returns,
+                    portfolio_id,
+                    summary_dict,
+                    prorated_returns,
+                    non_prorated_returns,
                 )
             except Exception:
                 logger.warning("Failed to save portfolio cache for %s", portfolio_id, exc_info=True)
@@ -1108,10 +1200,10 @@ async def stream_portfolio_summary(
 
         except Exception:
             logger.error("Failed to compute portfolio summary for %s", portfolio_id, exc_info=True)
-            yield f"event: error\ndata: {{\"error\": \"Failed to compute summary\"}}\n\n"
+            yield 'event: error\ndata: {"error": "Failed to compute summary"}\n\n'
 
         # Phase 5: signal completion
-        yield f"event: done\ndata: {{}}\n\n"
+        yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -1128,7 +1220,9 @@ async def _empty_dict() -> dict:
     return {}
 
 
-@router.get("/portfolios/{portfolio_id}/holdings-info-page", response_model=HoldingsInfoPageResponse)
+@router.get(
+    "/portfolios/{portfolio_id}/holdings-info-page", response_model=HoldingsInfoPageResponse
+)
 async def get_holdings_info_page(
     portfolio_id: str,
     offset: int = Query(default=0, ge=0),
@@ -1148,8 +1242,11 @@ async def get_holdings_info_page(
     all_holdings = await _fetch_holdings(portfolio_id, session)
     if not all_holdings:
         return HoldingsInfoPageResponse(
-            portfolio_id=portfolio_id, holdings=[],
-            offset=offset, limit=limit, total=0,
+            portfolio_id=portfolio_id,
+            holdings=[],
+            offset=offset,
+            limit=limit,
+            total=0,
         )
 
     # Sort priceable holdings by weight descending
@@ -1160,12 +1257,14 @@ async def get_holdings_info_page(
     page = priceable[offset : offset + limit]
     if not page:
         return HoldingsInfoPageResponse(
-            portfolio_id=portfolio_id, holdings=[],
-            offset=offset, limit=limit, total=total,
+            portfolio_id=portfolio_id,
+            holdings=[],
+            offset=offset,
+            limit=limit,
+            total=total,
         )
 
     page_tickers = [h.ticker for h in page]
-    page_weights = {h.ticker: h.weight for h in page}
 
     # Fetch info and histories in parallel (histories likely cached from /summary)
     info_result, history_map = await asyncio.gather(
@@ -1173,7 +1272,7 @@ async def get_holdings_info_page(
         yf.get_histories_batch(page_tickers, period=period, start=start, end=end),
     )
 
-    from stats.core import simple_pct_change, simple_returns, annualized_volatility
+    from stats.core import annualized_volatility, simple_pct_change, simple_returns
 
     holding_infos = []
     for h in page:
@@ -1196,19 +1295,22 @@ async def get_holdings_info_page(
             except Exception:
                 pass
 
-        holding_infos.append(HoldingInfo(
-            ticker=t, weight=h.weight,
-            sector=info.get("sector", ""),
-            industry=info.get("industry", ""),
-            pe_ratio=info.get("pe_ratio"),
-            forward_pe=info.get("forward_pe"),
-            dividend_yield=info.get("dividend_yield"),
-            beta=info.get("beta"),
-            market_cap=info.get("market_cap"),
-            current_price=info.get("current_price"),
-            period_return=p_return,
-            period_vol=p_vol,
-        ))
+        holding_infos.append(
+            HoldingInfo(
+                ticker=t,
+                weight=h.weight,
+                sector=info.get("sector", ""),
+                industry=info.get("industry", ""),
+                pe_ratio=info.get("pe_ratio"),
+                forward_pe=info.get("forward_pe"),
+                dividend_yield=info.get("dividend_yield"),
+                beta=info.get("beta"),
+                market_cap=info.get("market_cap"),
+                current_price=info.get("current_price"),
+                period_return=p_return,
+                period_vol=p_vol,
+            )
+        )
 
     return HoldingsInfoPageResponse(
         portfolio_id=portfolio_id,
@@ -1229,14 +1331,18 @@ _VALID_INTERVALS = {"1Min", "5Min", "15Min", "30Min", "1Hour"}
 @router.get("/portfolios/{portfolio_id}/intraday/returns", response_model=IntradayReturnsResponse)
 async def get_intraday_returns(
     portfolio_id: str,
-    interval: str = Query(default="5Min", description="Bar interval: 1Min, 5Min, 15Min, 30Min, 1Hour"),
+    interval: str = Query(
+        default="5Min", description="Bar interval: 1Min, 5Min, 15Min, 30Min, 1Hour"
+    ),
     rescale_weights: float | None = Query(default=100),
     session=Depends(get_db_session),
     data_provider=Depends(get_data_provider_dep),
 ):
     """Intraday cumulative return series from Alpaca bars (today's session)."""
     if interval not in _VALID_INTERVALS:
-        raise HTTPException(400, f"Invalid interval. Must be one of: {', '.join(sorted(_VALID_INTERVALS))}")
+        raise HTTPException(
+            400, f"Invalid interval. Must be one of: {', '.join(sorted(_VALID_INTERVALS))}"
+        )
 
     empty = IntradayReturnsResponse(portfolio_id=portfolio_id, interval=interval, returns=[])
 
@@ -1317,7 +1423,9 @@ async def get_intraday_analytics(
 ):
     """Intraday analytics: daily return and daily vol (non-annualised)."""
     if interval not in _VALID_INTERVALS:
-        raise HTTPException(400, f"Invalid interval. Must be one of: {', '.join(sorted(_VALID_INTERVALS))}")
+        raise HTTPException(
+            400, f"Invalid interval. Must be one of: {', '.join(sorted(_VALID_INTERVALS))}"
+        )
 
     empty = IntradayAnalytics(portfolio_id=portfolio_id, interval=interval)
 
@@ -1360,6 +1468,7 @@ async def get_intraday_analytics(
 
         # Daily return: weighted return from first bar to last bar
         from stats.core import simple_pct_change
+
         last_ts = all_ts[-1]
         daily_return = 0.0
         total_w = 0.0
@@ -1394,7 +1503,7 @@ async def get_intraday_analytics(
         if len(bar_returns) >= 2:
             mean = sum(bar_returns) / len(bar_returns)
             variance = sum((r - mean) ** 2 for r in bar_returns) / (len(bar_returns) - 1)
-            daily_vol = variance ** 0.5
+            daily_vol = variance**0.5
 
         return {"daily_return": round(daily_return, 4), "daily_vol": round(daily_vol, 4)}
 

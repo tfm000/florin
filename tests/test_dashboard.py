@@ -47,6 +47,7 @@ async def readonly_app():
     event_bus = EventBus()
 
     from broker.paper_broker import PaperBroker
+
     broker = PaperBroker(initial_cash=10_000.0)
     await broker.connect()
 
@@ -69,6 +70,7 @@ async def broker_app():
     event_bus = EventBus()
 
     from broker.paper_broker import PaperBroker
+
     broker = PaperBroker(initial_cash=10_000.0, currency="USD")
     await broker.connect()
     # Fixed price getter for deterministic tests
@@ -190,18 +192,18 @@ class TestSettingsRoutes:
 
     @pytest.mark.asyncio
     async def test_update_settings(self, client):
-        resp = await client.put("/api/settings", json={
-            "settings": [{"key": "scan_interval_seconds", "value": "60"}]
-        })
+        resp = await client.put(
+            "/api/settings", json={"settings": [{"key": "scan_interval_seconds", "value": "60"}]}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert "scan_interval_seconds" in data["updated"]
 
     @pytest.mark.asyncio
     async def test_update_persists(self, client):
-        await client.put("/api/settings", json={
-            "settings": [{"key": "default_position_size", "value": "250.0"}]
-        })
+        await client.put(
+            "/api/settings", json={"settings": [{"key": "default_position_size", "value": "250.0"}]}
+        )
         resp = await client.get("/api/settings")
         data = resp.json()
         trading = next(s for s in data["sections"] if s["id"] == "trading")
@@ -212,9 +214,9 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_delete_setting(self, client):
         # Set then delete
-        await client.put("/api/settings", json={
-            "settings": [{"key": "log_level", "value": "DEBUG"}]
-        })
+        await client.put(
+            "/api/settings", json={"settings": [{"key": "log_level", "value": "DEBUG"}]}
+        )
         resp = await client.delete("/api/settings/log_level")
         assert resp.status_code == 200
         assert resp.json()["deleted"] == "log_level"
@@ -228,9 +230,9 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_restart_required_true(self, client):
         """Updating a broker key should flag restart_required."""
-        resp = await client.put("/api/settings", json={
-            "settings": [{"key": "t212_api_key", "value": "new_key_value"}]
-        })
+        resp = await client.put(
+            "/api/settings", json={"settings": [{"key": "t212_api_key", "value": "new_key_value"}]}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["restart_required"] is True
@@ -238,9 +240,9 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_restart_required_false(self, client):
         """Updating a scanner key should NOT flag restart_required."""
-        resp = await client.put("/api/settings", json={
-            "settings": [{"key": "scan_interval_seconds", "value": "120"}]
-        })
+        resp = await client.put(
+            "/api/settings", json={"settings": [{"key": "scan_interval_seconds", "value": "120"}]}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["restart_required"] is False
@@ -248,9 +250,9 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_skips_masked_secret(self, client):
         """If value contains mask chars (•), the key is skipped."""
-        resp = await client.put("/api/settings", json={
-            "settings": [{"key": "groq_api_key", "value": "abc••••hij"}]
-        })
+        resp = await client.put(
+            "/api/settings", json={"settings": [{"key": "groq_api_key", "value": "abc••••hij"}]}
+        )
         assert resp.status_code == 200
         # Key should NOT be in updated list since it was masked
         assert "groq_api_key" not in resp.json()["updated"]
@@ -258,9 +260,9 @@ class TestSettingsRoutes:
     @pytest.mark.asyncio
     async def test_update_invalid_key_skipped(self, client):
         """Non-existent keys are silently skipped."""
-        resp = await client.put("/api/settings", json={
-            "settings": [{"key": "fake_setting_xyz", "value": "whatever"}]
-        })
+        resp = await client.put(
+            "/api/settings", json={"settings": [{"key": "fake_setting_xyz", "value": "whatever"}]}
+        )
         assert resp.status_code == 200
         assert resp.json()["updated"] == []
 
@@ -290,14 +292,21 @@ class TestReadOnlyMode:
 
     @pytest.mark.asyncio
     async def test_sell_blocked_in_readonly(self, readonly_client):
-        resp = await readonly_client.post("/api/orders/sell", json={"ticker": "AAPL", "quantity": 1})
+        resp = await readonly_client.post(
+            "/api/orders/sell", json={"ticker": "AAPL", "quantity": 1}
+        )
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_stoploss_blocked_in_readonly(self, readonly_client):
-        resp = await readonly_client.post("/api/orders/stoploss", json={
-            "ticker": "AAPL", "quantity": 1, "stop_price": 1.0,
-        })
+        resp = await readonly_client.post(
+            "/api/orders/stoploss",
+            json={
+                "ticker": "AAPL",
+                "quantity": 1,
+                "stop_price": 1.0,
+            },
+        )
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
@@ -333,6 +342,7 @@ class TestHealthRoutes:
     async def test_health_check_ok_when_configured(self, client):
         """Health returns 'ok' when all required services are configured."""
         from dashboard.deps import get_settings as get_dashboard_settings
+
         settings = get_dashboard_settings()
         original_alpaca_key = settings.alpaca_api_key
         original_alpaca_secret = settings.alpaca_api_secret
@@ -515,9 +525,14 @@ class TestOrdersDeep:
     @pytest.mark.asyncio
     async def test_limit_order_goes_pending(self, broker_client):
         client, _ = broker_client
-        resp = await client.post("/api/orders/buy", json={
-            "ticker": "AAPL", "quantity": 5, "limit_price": 140.0,
-        })
+        resp = await client.post(
+            "/api/orders/buy",
+            json={
+                "ticker": "AAPL",
+                "quantity": 5,
+                "limit_price": 140.0,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
@@ -530,9 +545,14 @@ class TestOrdersDeep:
     @pytest.mark.asyncio
     async def test_cancel_order(self, broker_client):
         client, _ = broker_client
-        resp = await client.post("/api/orders/buy", json={
-            "ticker": "AAPL", "quantity": 5, "limit_price": 140.0,
-        })
+        resp = await client.post(
+            "/api/orders/buy",
+            json={
+                "ticker": "AAPL",
+                "quantity": 5,
+                "limit_price": 140.0,
+            },
+        )
         order_id = resp.json()["order_id"]
         cancel_resp = await client.delete(f"/api/orders/{order_id}")
         assert cancel_resp.status_code == 200
@@ -553,9 +573,14 @@ class TestOrdersDeep:
         client, _ = broker_client
         # Need a position first for the stop to make sense (stop is a sell)
         await client.post("/api/orders/buy", json={"ticker": "AAPL", "quantity": 10})
-        resp = await client.post("/api/orders/stoploss", json={
-            "ticker": "AAPL", "quantity": 10, "stop_price": 130.0,
-        })
+        resp = await client.post(
+            "/api/orders/stoploss",
+            json={
+                "ticker": "AAPL",
+                "quantity": 10,
+                "stop_price": 130.0,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
@@ -565,9 +590,13 @@ class TestOrdersDeep:
     async def test_value_based_buy(self, broker_client):
         """Buy by target_value instead of quantity."""
         client, _ = broker_client
-        resp = await client.post("/api/orders/buy", json={
-            "ticker": "AAPL", "target_value": 750.0,
-        })
+        resp = await client.post(
+            "/api/orders/buy",
+            json={
+                "ticker": "AAPL",
+                "target_value": 750.0,
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
@@ -647,36 +676,67 @@ class TestTradesDeep:
     async def seeded_client(self, app):
         """Seed the DB with trade records and return a client."""
         from dashboard.deps import get_db
+
         db = get_db()
         async with db.session() as session:
-            session.add(TradeORM(
-                id="trade_win_01", ticker="AAPL", side="BUY",
-                order_type="MARKET", quantity=10, price=100.0,
-                total_value=1000.0, status="FILLED",
-                executed_at=datetime(2025, 1, 10, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="trade_win_02", ticker="AAPL", side="SELL",
-                order_type="MARKET", quantity=10, price=120.0,
-                total_value=1200.0, status="FILLED",
-                is_closing_trade=True, realised_pnl=200.0,
-                realised_pnl_pct=20.0,
-                executed_at=datetime(2025, 1, 15, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="trade_loss_01", ticker="TSLA", side="BUY",
-                order_type="MARKET", quantity=5, price=200.0,
-                total_value=1000.0, status="FILLED",
-                executed_at=datetime(2025, 1, 20, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="trade_loss_02", ticker="TSLA", side="SELL",
-                order_type="MARKET", quantity=5, price=180.0,
-                total_value=900.0, status="FILLED",
-                is_closing_trade=True, realised_pnl=-100.0,
-                realised_pnl_pct=-10.0,
-                executed_at=datetime(2025, 1, 25, tzinfo=UTC),
-            ))
+            session.add(
+                TradeORM(
+                    id="trade_win_01",
+                    ticker="AAPL",
+                    side="BUY",
+                    order_type="MARKET",
+                    quantity=10,
+                    price=100.0,
+                    total_value=1000.0,
+                    status="FILLED",
+                    executed_at=datetime(2025, 1, 10, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="trade_win_02",
+                    ticker="AAPL",
+                    side="SELL",
+                    order_type="MARKET",
+                    quantity=10,
+                    price=120.0,
+                    total_value=1200.0,
+                    status="FILLED",
+                    is_closing_trade=True,
+                    realised_pnl=200.0,
+                    realised_pnl_pct=20.0,
+                    executed_at=datetime(2025, 1, 15, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="trade_loss_01",
+                    ticker="TSLA",
+                    side="BUY",
+                    order_type="MARKET",
+                    quantity=5,
+                    price=200.0,
+                    total_value=1000.0,
+                    status="FILLED",
+                    executed_at=datetime(2025, 1, 20, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="trade_loss_02",
+                    ticker="TSLA",
+                    side="SELL",
+                    order_type="MARKET",
+                    quantity=5,
+                    price=180.0,
+                    total_value=900.0,
+                    status="FILLED",
+                    is_closing_trade=True,
+                    realised_pnl=-100.0,
+                    realised_pnl_pct=-10.0,
+                    executed_at=datetime(2025, 1, 25, tzinfo=UTC),
+                )
+            )
             await session.commit()
 
         transport = ASGITransport(app=app)
@@ -736,29 +796,54 @@ class TestReportsDeep:
     @pytest.fixture
     async def seeded_client(self, app):
         from dashboard.deps import get_db
+
         db = get_db()
         report_data = {"analysis": "test analysis content", "signals": ["bullish"]}
         async with db.session() as session:
-            session.add(ReportORM(
-                id="rpt_001", ticker="AAPL", mode="single",
-                alert_price=2.50, alert_change_pct=15.0, alert_volume=500_000,
-                final_recommendation="BUY", final_score=7.5, final_confidence=0.85,
-                reddit_mentions=42, apewisdom_mentions=15, alphavantage_sentiment=0.3,
-                insider_buys=2, insider_sells=0, news_count=5,
-                report_json=json.dumps(report_data),
-                user_action="PENDING",
-                generated_at=datetime(2025, 2, 1, tzinfo=UTC),
-            ))
-            session.add(ReportORM(
-                id="rpt_002", ticker="TSLA", mode="consensus",
-                alert_price=180.0, alert_change_pct=-5.0, alert_volume=1_000_000,
-                final_recommendation="AVOID", final_score=3.0, final_confidence=0.70,
-                reddit_mentions=100, apewisdom_mentions=50, alphavantage_sentiment=-0.35,
-                insider_buys=0, insider_sells=3, news_count=12,
-                report_json=json.dumps({}),
-                user_action="DENY",
-                generated_at=datetime(2025, 2, 5, tzinfo=UTC),
-            ))
+            session.add(
+                ReportORM(
+                    id="rpt_001",
+                    ticker="AAPL",
+                    mode="single",
+                    alert_price=2.50,
+                    alert_change_pct=15.0,
+                    alert_volume=500_000,
+                    final_recommendation="BUY",
+                    final_score=7.5,
+                    final_confidence=0.85,
+                    reddit_mentions=42,
+                    apewisdom_mentions=15,
+                    alphavantage_sentiment=0.3,
+                    insider_buys=2,
+                    insider_sells=0,
+                    news_count=5,
+                    report_json=json.dumps(report_data),
+                    user_action="PENDING",
+                    generated_at=datetime(2025, 2, 1, tzinfo=UTC),
+                )
+            )
+            session.add(
+                ReportORM(
+                    id="rpt_002",
+                    ticker="TSLA",
+                    mode="consensus",
+                    alert_price=180.0,
+                    alert_change_pct=-5.0,
+                    alert_volume=1_000_000,
+                    final_recommendation="AVOID",
+                    final_score=3.0,
+                    final_confidence=0.70,
+                    reddit_mentions=100,
+                    apewisdom_mentions=50,
+                    alphavantage_sentiment=-0.35,
+                    insider_buys=0,
+                    insider_sells=3,
+                    news_count=12,
+                    report_json=json.dumps({}),
+                    user_action="DENY",
+                    generated_at=datetime(2025, 2, 5, tzinfo=UTC),
+                )
+            )
             await session.commit()
 
         transport = ASGITransport(app=app)
@@ -828,35 +913,64 @@ class TestStatsDeep:
     @pytest.fixture
     async def seeded_client(self, app):
         from dashboard.deps import get_db
+
         db = get_db()
         async with db.session() as session:
             # 2 buy trades + 2 closing sell trades (1 win, 1 loss)
-            session.add(TradeORM(
-                id="s_buy_1", ticker="AAPL", side="BUY",
-                quantity=10, price=100.0, total_value=1000.0,
-                status="FILLED",
-                executed_at=datetime(2025, 1, 5, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="s_sell_1", ticker="AAPL", side="SELL",
-                quantity=10, price=120.0, total_value=1200.0,
-                status="FILLED", is_closing_trade=True,
-                realised_pnl=200.0, realised_pnl_pct=20.0,
-                executed_at=datetime(2025, 1, 10, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="s_buy_2", ticker="TSLA", side="BUY",
-                quantity=5, price=200.0, total_value=1000.0,
-                status="FILLED",
-                executed_at=datetime(2025, 1, 15, tzinfo=UTC),
-            ))
-            session.add(TradeORM(
-                id="s_sell_2", ticker="TSLA", side="SELL",
-                quantity=5, price=180.0, total_value=900.0,
-                status="FILLED", is_closing_trade=True,
-                realised_pnl=-100.0, realised_pnl_pct=-10.0,
-                executed_at=datetime(2025, 1, 20, tzinfo=UTC),
-            ))
+            session.add(
+                TradeORM(
+                    id="s_buy_1",
+                    ticker="AAPL",
+                    side="BUY",
+                    quantity=10,
+                    price=100.0,
+                    total_value=1000.0,
+                    status="FILLED",
+                    executed_at=datetime(2025, 1, 5, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="s_sell_1",
+                    ticker="AAPL",
+                    side="SELL",
+                    quantity=10,
+                    price=120.0,
+                    total_value=1200.0,
+                    status="FILLED",
+                    is_closing_trade=True,
+                    realised_pnl=200.0,
+                    realised_pnl_pct=20.0,
+                    executed_at=datetime(2025, 1, 10, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="s_buy_2",
+                    ticker="TSLA",
+                    side="BUY",
+                    quantity=5,
+                    price=200.0,
+                    total_value=1000.0,
+                    status="FILLED",
+                    executed_at=datetime(2025, 1, 15, tzinfo=UTC),
+                )
+            )
+            session.add(
+                TradeORM(
+                    id="s_sell_2",
+                    ticker="TSLA",
+                    side="SELL",
+                    quantity=5,
+                    price=180.0,
+                    total_value=900.0,
+                    status="FILLED",
+                    is_closing_trade=True,
+                    realised_pnl=-100.0,
+                    realised_pnl_pct=-10.0,
+                    executed_at=datetime(2025, 1, 20, tzinfo=UTC),
+                )
+            )
             await session.commit()
 
         transport = ASGITransport(app=app)
@@ -883,15 +997,14 @@ class TestStatsDeep:
 # SPA Routing Tests
 # ---------------------------------------------------------------------------
 
+
 class TestSPARouting:
     """Test that the catch-all SPA route serves index.html for frontend routes."""
 
     @pytest.mark.asyncio
     async def test_api_routes_take_precedence(self, app):
         """API routes should still return JSON, not index.html."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/api/health")
             assert resp.status_code == 200
             data = resp.json()
@@ -900,9 +1013,7 @@ class TestSPARouting:
     @pytest.mark.asyncio
     async def test_frontend_route_returns_spa_fallback(self, app):
         """Non-API routes should return index.html or a 404 if frontend not built."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/research")
             # In test env, static dir may not exist, so we get the "not built" message
             # or index.html if the build exists
@@ -913,18 +1024,14 @@ class TestSPARouting:
     @pytest.mark.asyncio
     async def test_deeply_nested_frontend_route(self, app):
         """Deeply nested SPA routes should also be handled."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/research/AAPL/quantitative")
             assert resp.status_code in (200, 404)
 
     @pytest.mark.asyncio
     async def test_catch_all_does_not_break_api_health(self, app):
         """The catch-all route must not interfere with existing API endpoints."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # Existing API endpoints should work normally
             resp = await client.get("/api/health")
             assert resp.status_code == 200

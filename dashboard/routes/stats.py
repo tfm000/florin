@@ -7,10 +7,10 @@ import asyncio
 import numpy as np
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
-from dashboard.deps import get_db, get_rf_fetcher
 from dashboard.dependencies import get_yfinance_dep
+from dashboard.deps import get_db, get_rf_fetcher
 from db.models import TradeORM
 
 router = APIRouter(tags=["stats"])
@@ -55,11 +55,20 @@ async def get_returns_stats(
 
     if not history or len(history) < 2:
         return ReturnsStatsResponse(
-            ticker=ticker, period=period, trading_days=0,
-            total_return=0, annualized_return=0, annualized_volatility=0,
-            sharpe=0, max_drawdown=0, mean_daily_pct=0,
-            std_dev_daily_pct=0, skewness=0, excess_kurtosis=0,
-            var_95_pct=0, cvar_95_pct=0,
+            ticker=ticker,
+            period=period,
+            trading_days=0,
+            total_return=0,
+            annualized_return=0,
+            annualized_volatility=0,
+            sharpe=0,
+            max_drawdown=0,
+            mean_daily_pct=0,
+            std_dev_daily_pct=0,
+            skewness=0,
+            excess_kurtosis=0,
+            var_95_pct=0,
+            cvar_95_pct=0,
         )
 
     # Get risk-free rate
@@ -76,17 +85,12 @@ async def get_returns_stats(
     def _compute():
         from stats.core import compute_full_stats
 
-        closes = np.array(
-            [h["close"] for h in history if h["close"] > 0]
-        )
+        closes = np.array([h["close"] for h in history if h["close"] > 0])
         if len(closes) < 2:
             return None
 
         stats = compute_full_stats(closes, rf_daily)
-        total_ret = (
-            (closes[-1] - closes[0]) / closes[0] * 100
-            if closes[0] > 0 else 0.0
-        )
+        total_ret = (closes[-1] - closes[0]) / closes[0] * 100 if closes[0] > 0 else 0.0
 
         return ReturnsStatsResponse(
             ticker=ticker,
@@ -95,7 +99,8 @@ async def get_returns_stats(
             total_return=round(total_ret, 2),
             annualized_return=round(stats.returns.annualized_return, 2),
             annualized_volatility=round(
-                stats.returns.annualized_volatility, 2,
+                stats.returns.annualized_volatility,
+                2,
             ),
             sharpe=round(stats.risk_adjusted.sharpe, 2),
             max_drawdown=round(stats.drawdown.max_drawdown_pct, 2),
@@ -110,11 +115,20 @@ async def get_returns_stats(
     result = await asyncio.to_thread(_compute)
     if result is None:
         return ReturnsStatsResponse(
-            ticker=ticker, period=period, trading_days=0,
-            total_return=0, annualized_return=0, annualized_volatility=0,
-            sharpe=0, max_drawdown=0, mean_daily_pct=0,
-            std_dev_daily_pct=0, skewness=0, excess_kurtosis=0,
-            var_95_pct=0, cvar_95_pct=0,
+            ticker=ticker,
+            period=period,
+            trading_days=0,
+            total_return=0,
+            annualized_return=0,
+            annualized_volatility=0,
+            sharpe=0,
+            max_drawdown=0,
+            mean_daily_pct=0,
+            std_dev_daily_pct=0,
+            skewness=0,
+            excess_kurtosis=0,
+            var_95_pct=0,
+            cvar_95_pct=0,
         )
     return result
 

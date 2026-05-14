@@ -21,11 +21,10 @@ import html
 import logging
 import re
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 
-from config.constants import SEC_ARCHIVES_URL, SEC_EDGAR_USER_AGENT
+from config.constants import SEC_ARCHIVES_URL
 from core.models import Form8KFiling
 from data.sec_edgar_utils import (
     FilingRef,
@@ -93,7 +92,9 @@ class SEC8KSource:
 
         # Step 2: Get recent 8-K filings
         filing_refs = await get_company_filings(
-            cik, form_types={"8-K"}, limit=MAX_8K_FILINGS,
+            cik,
+            form_types={"8-K"},
+            limit=MAX_8K_FILINGS,
         )
         if not filing_refs:
             logger.debug("SEC 8-K: no recent 8-K filings for %s (CIK %s)", ticker, cik)
@@ -102,7 +103,9 @@ class SEC8KSource:
         # Step 3: Download and parse each 8-K
         filings: list[Form8KFiling] = []
         async with httpx.AsyncClient(
-            headers=sec_headers(), timeout=20.0, follow_redirects=True,
+            headers=sec_headers(),
+            timeout=20.0,
+            follow_redirects=True,
         ) as client:
             for ref in filing_refs[:MAX_8K_FILINGS]:
                 filing = await self._process_filing(client, ref, ticker)
@@ -135,14 +138,16 @@ class SEC8KSource:
         try:
             # Try the primary document directly first
             text_content = await self._download_and_extract(
-                client, filing_url,
+                client,
+                filing_url,
             )
 
             # If primary document failed, try the filing index to find
             # the correct document
             if not text_content:
                 text_content = await self._find_and_extract_from_index(
-                    client, base_url,
+                    client,
+                    base_url,
                 )
 
             filed_date = _parse_date(ref.filing_date)
@@ -164,7 +169,8 @@ class SEC8KSource:
         except Exception:
             logger.debug(
                 "SEC 8-K: failed to process filing %s for %s",
-                ref.accession_dashed, ticker,
+                ref.accession_dashed,
+                ticker,
             )
             return None
 
@@ -230,10 +236,19 @@ class SEC8KSource:
                 name = item.get("name", "")
                 lower_name = name.lower()
                 # Skip XBRL, XML, and metadata files
-                if any(skip in lower_name for skip in (
-                    ".xml", "xbrl", "xsl", "r1.htm", "defnref",
-                    "cal.htm", "pre.htm", "lab.htm",
-                )):
+                if any(
+                    skip in lower_name
+                    for skip in (
+                        ".xml",
+                        "xbrl",
+                        "xsl",
+                        "r1.htm",
+                        "defnref",
+                        "cal.htm",
+                        "pre.htm",
+                        "lab.htm",
+                    )
+                ):
                     continue
                 # Prefer .htm or .txt files
                 if lower_name.endswith((".htm", ".html", ".txt")):

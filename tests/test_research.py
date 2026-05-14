@@ -1,7 +1,8 @@
 """Tests for Research API endpoints."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -58,18 +59,43 @@ async def app():
         "return_3y": 45.2,
     }
     yf_mock.get_history.return_value = [
-        {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
-        {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+        {
+            "date": "2024-01-01",
+            "open": 190.0,
+            "high": 192.0,
+            "low": 189.0,
+            "close": 191.5,
+            "volume": 50000000,
+        },
+        {
+            "date": "2024-01-02",
+            "open": 191.5,
+            "high": 193.0,
+            "low": 191.0,
+            "close": 192.8,
+            "volume": 48000000,
+        },
     ]
     yf_mock.get_news.return_value = [
-        {"title": "Apple Q4 Earnings Beat", "publisher": "Reuters", "url": "https://example.com", "published_at": "2024-01-01", "summary": "Strong results"},
+        {
+            "title": "Apple Q4 Earnings Beat",
+            "publisher": "Reuters",
+            "url": "https://example.com",
+            "published_at": "2024-01-01",
+            "summary": "Strong results",
+        },
     ]
     yf_mock.get_yield_curve.return_value = {
         "region": "US",
         "curve": {"3M": 5.35, "2Y": 4.62, "5Y": 4.15, "10Y": 4.25, "30Y": 4.45},
     }
     yf_mock.get_g10_rates.return_value = [
-        {"country": "United States", "central_bank": "Federal Reserve", "rate": 4.50, "currency": "USD"},
+        {
+            "country": "United States",
+            "central_bank": "Federal Reserve",
+            "rate": 4.50,
+            "currency": "USD",
+        },
         {"country": "Eurozone", "central_bank": "ECB", "rate": 2.65, "currency": "EUR"},
     ]
     yf_mock.get_macro_summary.return_value = {
@@ -153,12 +179,30 @@ class TestHistory:
 
         yf_mock = AsyncMock()
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000, "adj_close": 191.5},
-            {"date": "2024-01-02", "open": 186.5, "high": 188.0, "low": 186.0, "close": 187.0, "volume": 48000000, "adj_close": 192.8},
+            {
+                "date": "2024-01-01",
+                "open": 185.0,
+                "high": 187.0,
+                "low": 184.0,
+                "close": 186.0,
+                "volume": 50000000,
+                "adj_close": 191.5,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 186.5,
+                "high": 188.0,
+                "low": 186.0,
+                "close": 187.0,
+                "volume": 48000000,
+                "adj_close": 192.8,
+            },
         ]
         set_state("yfinance_provider", yf_mock)
 
-        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        resp = await client.get(
+            "/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -167,7 +211,10 @@ class TestHistory:
         assert data[1]["adj_close"] == 192.8
         # Verify auto_adjust=False was passed to the provider
         yf_mock.get_history.assert_called_once_with(
-            "AAPL", period="1y", interval="1d", auto_adjust=False,
+            "AAPL",
+            period="1y",
+            interval="1d",
+            auto_adjust=False,
         )
 
     @pytest.mark.asyncio
@@ -179,7 +226,9 @@ class TestHistory:
         yf_mock.get_history.return_value = []
         set_state("yfinance_provider", yf_mock)
 
-        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        resp = await client.get(
+            "/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false"
+        )
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -191,22 +240,34 @@ class TestHistory:
 
         yf_mock = AsyncMock()
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000},
+            {
+                "date": "2024-01-01",
+                "open": 185.0,
+                "high": 187.0,
+                "low": 184.0,
+                "close": 186.0,
+                "volume": 50000000,
+            },
         ]
         set_state("yfinance_provider", yf_mock)
 
-        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false")
+        resp = await client.get(
+            "/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=false"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
         assert data[0]["close"] == 186.0
-        # adj_close not provided by provider, so it's None and excluded by response_model_exclude_none
+        # adj_close not provided by provider, so it's None and excluded by
+        # response_model_exclude_none
         assert "adj_close" not in data[0]
 
     @pytest.mark.asyncio
     async def test_get_history_adjusted_explicit_true(self, client):
         """Explicitly passing adjusted=true should behave the same as the default."""
-        resp = await client.get("/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=true")
+        resp = await client.get(
+            "/api/research/asset/AAPL/history?period=1y&interval=1d&adjusted=true"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 2
@@ -586,7 +647,19 @@ class TestSectors:
     async def test_sector_names_and_etfs_match(self, client):
         resp = await client.get("/api/research/sectors")
         data = resp.json()
-        expected_etfs = {"XLK", "XLV", "XLF", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE", "XLC"}
+        expected_etfs = {
+            "XLK",
+            "XLV",
+            "XLF",
+            "XLY",
+            "XLP",
+            "XLE",
+            "XLI",
+            "XLB",
+            "XLU",
+            "XLRE",
+            "XLC",
+        }
         actual_etfs = {s["etf"] for s in data["sectors"]}
         assert actual_etfs == expected_etfs
 
@@ -597,20 +670,27 @@ class TestSectors:
         for sector in data["sectors"]:
             for tf, val in sector["returns"].items():
                 assert val is None or isinstance(val, (int, float)), (
-                    f"Sector {sector['name']} timeframe {tf}: expected numeric or null, got {type(val)}"
+                    f"Sector {sector['name']} timeframe {tf}: "
+                    f"expected numeric or null, got {type(val)}"
                 )
 
     @pytest.mark.asyncio
     async def test_sectors_with_rich_history(self, client):
         """With enough history data, all return timeframes should compute."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         # Provide 300 days of history (enough for 1y = 252 days)
         history_300 = [
-            {"date": f"2024-{(i // 30) + 1:02d}-{(i % 28) + 1:02d}", "open": 100.0 + i * 0.1,
-             "high": 101.0 + i * 0.1, "low": 99.0 + i * 0.1,
-             "close": 100.0 + i * 0.1, "volume": 1000000}
+            {
+                "date": f"2024-{(i // 30) + 1:02d}-{(i % 28) + 1:02d}",
+                "open": 100.0 + i * 0.1,
+                "high": 101.0 + i * 0.1,
+                "low": 99.0 + i * 0.1,
+                "close": 100.0 + i * 0.1,
+                "volume": 1000000,
+            }
             for i in range(300)
         ]
         yf_mock.get_history.return_value = history_300
@@ -625,14 +705,29 @@ class TestSectors:
 
         # Restore default mock
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
-            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+            {
+                "date": "2024-01-01",
+                "open": 190.0,
+                "high": 192.0,
+                "low": 189.0,
+                "close": 191.5,
+                "volume": 50000000,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 191.5,
+                "high": 193.0,
+                "low": 191.0,
+                "close": 192.8,
+                "volume": 48000000,
+            },
         ]
 
     @pytest.mark.asyncio
     async def test_sectors_handles_empty_history(self, client):
         """Sectors with empty history should still return with null returns."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         original = yf_mock.get_history.return_value
 
@@ -651,14 +746,29 @@ class TestSectors:
     async def test_sectors_handles_provider_exception(self, client):
         """If yfinance raises on a single ETF, endpoint still returns all sectors."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         original_info = yf_mock.get_info.return_value
 
         # Make get_info raise for any call — sectors should still have empty price/mcap
         yf_mock.get_info.side_effect = Exception("yfinance down")
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
-            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+            {
+                "date": "2024-01-01",
+                "open": 190.0,
+                "high": 192.0,
+                "low": 189.0,
+                "close": 191.5,
+                "volume": 50000000,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 191.5,
+                "high": 193.0,
+                "low": 191.0,
+                "close": 192.8,
+                "volume": 48000000,
+            },
         ]
 
         resp = await client.get("/api/research/sectors")
@@ -691,12 +801,34 @@ class TestSectorsHistory:
     async def test_sectors_history_series_values_are_cumulative_returns(self, client):
         """First value in each series should be 0.0 (return relative to base date)."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
 
         history = [
-            {"date": "2024-01-01", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1000000},
-            {"date": "2024-01-02", "open": 100.0, "high": 102.0, "low": 99.5, "close": 105.0, "volume": 1100000},
-            {"date": "2024-01-03", "open": 105.0, "high": 106.0, "low": 104.0, "close": 110.0, "volume": 1200000},
+            {
+                "date": "2024-01-01",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 1000000,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 100.0,
+                "high": 102.0,
+                "low": 99.5,
+                "close": 105.0,
+                "volume": 1100000,
+            },
+            {
+                "date": "2024-01-03",
+                "open": 105.0,
+                "high": 106.0,
+                "low": 104.0,
+                "close": 110.0,
+                "volume": 1200000,
+            },
         ]
         yf_mock.get_history.return_value = history
 
@@ -704,7 +836,7 @@ class TestSectorsHistory:
         data = resp.json()
 
         assert len(data["dates"]) == 3
-        for sector_name, values in data["series"].items():
+        for _sector_name, values in data["series"].items():
             assert len(values) == 3
             # First point: cumulative return = 0% (base)
             assert values[0] == 0.0
@@ -715,8 +847,22 @@ class TestSectorsHistory:
 
         # Restore
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 190.0, "high": 192.0, "low": 189.0, "close": 191.5, "volume": 50000000},
-            {"date": "2024-01-02", "open": 191.5, "high": 193.0, "low": 191.0, "close": 192.8, "volume": 48000000},
+            {
+                "date": "2024-01-01",
+                "open": 190.0,
+                "high": 192.0,
+                "low": 189.0,
+                "close": 191.5,
+                "volume": 50000000,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 191.5,
+                "high": 193.0,
+                "low": 191.0,
+                "close": 192.8,
+                "volume": 48000000,
+            },
         ]
 
     @pytest.mark.asyncio
@@ -734,6 +880,7 @@ class TestSectorsHistory:
     @pytest.mark.asyncio
     async def test_sectors_history_empty_when_no_data(self, client):
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         original = yf_mock.get_history.return_value
 
@@ -763,6 +910,7 @@ class TestComputeReturn:
 
     def test_positive_return(self):
         from dashboard.routes.research import _compute_return
+
         # 10 closes, return over last 5 days: start = closes[-(5+1)] = closes[-6] = 104
         closes = [100, 101, 102, 103, 104, 105, 106, 107, 108, 110]
         result = _compute_return(closes, 5)
@@ -771,6 +919,7 @@ class TestComputeReturn:
 
     def test_negative_return(self):
         from dashboard.routes.research import _compute_return
+
         closes = [100, 99, 98, 97, 96, 95]
         result = _compute_return(closes, 5)
         expected = round((95 / 100 - 1) * 100, 2)
@@ -778,17 +927,20 @@ class TestComputeReturn:
 
     def test_insufficient_data_returns_none(self):
         from dashboard.routes.research import _compute_return
+
         closes = [100, 101]
         assert _compute_return(closes, 5) is None
 
     def test_exact_boundary_returns_none(self):
         from dashboard.routes.research import _compute_return
+
         # len(closes) == days → insufficient (need days + 1)
         closes = [100, 101, 102, 103, 104]
         assert _compute_return(closes, 5) is None
 
     def test_zero_start_price_returns_none(self):
         from dashboard.routes.research import _compute_return
+
         closes = [0, 100, 101]
         assert _compute_return(closes, 1) is not None  # start=100, end=101
         closes = [100, 0, 101]
@@ -801,9 +953,13 @@ class TestQuotesEndpoint:
     async def test_quotes_returns_ohlcv_with_bid_ask(self, client):
         """Quotes endpoint returns history with bid/ask on the last bar."""
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         yf_mock.get_info.return_value = {
-            "ticker": "AAPL", "bid": 191.0, "ask": 192.0, "current_price": 191.5,
+            "ticker": "AAPL",
+            "bid": 191.0,
+            "ask": 192.0,
+            "current_price": 191.5,
         }
         resp = await client.get("/api/research/asset/AAPL/quotes?period=1y")
         assert resp.status_code == 200
@@ -819,6 +975,7 @@ class TestQuotesEndpoint:
     @pytest.mark.asyncio
     async def test_quotes_without_bid_ask_returns_nulls(self, client):
         from dashboard.deps import _state
+
         yf_mock = _state["yfinance_provider"]
         yf_mock.get_info.return_value = {"ticker": "AAPL", "bid": None, "ask": None}
         resp = await client.get("/api/research/asset/AAPL/quotes?period=1y")
@@ -834,7 +991,15 @@ class TestQuotesEndpoint:
 
         yf_mock = AsyncMock()
         yf_mock.get_history.return_value = [
-            {"date": "2024-01-01", "open": 185.0, "high": 187.0, "low": 184.0, "close": 186.0, "volume": 50000000, "adj_close": 191.5},
+            {
+                "date": "2024-01-01",
+                "open": 185.0,
+                "high": 187.0,
+                "low": 184.0,
+                "close": 186.0,
+                "volume": 50000000,
+                "adj_close": 191.5,
+            },
         ]
         yf_mock.get_info.return_value = {"ticker": "AAPL", "bid": 190.0, "ask": 192.0}
         set_state("yfinance_provider", yf_mock)
@@ -848,13 +1013,17 @@ class TestQuotesEndpoint:
         assert data[0]["bid"] == 190.0
         assert data[0]["ask"] == 192.0
         yf_mock.get_history.assert_called_once_with(
-            "AAPL", period="1y", interval="1d", auto_adjust=False,
+            "AAPL",
+            period="1y",
+            interval="1d",
+            auto_adjust=False,
         )
 
 
 class TestFillBidAsk:
     def test_fill_both_valid(self):
         from dashboard.routes.research import _fill_bid_ask
+
         points = [{"close": 100, "bid": 99.5, "ask": 100.5}]
         result = _fill_bid_ask(points)
         assert result[0]["bid"] == 99.5
@@ -862,6 +1031,7 @@ class TestFillBidAsk:
 
     def test_fill_missing_ask_uses_spread(self):
         from dashboard.routes.research import _fill_bid_ask
+
         points = [
             {"close": 100, "bid": 99.5, "ask": 100.5},
             {"close": 101, "bid": 100.5, "ask": 0},
@@ -872,6 +1042,7 @@ class TestFillBidAsk:
 
     def test_fill_both_missing_uses_forward_fill(self):
         from dashboard.routes.research import _fill_bid_ask
+
         points = [
             {"close": 100, "bid": 99.5, "ask": 100.5},
             {"close": 101, "bid": 0, "ask": 0},
@@ -883,6 +1054,7 @@ class TestFillBidAsk:
 
     def test_fill_no_prior_spread_mirrors_around_close(self):
         from dashboard.routes.research import _fill_bid_ask
+
         points = [
             {"close": 100, "bid": 99.0, "ask": 0},
         ]
@@ -903,8 +1075,14 @@ class TestWebSearchEndpoint:
     async def test_web_search_returns_list(self, client):
         """GET /research/web-search?ticker=AAPL should return a list."""
         mock_results = [
-            {"title": "Apple News", "body": "Snippet", "url": "https://example.com",
-             "source": "Yahoo Finance", "date": "2026-03-23T12:00:00+00:00", "image": ""},
+            {
+                "title": "Apple News",
+                "body": "Snippet",
+                "url": "https://example.com",
+                "source": "Yahoo Finance",
+                "date": "2026-03-23T12:00:00+00:00",
+                "image": "",
+            },
         ]
         with patch("ddgs.DDGS") as MockDDGS:
             mock_ddgs = MagicMock()

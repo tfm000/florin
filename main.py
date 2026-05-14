@@ -17,7 +17,6 @@ All services run concurrently via asyncio.gather().
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import signal
 from typing import Any
@@ -58,10 +57,13 @@ class Florin:
 
         # --- Database ---
         # Backward compatibility: rename sentinel.db → florin.db if needed
-        if "florin.db" in self.settings.database_url:
-            if not os.path.exists("florin.db") and os.path.exists("sentinel.db"):
-                logger.info("Migrating database: sentinel.db → florin.db")
-                os.rename("sentinel.db", "florin.db")
+        if (
+            "florin.db" in self.settings.database_url
+            and not os.path.exists("florin.db")
+            and os.path.exists("sentinel.db")
+        ):
+            logger.info("Migrating database: sentinel.db → florin.db")
+            os.rename("sentinel.db", "florin.db")
 
         self.db = Database(self.settings.database_url)
         await self.db.init()
@@ -70,6 +72,7 @@ class Florin:
 
         # Load settings overrides from DB (set via dashboard)
         from config.settings import load_db_overrides
+
         await load_db_overrides(self.db)
 
         # --- Validate required config ---
@@ -97,22 +100,28 @@ class Florin:
         data_provider = None
         if self.settings.alpaca_configured:
             from data.alpaca_provider import AlpacaProvider
+
             data_provider = AlpacaProvider(self.settings)
             await data_provider.connect()
             logger.info("Alpaca data provider connected")
 
         # Policy rate fetcher (BIS API)
         from data.policy_rates import PolicyRateFetcher
+
         policy_rate_fetcher = PolicyRateFetcher(self.db)
 
         # yfinance provider (always available, no API key needed)
         from data.yfinance_provider import YFinanceProvider
+
         yfinance_provider = YFinanceProvider(policy_rate_fetcher=policy_rate_fetcher)
 
         # Screener alert service (replaces old MomentumScanner + UniverseManager)
         from scanner.screener_alert_service import ScreenerAlertService
+
         screener_alert_svc = ScreenerAlertService(
-            self.db, self.event_bus, yfinance_provider,
+            self.db,
+            self.event_bus,
+            yfinance_provider,
         )
 
         # Sentiment aggregator
@@ -120,6 +129,7 @@ class Florin:
 
         # SEC 8-K filing source (standalone, not a sentiment source)
         from sentiment.sec_8k_source import SEC8KSource
+
         sec_8k_source = SEC8KSource()
 
         # Migrate legacy LLM settings → model registry (first boot only)
@@ -129,8 +139,9 @@ class Florin:
         self._analysers = await self._init_analysers_from_db()
 
         # Report generators (hold mutable references for hot-reload)
-        from analysis.report_generator import ReportGenerator
         from analysis.consensus_generator import ConsensusGenerator
+        from analysis.report_generator import ReportGenerator
+
         self._report_gen = ReportGenerator(self._analysers, self.settings)
         self._consensus_gen = ConsensusGenerator(self._analysers, self.settings)
 
@@ -138,13 +149,16 @@ class Florin:
         telegram_bot = None
         if self.settings.telegram_configured:
             from telegram_bot.bot import FlorinBot
+
             telegram_bot = FlorinBot(self.settings, self.event_bus, broker)
             await telegram_bot.setup()
             logger.info("Telegram bot initialised")
 
         # Dashboard
-        from dashboard.app import create_app, serve as dashboard_serve
+        from dashboard.app import create_app
+        from dashboard.app import serve as dashboard_serve
         from dashboard.deps import set_state
+
         set_state("shutdown_callback", self.shutdown)
         set_state("screener_alert_service", screener_alert_svc)
         set_state("data_provider", data_provider)
@@ -155,12 +169,14 @@ class Florin:
         set_state("sentiment_aggregator", sentiment_agg)
         set_state("analyser_refresh_callback", self._refresh_analysers)
         from stats.risk_free import RiskFreeRateFetcher
+
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
         set_state("policy_rate_fetcher", policy_rate_fetcher)
 
         # Economic calendar service (CB meeting dates, AV indicators, BIS rates)
         from data.economic_calendar import EconomicCalendarService
+
         econ_cal_service = EconomicCalendarService(
             db=self.db,
             alphavantage_api_key=self.settings.alphavantage_api_key,
@@ -170,6 +186,7 @@ class Florin:
 
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
+
         await load_cusip_cache(self.db)
 
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
@@ -181,76 +198,88 @@ class Florin:
         services.append(asyncio.create_task(self._heartbeat(), name="heartbeat"))
 
         # Risk-free rate daily refresh
-        services.append(asyncio.create_task(
-            self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
-        ))
+        services.append(asyncio.create_task(self._rf_refresh_loop(rf_fetcher), name="rf-refresh"))
 
         # Economic calendar refresh (CB meetings daily, AV indicators every 6h)
-        services.append(asyncio.create_task(
-            self._econ_cal_refresh_loop(econ_cal_service), name="econ-cal-refresh"
-        ))
+        services.append(
+            asyncio.create_task(
+                self._econ_cal_refresh_loop(econ_cal_service), name="econ-cal-refresh"
+            )
+        )
 
         # Screener alert service (background, periodic screener execution)
-        services.append(asyncio.create_task(
-            screener_alert_svc.run(), name="screener-alerts"
-        ))
+        services.append(asyncio.create_task(screener_alert_svc.run(), name="screener-alerts"))
         logger.info("Screener alert service started")
 
         # Alert pipeline — MOMENTUM_ALERT → LLM analysis
-        services.append(asyncio.create_task(
-            self._alert_pipeline(sentiment_agg, sec_8k_source),
-            name="alert-pipeline",
-        ))
+        services.append(
+            asyncio.create_task(
+                self._alert_pipeline(sentiment_agg, sec_8k_source),
+                name="alert-pipeline",
+            )
+        )
 
         # Screener alert LLM pipeline — SCREENER_ALERT with include_llm_report
-        services.append(asyncio.create_task(
-            self._screener_llm_pipeline(sentiment_agg, sec_8k_source),
-            name="screener-llm-pipeline",
-        ))
+        services.append(
+            asyncio.create_task(
+                self._screener_llm_pipeline(sentiment_agg, sec_8k_source),
+                name="screener-llm-pipeline",
+            )
+        )
 
         # Position monitor
         if broker:
-            services.append(asyncio.create_task(
-                self._position_monitor(broker), name="position-monitor"
-            ))
+            services.append(
+                asyncio.create_task(self._position_monitor(broker), name="position-monitor")
+            )
 
         # Telegram
         if telegram_bot:
-            services.append(asyncio.create_task(
-                telegram_bot.start_polling(), name="telegram-bot"
-            ))
+            services.append(asyncio.create_task(telegram_bot.start_polling(), name="telegram-bot"))
             # Alert listener — sends enriched alerts to Telegram with account context
             from telegram_bot.handlers.alerts import alert_listener, screener_alert_listener
-            services.append(asyncio.create_task(
-                alert_listener(self.event_bus, telegram_bot, broker, self.settings),
-                name="telegram-alerts",
-            ))
+
+            services.append(
+                asyncio.create_task(
+                    alert_listener(self.event_bus, telegram_bot, broker, self.settings),
+                    name="telegram-alerts",
+                )
+            )
             # Screener alert listener — sends screener alerts to Telegram
-            services.append(asyncio.create_task(
-                screener_alert_listener(
-                    self.event_bus, telegram_bot, broker, self.settings,
-                ),
-                name="telegram-screener-alerts",
-            ))
+            services.append(
+                asyncio.create_task(
+                    screener_alert_listener(
+                        self.event_bus,
+                        telegram_bot,
+                        broker,
+                        self.settings,
+                    ),
+                    name="telegram-screener-alerts",
+                )
+            )
 
         # Dashboard
-        services.append(asyncio.create_task(
-            dashboard_serve(dashboard_app, self.settings), name="dashboard"
-        ))
+        services.append(
+            asyncio.create_task(dashboard_serve(dashboard_app, self.settings), name="dashboard")
+        )
 
         # Market breadth scanner (hourly during market hours)
         from scanner.breadth_scanner import breadth_scan_loop
-        services.append(asyncio.create_task(
-            breadth_scan_loop(self.db, alpaca=data_provider),
-            name="breadth-scanner",
-        ))
+
+        services.append(
+            asyncio.create_task(
+                breadth_scan_loop(self.db, alpaca=data_provider),
+                name="breadth-scanner",
+            )
+        )
 
         # WebSocket event bridge
-        from dashboard.ws import event_bridge
         from dashboard.deps import get_ws_manager
-        services.append(asyncio.create_task(
-            event_bridge(self.event_bus, get_ws_manager()), name="ws-bridge"
-        ))
+        from dashboard.ws import event_bridge
+
+        services.append(
+            asyncio.create_task(event_bridge(self.event_bus, get_ws_manager()), name="ws-bridge")
+        )
 
         self._tasks = services
         logger.info("Florin started — %d service(s) running", len(services))
@@ -280,12 +309,14 @@ class Florin:
         """Initialise the appropriate broker."""
         if self.settings.t212_configured and self.db:
             from broker.trading212 import Trading212Broker
+
             broker = Trading212Broker(self.settings, self.db)
             await broker.connect()
             logger.info("Trading 212 broker connected (live=%s)", broker.is_live)
             return broker
 
         from broker.paper_broker import PaperBroker
+
         broker = PaperBroker(initial_cash=10_000.0, currency="GBP")
         await broker.connect()
         logger.info("Paper broker active")
@@ -315,9 +346,9 @@ class Florin:
     def _init_sentiment(self) -> Any:
         """Initialise sentiment aggregator with all sources."""
         from sentiment.aggregator import SentimentAggregator
+        from sentiment.news_source import NewsSource
         from sentiment.reddit_source import RedditSource
         from sentiment.sec_edgar_source import SECEdgarSource
-        from sentiment.news_source import NewsSource
 
         sources: list[Any] = [
             SECEdgarSource(),
@@ -326,12 +357,14 @@ class Florin:
 
         # ApeWisdom: always available, no API key required
         from sentiment.apewisdom_source import ApeWisdomSource
+
         sources.append(ApeWisdomSource())
         logger.info("ApeWisdom: enabled (no API key required)")
 
         # Alpha Vantage: conditional on API key
         if self.settings.alphavantage_api_key:
             from sentiment.alphavantage_source import AlphaVantageSource
+
             sources.append(AlphaVantageSource(api_key=self.settings.alphavantage_api_key))
             logger.info("Alpha Vantage: enabled (API key configured)")
         else:
@@ -343,11 +376,13 @@ class Florin:
             logger.info("Reddit: using OAuth (PRAW)")
         else:
             from sentiment.reddit_json_source import RedditJsonSource
+
             sources.append(RedditJsonSource())
             logger.info("Reddit: using public .json fallback (no API key)")
 
         # Web Search (DuckDuckGo): always available, no API key required
         from sentiment.web_search_source import WebSearchSource
+
         sources.append(WebSearchSource())
         logger.info("Web Search: enabled (DuckDuckGo, no API key required)")
 
@@ -363,18 +398,22 @@ class Florin:
 
         if LLMProvider.GROQ in enabled:
             from analysis.groq_analyser import GroqAnalyser
+
             analysers["groq"] = GroqAnalyser(self.settings)
 
         if LLMProvider.GEMINI in enabled:
             from analysis.gemini_analyser import GeminiAnalyser
+
             analysers["gemini"] = GeminiAnalyser(self.settings)
 
         if LLMProvider.CLAUDE_CLI in enabled:
             from analysis.claude_analyser import ClaudeAnalyser
+
             analysers["claude-cli"] = ClaudeAnalyser(self.settings)
 
         if LLMProvider.OPENROUTER in enabled:
             from analysis.openrouter_analyser import OpenRouterAnalyser
+
             analysers["openrouter"] = OpenRouterAnalyser(self.settings)
 
         logger.info("LLM analysers initialised (legacy)", analysers=list(analysers.keys()))
@@ -389,9 +428,9 @@ class Florin:
         Returns:
             Dict mapping model_id → LLMAnalyser instance.
         """
-        from config.settings import Settings
-        from db.models import LLMModelORM
         from sqlalchemy import select
+
+        from db.models import LLMModelORM
 
         analysers: dict[str, Any] = {}
 
@@ -408,7 +447,9 @@ class Florin:
         for m in models:
             try:
                 analyser = self._create_analyser(
-                    m.host, m.model, m.api_key,
+                    m.host,
+                    m.model,
+                    m.api_key,
                     thinking_mode=m.thinking_mode,
                 )
                 if analyser:
@@ -447,22 +488,28 @@ class Florin:
 
         if host == "groq":
             from analysis.groq_analyser import GroqAnalyser
+
             return GroqAnalyser(Settings(groq_api_key=api_key, groq_model=model))
 
         if host == "gemini":
             from analysis.gemini_analyser import GeminiAnalyser
+
             return GeminiAnalyser(Settings(gemini_api_key=api_key, gemini_model=model))
 
         if host == "anthropic-cli":
             from analysis.claude_analyser import ClaudeAnalyser
-            return ClaudeAnalyser(Settings(
-                anthropic_api_key=api_key,
-                claude_model=model,
-                claude_cli_thinking_mode=thinking_mode or "low",
-            ))
+
+            return ClaudeAnalyser(
+                Settings(
+                    anthropic_api_key=api_key,
+                    claude_model=model,
+                    claude_cli_thinking_mode=thinking_mode or "low",
+                )
+            )
 
         if host == "openrouter":
             from analysis.openrouter_analyser import OpenRouterAnalyser
+
             return OpenRouterAnalyser(Settings(openrouter_api_key=api_key, openrouter_model=model))
 
         logger.warning("Unsupported LLM host: %s", host)
@@ -484,8 +531,9 @@ class Florin:
         self._analysers.update(new_analysers)
 
         # Re-create generators with updated analysers
-        from analysis.report_generator import ReportGenerator
         from analysis.consensus_generator import ConsensusGenerator
+        from analysis.report_generator import ReportGenerator
+
         new_report_gen = ReportGenerator(self._analysers, self.settings)
         new_consensus_gen = ConsensusGenerator(self._analysers, self.settings)
 
@@ -508,13 +556,12 @@ class Florin:
         create model entries automatically so the user doesn't lose their
         configuration.
         """
+        from sqlalchemy import func, select
+
         from db.models import LLMModelORM, generate_id
-        from sqlalchemy import select, func
 
         async with self.db.session() as session:
-            count = await session.scalar(
-                select(func.count()).select_from(LLMModelORM)
-            )
+            count = await session.scalar(select(func.count()).select_from(LLMModelORM))
             if count and count > 0:
                 return  # Models already exist, skip migration
 
@@ -563,7 +610,8 @@ class Florin:
                 await session.commit()
                 logger.info(
                     "Migrated %d legacy LLM provider(s) to model registry: %s",
-                    len(migrated), migrated,
+                    len(migrated),
+                    migrated,
                 )
 
                 # Set the first model as default for all roles if not already set
@@ -574,6 +622,7 @@ class Florin:
 
                     # Persist all role assignments in a single session
                     from db.models import SettingORM
+
                     async with self.db.session() as s2:
                         for key in (
                             "llm_announcement_model_id",
@@ -655,17 +704,23 @@ class Florin:
                 sentiment_task = sentiment_agg.fetch(alert.ticker)
                 filings_task = sec_8k_source.fetch(alert.ticker)
                 sentiment, filings = await asyncio.gather(
-                    sentiment_task, filings_task, return_exceptions=False,
+                    sentiment_task,
+                    filings_task,
+                    return_exceptions=False,
                 )
 
                 # 2. Generate report (both analysis types)
                 if self.settings.llm_mode.value == "consensus":
                     report = await self._consensus_gen.generate(
-                        alert, sentiment, filings=filings,
+                        alert,
+                        sentiment,
+                        filings=filings,
                     )
                 else:
                     report = await self._report_gen.generate(
-                        alert, sentiment, filings=filings,
+                        alert,
+                        sentiment,
+                        filings=filings,
                     )
 
                 # 3. Save to database
@@ -724,7 +779,8 @@ class Florin:
 
             logger.info(
                 "Screener LLM analysis for %s (types=%s)",
-                ticker, analysis_types,
+                ticker,
+                analysis_types,
             )
 
             try:
@@ -752,9 +808,10 @@ class Florin:
 
                 if fetch_tasks:
                     results = await asyncio.gather(
-                        *fetch_tasks.values(), return_exceptions=True,
+                        *fetch_tasks.values(),
+                        return_exceptions=True,
                     )
-                    for key, result in zip(fetch_tasks.keys(), results):
+                    for key, result in zip(fetch_tasks.keys(), results, strict=True):
                         if isinstance(result, Exception):
                             logger.error("Fetch %s failed for %s: %s", key, ticker, result)
                         elif key == "sentiment":
@@ -765,13 +822,15 @@ class Florin:
                 # Generate report with only the requested analysis types
                 if self.settings.llm_mode.value == "consensus":
                     report = await self._consensus_gen.generate(
-                        alert, sentiment,
+                        alert,
+                        sentiment,
                         filings=filings if "announcement" in analysis_types else None,
                         analysis_types=analysis_types,
                     )
                 else:
                     report = await self._report_gen.generate(
-                        alert, sentiment,
+                        alert,
+                        sentiment,
                         filings=filings if "announcement" in analysis_types else None,
                         analysis_types=analysis_types,
                     )
@@ -779,12 +838,15 @@ class Florin:
                 await self._save_report(report)
 
                 await self.event_bus.publish(
-                    EventType.REPORT_READY, report, source="screener_llm_pipeline",
+                    EventType.REPORT_READY,
+                    report,
+                    source="screener_llm_pipeline",
                 )
 
                 logger.info(
                     "Screener LLM report for %s: rec=%s",
-                    ticker, report.final_recommendation.value,
+                    ticker,
+                    report.final_recommendation.value,
                 )
             except Exception as e:
                 logger.error("Screener LLM pipeline failed for %s: %s", ticker, e)

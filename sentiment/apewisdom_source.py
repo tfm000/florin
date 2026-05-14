@@ -144,7 +144,9 @@ class ApeWisdomSource(SentimentSource):
 
             if resp.status_code != 200:
                 logger.warning(
-                    "ApeWisdom: HTTP %d — %s", resp.status_code, resp.text[:300],
+                    "ApeWisdom: HTTP %d — %s",
+                    resp.status_code,
+                    resp.text[:300],
                 )
                 return None
 

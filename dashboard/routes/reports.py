@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
 from dashboard.deps import get_db
 from db.models import ReportORM
@@ -42,9 +42,7 @@ async def get_report(report_id: str):
     """Get full report detail by ID."""
     db = get_db()
     async with db.session() as session:
-        result = await session.execute(
-            select(ReportORM).where(ReportORM.id == report_id)
-        )
+        result = await session.execute(select(ReportORM).where(ReportORM.id == report_id))
         report = result.scalar_one_or_none()
 
     if not report:

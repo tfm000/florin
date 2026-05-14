@@ -94,14 +94,16 @@ def _detect_cluster_buys(transactions: list[InsiderTransaction]) -> list[dict[st
         unique_insiders = set(b.insider_name for b in window_buys)
         if len(unique_insiders) >= 2:
             dates = sorted(b.date for b in window_buys)
-            clusters.append({
-                "start_date": dates[0],
-                "end_date": dates[-1],
-                "insider_count": len(unique_insiders),
-                "insiders": list(unique_insiders),
-                "total_shares": sum(b.shares for b in window_buys),
-                "total_value": sum(b.value for b in window_buys),
-            })
+            clusters.append(
+                {
+                    "start_date": dates[0],
+                    "end_date": dates[-1],
+                    "insider_count": len(unique_insiders),
+                    "insiders": list(unique_insiders),
+                    "total_shares": sum(b.shares for b in window_buys),
+                    "total_value": sum(b.value for b in window_buys),
+                }
+            )
             used.update(window_indices)
 
     return clusters
@@ -129,7 +131,9 @@ async def get_insider_transactions(
     all_transactions: list[InsiderTransaction] = []
 
     async with httpx.AsyncClient(
-        headers=sec_headers(), timeout=15.0, follow_redirects=True,
+        headers=sec_headers(),
+        timeout=15.0,
+        follow_redirects=True,
     ) as client:
         for filing in filings:
             filing_url = (
@@ -144,16 +148,18 @@ async def get_insider_transactions(
             for txn in txns:
                 display_type = _DISPLAY_TYPE_MAP.get(txn.transaction_type, "Other")
                 value = round(txn.shares * txn.price_per_share, 2)
-                all_transactions.append(InsiderTransaction(
-                    date=txn.transaction_date or filing.filing_date,
-                    insider_name=txn.insider_name,
-                    title=txn.insider_title,
-                    transaction_type=display_type,
-                    shares=int(txn.shares),
-                    value=value,
-                    price_per_share=txn.price_per_share,
-                    filing_url=filing_url,
-                ))
+                all_transactions.append(
+                    InsiderTransaction(
+                        date=txn.transaction_date or filing.filing_date,
+                        insider_name=txn.insider_name,
+                        title=txn.insider_title,
+                        transaction_type=display_type,
+                        shares=int(txn.shares),
+                        value=value,
+                        price_per_share=txn.price_per_share,
+                        filing_url=filing_url,
+                    )
+                )
 
     # Sort by date descending
     all_transactions.sort(key=lambda t: t.date, reverse=True)

@@ -14,14 +14,11 @@ import pytest
 
 from core.models import SECFiling
 from data.sec_edgar_utils import (
-    FilingRef,
-    Form4Transaction,
-    parse_form4_transactions,
-    _parse_xml_transaction,
     _TRANSACTION_CODE_MAP,
+    FilingRef,
+    parse_form4_transactions,
 )
 from sentiment.sec_edgar_source import SECEdgarSource, _parse_date
-
 
 # =============================================================================
 # Sample Form 4 XML for testing
@@ -289,10 +286,12 @@ class TestCIKResolution:
 
             # Clear cache
             import data.sec_edgar_utils as utils
+
             utils._cik_cache = {}
             utils._cik_cache_time = 0.0
 
             from data.sec_edgar_utils import resolve_ticker_to_cik
+
             result = await resolve_ticker_to_cik("AAPL")
             assert result == "320193"
 
@@ -317,10 +316,12 @@ class TestCIKResolution:
             mock_cls.return_value = mock_client
 
             import data.sec_edgar_utils as utils
+
             utils._cik_cache = {}
             utils._cik_cache_time = 0.0
 
             from data.sec_edgar_utils import resolve_ticker_to_cik
+
             result = await resolve_ticker_to_cik("ZZZZ")
             assert result is None
 
@@ -328,6 +329,7 @@ class TestCIKResolution:
     async def test_resolve_uses_cache(self):
         """Test that CIK resolution uses cache on second call."""
         import time
+
         import data.sec_edgar_utils as utils
 
         # Pre-populate cache
@@ -358,9 +360,20 @@ class TestCompanyFilings:
             "filings": {
                 "recent": {
                     "form": ["4", "8-K", "10-Q", "4/A", "DEF 14A"],
-                    "filingDate": ["2026-03-15", "2026-03-10", "2026-02-28", "2026-02-20", "2026-02-15"],
-                    "accessionNumber": ["0001-26-000001", "0001-26-000002", "0001-26-000003",
-                                        "0001-26-000004", "0001-26-000005"],
+                    "filingDate": [
+                        "2026-03-15",
+                        "2026-03-10",
+                        "2026-02-28",
+                        "2026-02-20",
+                        "2026-02-15",
+                    ],
+                    "accessionNumber": [
+                        "0001-26-000001",
+                        "0001-26-000002",
+                        "0001-26-000003",
+                        "0001-26-000004",
+                        "0001-26-000005",
+                    ],
                     "primaryDocument": ["doc1.xml", "doc2.htm", "doc3.htm", "doc4.xml", "doc5.htm"],
                 },
             },
@@ -374,6 +387,7 @@ class TestCompanyFilings:
             mock_cls.return_value = mock_client
 
             from data.sec_edgar_utils import get_company_filings
+
             filings = await get_company_filings("320193", form_types={"4", "8-K", "10-Q"})
 
         # Should get 4 filings (4, 8-K, 10-Q, 4/A) — DEF 14A excluded
@@ -389,7 +403,14 @@ class TestCompanyFilings:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "filings": {"recent": {"form": [], "filingDate": [], "accessionNumber": [], "primaryDocument": []}},
+            "filings": {
+                "recent": {
+                    "form": [],
+                    "filingDate": [],
+                    "accessionNumber": [],
+                    "primaryDocument": [],
+                }
+            },
         }
 
         with patch("data.sec_edgar_utils.httpx.AsyncClient") as mock_cls:
@@ -400,6 +421,7 @@ class TestCompanyFilings:
             mock_cls.return_value = mock_client
 
             from data.sec_edgar_utils import get_company_filings
+
             filings = await get_company_filings("320193")
 
         assert filings == []
@@ -416,22 +438,39 @@ class TestSECEdgarSource:
         """Test the full fetch pipeline produces correct insider buy/sell counts."""
         source = SECEdgarSource()
 
-        with patch("sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik, \
-             patch("sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock) as mock_filings, \
-             patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml:
-
+        with (
+            patch(
+                "sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
+            patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml,
+        ):
             mock_cik.return_value = "320193"
             mock_filings.return_value = [
-                FilingRef(form_type="4", filing_date="2026-03-15", accession="000126000001",
-                          accession_dashed="0001-26-000001", primary_document="doc.xml", cik="0000320193"),
-                FilingRef(form_type="8-K", filing_date="2026-03-10", accession="000126000002",
-                          accession_dashed="0001-26-000002", primary_document="doc.htm", cik="0000320193"),
+                FilingRef(
+                    form_type="4",
+                    filing_date="2026-03-15",
+                    accession="000126000001",
+                    accession_dashed="0001-26-000001",
+                    primary_document="doc.xml",
+                    cik="0000320193",
+                ),
+                FilingRef(
+                    form_type="8-K",
+                    filing_date="2026-03-10",
+                    accession="000126000002",
+                    accession_dashed="0001-26-000002",
+                    primary_document="doc.htm",
+                    cik="0000320193",
+                ),
             ]
             mock_xml.return_value = SAMPLE_FORM4_XML
 
             result = await source.fetch("AAPL", "Apple Inc")
 
-        assert result["insider_buys"] == 1   # one Purchase
+        assert result["insider_buys"] == 1  # one Purchase
         assert result["insider_sells"] == 1  # one Sale
         filings = result["filings"]
         assert len(filings) >= 3  # 3 from Form 4 XML + 1 from 8-K
@@ -453,7 +492,9 @@ class TestSECEdgarSource:
         """Test that fetch returns empty when CIK resolution fails."""
         source = SECEdgarSource()
 
-        with patch("sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik:
+        with patch(
+            "sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock
+        ) as mock_cik:
             mock_cik.return_value = None
 
             result = await source.fetch("ZZZZ")
@@ -467,14 +508,25 @@ class TestSECEdgarSource:
         """Test that fetch still records filings when XML download fails."""
         source = SECEdgarSource()
 
-        with patch("sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik, \
-             patch("sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock) as mock_filings, \
-             patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml:
-
+        with (
+            patch(
+                "sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
+            patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml,
+        ):
             mock_cik.return_value = "320193"
             mock_filings.return_value = [
-                FilingRef(form_type="4", filing_date="2026-03-15", accession="000126000001",
-                          accession_dashed="0001-26-000001", primary_document="doc.xml", cik="0000320193"),
+                FilingRef(
+                    form_type="4",
+                    filing_date="2026-03-15",
+                    accession="000126000001",
+                    accession_dashed="0001-26-000001",
+                    primary_document="doc.xml",
+                    cik="0000320193",
+                ),
             ]
             mock_xml.return_value = None  # XML download fails
 
@@ -492,16 +544,33 @@ class TestSECEdgarSource:
         """Test parsing multiple Form 4 filings with different insiders."""
         source = SECEdgarSource()
 
-        with patch("sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock) as mock_cik, \
-             patch("sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock) as mock_filings, \
-             patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml:
-
+        with (
+            patch(
+                "sentiment.sec_edgar_source.resolve_ticker_to_cik", new_callable=AsyncMock
+            ) as mock_cik,
+            patch(
+                "sentiment.sec_edgar_source.get_company_filings", new_callable=AsyncMock
+            ) as mock_filings,
+            patch("sentiment.sec_edgar_source.fetch_form4_xml", new_callable=AsyncMock) as mock_xml,
+        ):
             mock_cik.return_value = "320193"
             mock_filings.return_value = [
-                FilingRef(form_type="4", filing_date="2026-03-15", accession="000126000001",
-                          accession_dashed="0001-26-000001", primary_document="doc1.xml", cik="0000320193"),
-                FilingRef(form_type="4", filing_date="2026-02-21", accession="000126000002",
-                          accession_dashed="0001-26-000002", primary_document="doc2.xml", cik="0000320193"),
+                FilingRef(
+                    form_type="4",
+                    filing_date="2026-03-15",
+                    accession="000126000001",
+                    accession_dashed="0001-26-000001",
+                    primary_document="doc1.xml",
+                    cik="0000320193",
+                ),
+                FilingRef(
+                    form_type="4",
+                    filing_date="2026-02-21",
+                    accession="000126000002",
+                    accession_dashed="0001-26-000002",
+                    primary_document="doc2.xml",
+                    cik="0000320193",
+                ),
             ]
             # First call returns officer, second returns director
             mock_xml.side_effect = [SAMPLE_FORM4_XML, SAMPLE_FORM4_DIRECTOR_XML]
@@ -510,7 +579,7 @@ class TestSECEdgarSource:
 
         # Cook: 1 sale + 1 purchase + 1 grant = 3; Gore: 1 purchase = 1; total = 4
         assert len(result["filings"]) == 4
-        assert result["insider_buys"] == 2   # Cook purchase + Gore purchase
+        assert result["insider_buys"] == 2  # Cook purchase + Gore purchase
         assert result["insider_sells"] == 1  # Cook sale
 
         # Verify different insiders
@@ -543,16 +612,22 @@ class TestHelpers:
     def test_to_summary_with_insider_details(self):
         """Test that SentimentData.to_summary includes insider transaction details."""
         from core.models import SentimentData
+
         data = SentimentData(
             ticker="TEST",
             sec_filings=[
                 SECFiling(
-                    form_type="4", filed_date=datetime.now(UTC),
-                    insider_name="SMITH JOHN", insider_title="CEO",
-                    transaction_type="Purchase", shares=10000, price_per_share=2.50,
+                    form_type="4",
+                    filed_date=datetime.now(UTC),
+                    insider_name="SMITH JOHN",
+                    insider_title="CEO",
+                    transaction_type="Purchase",
+                    shares=10000,
+                    price_per_share=2.50,
                 ),
                 SECFiling(
-                    form_type="8-K", filed_date=datetime.now(UTC),
+                    form_type="8-K",
+                    filed_date=datetime.now(UTC),
                     description="Material Event",
                 ),
             ],

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-
-from dashboard.dependencies import get_yfinance_dep
 
 logger = logging.getLogger(__name__)
 

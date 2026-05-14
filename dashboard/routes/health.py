@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import APIRouter
 from sqlalchemy import text
 
@@ -39,10 +41,8 @@ async def readiness() -> dict:
 
     broker_ok = False
     if broker:
-        try:
+        with contextlib.suppress(Exception):
             broker_ok = await broker.health_check()
-        except Exception:
-            pass
 
     ready = db_ok and broker_ok
     return {
@@ -87,7 +87,9 @@ async def health_check() -> dict:
         {
             "key": "alpaca",
             "label": "Alpaca API",
-            "description": "Required for stock universe discovery, real-time market data, and price streaming.",
+            "description": (
+                "Required for stock universe discovery, real-time market data, and price streaming."
+            ),
             "configured": settings.alpaca_configured,
         },
     ]

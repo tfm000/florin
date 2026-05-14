@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -19,21 +19,18 @@ from analysis._prompt_helper import (
     build_sentiment_prompt,
     parse_llm_response,
 )
+from analysis.base import LLMAnalyser
 from analysis.consensus_generator import ConsensusGenerator
 from analysis.report_generator import ReportGenerator
-from analysis.base import LLMAnalyser
 from config.settings import Settings
 from core.models import (
     AlertSignal,
     AnalysisResult,
     AnalysisType,
     Form8KFiling,
-    NewsArticle,
     Recommendation,
-    RedditPost,
     SentimentData,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -168,13 +165,22 @@ class TestPromptHelper:
         """Consensus prompt should list individual analyst reports."""
         results = [
             AnalysisResult(
-                provider="groq", model="llama", score=7.0, confidence=0.9,
-                recommendation=Recommendation.BUY, summary="Positive outlook",
-                key_points=["Strong momentum"], bullish_signals=["Volume spike"],
+                provider="groq",
+                model="llama",
+                score=7.0,
+                confidence=0.9,
+                recommendation=Recommendation.BUY,
+                summary="Positive outlook",
+                key_points=["Strong momentum"],
+                bullish_signals=["Volume spike"],
             ),
             AnalysisResult(
-                provider="gemini", model="flash", score=4.0, confidence=0.6,
-                recommendation=Recommendation.HOLD, summary="Mixed signals",
+                provider="gemini",
+                model="flash",
+                score=4.0,
+                confidence=0.6,
+                recommendation=Recommendation.HOLD,
+                summary="Mixed signals",
             ),
         ]
 
@@ -189,15 +195,17 @@ class TestPromptHelper:
 
     def test_parse_valid_json(self) -> None:
         """Valid JSON response should parse into an AnalysisResult with correct fields."""
-        raw = json.dumps({
-            "score": 6.5,
-            "confidence": 0.8,
-            "bullish_signals": ["Strong momentum"],
-            "bearish_signals": ["Low volume"],
-            "recommendation": "BUY",
-            "summary": "Looks promising",
-            "key_points": ["Momentum", "Sentiment"],
-        })
+        raw = json.dumps(
+            {
+                "score": 6.5,
+                "confidence": 0.8,
+                "bullish_signals": ["Strong momentum"],
+                "bearish_signals": ["Low volume"],
+                "recommendation": "BUY",
+                "summary": "Looks promising",
+                "key_points": ["Momentum", "Sentiment"],
+            }
+        )
 
         result = parse_llm_response(raw, "test", "test-model", AnalysisType.SENTIMENT, 100)
 
@@ -211,7 +219,12 @@ class TestPromptHelper:
 
     def test_parse_json_with_code_fences(self) -> None:
         """JSON wrapped in markdown code fences should still parse."""
-        raw = '```json\n{"score": 3.0, "confidence": 0.5, "recommendation": "HOLD", "bullish_signals": [], "bearish_signals": [], "summary": "Neutral", "key_points": []}\n```'
+        raw = (
+            "```json\n"
+            '{"score": 3.0, "confidence": 0.5, "recommendation": "HOLD", '
+            '"bullish_signals": [], "bearish_signals": [], "summary": "Neutral", '
+            '"key_points": []}\n```'
+        )
 
         result = parse_llm_response(raw, "test", "model", AnalysisType.ANNOUNCEMENT)
         assert result.score == 3.0
@@ -225,28 +238,32 @@ class TestPromptHelper:
 
     def test_parse_unknown_recommendation_defaults(self) -> None:
         """Unknown recommendation string should default to HOLD."""
-        raw = json.dumps({
-            "score": 5.0,
-            "confidence": 0.5,
-            "recommendation": "MAYBE",
-            "bullish_signals": [],
-            "bearish_signals": [],
-            "summary": "",
-            "key_points": [],
-        })
+        raw = json.dumps(
+            {
+                "score": 5.0,
+                "confidence": 0.5,
+                "recommendation": "MAYBE",
+                "bullish_signals": [],
+                "bearish_signals": [],
+                "summary": "",
+                "key_points": [],
+            }
+        )
 
         result = parse_llm_response(raw, "test", "model", AnalysisType.SENTIMENT)
         assert result.recommendation == Recommendation.HOLD  # Default fallback
 
     def test_parse_score_clamped_to_range(self) -> None:
         """Scores outside 0-10 should be clamped."""
-        raw = json.dumps({
-            "score": 15.0,
-            "confidence": 1.5,
-            "recommendation": "BUY",
-            "summary": "",
-            "key_points": [],
-        })
+        raw = json.dumps(
+            {
+                "score": 15.0,
+                "confidence": 1.5,
+                "recommendation": "BUY",
+                "summary": "",
+                "key_points": [],
+            }
+        )
 
         result = parse_llm_response(raw, "test", "model", AnalysisType.SENTIMENT)
         assert result.score == 10.0
@@ -254,13 +271,15 @@ class TestPromptHelper:
 
     def test_parse_negative_score_clamped(self) -> None:
         """Negative scores should be clamped to 0."""
-        raw = json.dumps({
-            "score": -5.0,
-            "confidence": -0.3,
-            "recommendation": "AVOID",
-            "summary": "",
-            "key_points": [],
-        })
+        raw = json.dumps(
+            {
+                "score": -5.0,
+                "confidence": -0.3,
+                "recommendation": "AVOID",
+                "summary": "",
+                "key_points": [],
+            }
+        )
 
         result = parse_llm_response(raw, "test", "model", AnalysisType.SENTIMENT)
         assert result.score == 0.0
@@ -283,7 +302,9 @@ class TestReportGenerator:
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.ticker == "TEST"
@@ -301,7 +322,9 @@ class TestReportGenerator:
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), filings=make_filings(),
+            make_alert(),
+            make_sentiment(),
+            filings=make_filings(),
         )
 
         assert report.announcement_analysis is not None
@@ -317,7 +340,9 @@ class TestReportGenerator:
         gen = ReportGenerator({"gemini": analyser}, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.sentiment_analysis is not None
@@ -357,7 +382,9 @@ class TestConsensusGenerator:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert report.mode == "consensus"
@@ -377,7 +404,9 @@ class TestConsensusGenerator:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), filings=make_filings(),
+            make_alert(),
+            make_sentiment(),
+            filings=make_filings(),
         )
 
         assert len(report.announcement_analyses) == 2
@@ -392,15 +421,23 @@ class TestConsensusGenerator:
 
         analyses = [
             AnalysisResult(
-                provider="a", score=6.0, confidence=0.8,
-                recommendation=Recommendation.BUY, bullish_signals=["X"],
+                provider="a",
+                score=6.0,
+                confidence=0.8,
+                recommendation=Recommendation.BUY,
+                bullish_signals=["X"],
             ),
             AnalysisResult(
-                provider="b", score=4.0, confidence=0.6,
-                recommendation=Recommendation.HOLD, bearish_signals=["Y"],
+                provider="b",
+                score=4.0,
+                confidence=0.6,
+                recommendation=Recommendation.HOLD,
+                bearish_signals=["Y"],
             ),
             AnalysisResult(
-                provider="c", score=7.0, confidence=0.9,
+                provider="c",
+                score=7.0,
+                confidence=0.9,
                 recommendation=Recommendation.BUY,
             ),
         ]
@@ -424,7 +461,9 @@ class TestConsensusGenerator:
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
-            make_alert(), make_sentiment(), analysis_types=["sentiment"],
+            make_alert(),
+            make_sentiment(),
+            analysis_types=["sentiment"],
         )
 
         assert len(report.sentiment_analyses) == 1

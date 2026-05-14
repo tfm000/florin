@@ -9,11 +9,11 @@ Provides decoupled pub/sub communication between modules:
 
 Usage:
     bus = EventBus()
-    
+
     # Subscribe
     async for event in bus.subscribe("REPORT_READY"):
         handle_report(event.data)
-    
+
     # Publish
     await bus.publish("REPORT_READY", report)
 """
@@ -21,11 +21,13 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class EventType(str, Enum):
     """All event types in the system."""
+
     MOMENTUM_ALERT = "MOMENTUM_ALERT"
     SENTIMENT_COLLECTED = "SENTIMENT_COLLECTED"
     REPORT_READY = "REPORT_READY"
@@ -53,6 +56,7 @@ class EventType(str, Enum):
 @dataclass
 class Event:
     """Single event on the bus."""
+
     type: EventType
     data: Any
     id: str = field(default_factory=lambda: uuid4().hex[:12])
@@ -63,7 +67,7 @@ class Event:
 class EventBus:
     """
     Async pub/sub event bus.
-    
+
     Multiple subscribers can listen to the same event type.
     Each subscriber gets its own queue so no messages are lost.
     """
@@ -79,10 +83,7 @@ class EventBus:
         event = Event(type=event_type, data=data, source=source)
         self._event_count += 1
 
-        logger.debug(
-            "Event published: %s (id=%s, source=%s)",
-            event_type.value, event.id, source
-        )
+        logger.debug("Event published: %s (id=%s, source=%s)", event_type.value, event.id, source)
 
         # Type-specific subscribers
         if event_type in self._subscribers:
@@ -92,7 +93,8 @@ class EventBus:
                 except asyncio.QueueFull:
                     logger.warning(
                         "Subscriber queue full for %s — dropping event %s",
-                        event_type.value, event.id
+                        event_type.value,
+                        event.id,
                     )
 
         # Global subscribers (receive everything)
@@ -107,7 +109,7 @@ class EventBus:
     def subscribe(self, event_type: EventType) -> _Subscription:
         """
         Subscribe to a specific event type. Returns an async iterator.
-        
+
         Usage:
             async for event in bus.subscribe(EventType.REPORT_READY):
                 process(event.data)
@@ -142,9 +144,7 @@ class EventBus:
 
     @property
     def subscriber_counts(self) -> dict[str, int]:
-        return {
-            et.value: len(queues) for et, queues in self._subscribers.items()
-        }
+        return {et.value: len(queues) for et, queues in self._subscribers.items()}
 
 
 class _Subscription:
@@ -163,10 +163,8 @@ class _Subscription:
 
     def unsubscribe(self) -> None:
         """Remove this subscription's queue from the bus."""
-        try:
+        with contextlib.suppress(ValueError):
             self._queue_list.remove(self.queue)
-        except ValueError:
-            pass
 
     def __aiter__(self) -> AsyncIterator[Event]:
         return self

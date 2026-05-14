@@ -1,8 +1,9 @@
 """Tests for Risk API endpoints."""
 
+from unittest.mock import AsyncMock
+
 import numpy as np
 import pytest
-from unittest.mock import AsyncMock
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -22,14 +23,16 @@ def _generate_history(days: int, start_price: float = 100.0) -> list[dict]:
         price *= 1 + ret
         high = price * (1 + abs(rng.normal(0, 0.005)))
         low = price * (1 - abs(rng.normal(0, 0.005)))
-        history.append({
-            "date": f"2024-{1 + i // 30:02d}-{1 + i % 28:02d}",
-            "open": round(price * 0.999, 2),
-            "high": round(high, 2),
-            "low": round(low, 2),
-            "close": round(price, 2),
-            "volume": 50_000_000 + rng.integers(-5_000_000, 5_000_000),
-        })
+        history.append(
+            {
+                "date": f"2024-{1 + i // 30:02d}-{1 + i % 28:02d}",
+                "open": round(price * 0.999, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "close": round(price, 2),
+                "volume": 50_000_000 + rng.integers(-5_000_000, 5_000_000),
+            }
+        )
     return history
 
 

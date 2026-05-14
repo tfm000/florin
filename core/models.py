@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-
 # =============================================================================
 # Enums
 # =============================================================================
+
 
 class Exchange(str, Enum):
     NASDAQ = "NASDAQ"
@@ -65,8 +65,10 @@ class AlertSource(str, Enum):
 # Market Data Models
 # =============================================================================
 
+
 class StockQuote(BaseModel):
     """Real-time or snapshot quote for a single stock."""
+
     ticker: str
     price: float
     open_price: float = 0.0
@@ -78,18 +80,18 @@ class StockQuote(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-
 class StockInfo(BaseModel):
     """Static metadata about a stock in the universe."""
+
     ticker: str
     name: str = ""
     exchange: str = ""
     t212_ticker: str = ""  # Trading 212 internal ticker format
     sector: str = ""
     industry: str = ""
-    market_cap: Optional[float] = None
-    shares_outstanding: Optional[int] = None
-    inferred_market_cap: Optional[float] = None  # shares_outstanding × price
+    market_cap: float | None = None
+    shares_outstanding: int | None = None
+    inferred_market_cap: float | None = None  # shares_outstanding × price
     avg_volume: int = 0
     last_price: float = 0.0
     in_universe: bool = True  # Still qualifies for the universe
@@ -97,6 +99,7 @@ class StockInfo(BaseModel):
 
 class BarData(BaseModel):
     """Single OHLCV bar (minute, hourly, daily)."""
+
     ticker: str
     timestamp: datetime
     open: float
@@ -110,8 +113,10 @@ class BarData(BaseModel):
 # Alert Models
 # =============================================================================
 
+
 class AlertSignal(BaseModel):
     """Fired when scanner detects a qualifying move."""
+
     id: str = Field(default_factory=lambda: uuid4().hex[:16])
     ticker: str
     price: float
@@ -127,8 +132,10 @@ class AlertSignal(BaseModel):
 # Sentiment Models
 # =============================================================================
 
+
 class RedditPost(BaseModel):
     """Single Reddit post or comment mentioning a ticker."""
+
     subreddit: str
     title: str
     body: str = ""
@@ -151,6 +158,7 @@ class AlphaVantageNewsSentiment(BaseModel):
 
     Reference: https://www.alphavantage.co/documentation/#news-sentiment
     """
+
     title: str
     source: str = ""
     url: str = ""
@@ -165,6 +173,7 @@ class AlphaVantageNewsSentiment(BaseModel):
 
 class SECFiling(BaseModel):
     """Single SEC filing reference."""
+
     form_type: str
     filed_date: datetime
     description: str = ""
@@ -180,6 +189,7 @@ class SECFiling(BaseModel):
 
 class NewsArticle(BaseModel):
     """Single news article."""
+
     title: str
     source: str = ""
     url: str = ""
@@ -195,6 +205,7 @@ class WebSearchResult(BaseModel):
     Each result represents a news article found via DuckDuckGo's
     news search for a given stock ticker.
     """
+
     title: str
     snippet: str = ""
     url: str = ""
@@ -210,6 +221,7 @@ class Form8KFiling(BaseModel):
     The text_content field holds the extracted plain text, truncated to a
     reasonable length for LLM consumption.
     """
+
     ticker: str
     filed_date: datetime
     form_type: str = "8-K"
@@ -222,6 +234,7 @@ class Form8KFiling(BaseModel):
 
 class SentimentData(BaseModel):
     """Aggregated sentiment from all sources for a single ticker."""
+
     ticker: str
     collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -257,30 +270,37 @@ class SentimentData(BaseModel):
     def to_summary(self) -> str:
         """Human-readable summary for LLM prompts."""
         lines = []
-        lines.append(f"Reddit: {self.reddit_mention_count} mentions across "
-                      f"{len(self.reddit_posts)} posts")
+        lines.append(
+            f"Reddit: {self.reddit_mention_count} mentions across {len(self.reddit_posts)} posts"
+        )
         if self.reddit_posts:
             top = sorted(self.reddit_posts, key=lambda p: p.score, reverse=True)[:3]
             for p in top:
                 lines.append(f"  - [{p.subreddit}] (score:{p.score}) {p.title[:100]}")
 
         if self.apewisdom_rank > 0:
-            lines.append(f"ApeWisdom: rank #{self.apewisdom_rank}, "
-                          f"{self.apewisdom_mentions} mentions, "
-                          f"{self.apewisdom_upvotes} upvotes")
+            lines.append(
+                f"ApeWisdom: rank #{self.apewisdom_rank}, "
+                f"{self.apewisdom_mentions} mentions, "
+                f"{self.apewisdom_upvotes} upvotes"
+            )
         else:
             lines.append("ApeWisdom: not trending")
 
         if self.alphavantage_articles:
-            lines.append(f"Alpha Vantage: {len(self.alphavantage_articles)} articles, "
-                          f"avg sentiment {self.alphavantage_avg_sentiment:+.2f}")
+            lines.append(
+                f"Alpha Vantage: {len(self.alphavantage_articles)} articles, "
+                f"avg sentiment {self.alphavantage_avg_sentiment:+.2f}"
+            )
             for a in self.alphavantage_articles[:3]:
                 label = f" [{a.ticker_sentiment_label}]" if a.ticker_sentiment_label else ""
                 lines.append(f"  - [{a.source}]{label} {a.title[:100]}")
 
-        lines.append(f"SEC: {len(self.sec_filings)} recent filings, "
-                      f"{self.insider_buy_count} insider buys, "
-                      f"{self.insider_sell_count} insider sells")
+        lines.append(
+            f"SEC: {len(self.sec_filings)} recent filings, "
+            f"{self.insider_buy_count} insider buys, "
+            f"{self.insider_sell_count} insider sells"
+        )
         # Show insider transaction details (top 5 by shares)
         insider_filings = [f for f in self.sec_filings if f.insider_name and f.transaction_type]
         insider_filings.sort(key=lambda f: f.shares, reverse=True)
@@ -322,6 +342,7 @@ class SentimentData(BaseModel):
 
 class AnalysisType(str, Enum):
     """Type of LLM analysis task."""
+
     ANNOUNCEMENT = "announcement"
     SENTIMENT = "sentiment"
 
@@ -332,6 +353,7 @@ class AnalysisResult(BaseModel):
     Score semantics: 0 = extremely negative, 5 = neutral, 10 = extremely positive.
     Used for both individual analyst results and consensus leader output.
     """
+
     provider: str  # "groq", "gemini", "claude-cli", "openrouter"
     model: str = ""
     analysis_type: AnalysisType = AnalysisType.SENTIMENT
@@ -344,7 +366,7 @@ class AnalysisResult(BaseModel):
     recommendation: Recommendation = Recommendation.HOLD
     raw_response: str = ""  # Full LLM response for debugging
     latency_ms: int = 0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class AnalysisReport(BaseModel):
@@ -354,6 +376,7 @@ class AnalysisReport(BaseModel):
     for announcement analysis (Form 8-K) and sentiment analysis
     (web search, Reddit, ApeWisdom, Alpha Vantage).
     """
+
     id: str = ""
     ticker: str
     alert: AlertSignal
@@ -361,31 +384,31 @@ class AnalysisReport(BaseModel):
     filings: list[Form8KFiling] = Field(default_factory=list)
 
     # Single-mode results (one model per analysis type)
-    announcement_analysis: Optional[AnalysisResult] = None
-    sentiment_analysis: Optional[AnalysisResult] = None
+    announcement_analysis: AnalysisResult | None = None
+    sentiment_analysis: AnalysisResult | None = None
 
     # Consensus-mode results (all models + leader synthesis)
     announcement_analyses: list[AnalysisResult] = Field(default_factory=list)
     sentiment_analyses: list[AnalysisResult] = Field(default_factory=list)
-    announcement_consensus: Optional[AnalysisResult] = None
-    sentiment_consensus: Optional[AnalysisResult] = None
+    announcement_consensus: AnalysisResult | None = None
+    sentiment_consensus: AnalysisResult | None = None
 
     # Final scores (from single result or consensus leader)
-    announcement_score: Optional[float] = None
-    sentiment_score: Optional[float] = None
+    announcement_score: float | None = None
+    sentiment_score: float | None = None
     final_recommendation: Recommendation = Recommendation.HOLD
     final_confidence: float = 0.0
 
     mode: str = "single"  # "single" | "consensus"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
-    def get_best_announcement(self) -> Optional[AnalysisResult]:
+    def get_best_announcement(self) -> AnalysisResult | None:
         """Return the best announcement analysis (consensus or single)."""
         if self.mode == "consensus" and self.announcement_consensus:
             return self.announcement_consensus
         return self.announcement_analysis
 
-    def get_best_sentiment(self) -> Optional[AnalysisResult]:
+    def get_best_sentiment(self) -> AnalysisResult | None:
         """Return the best sentiment analysis (consensus or single)."""
         if self.mode == "consensus" and self.sentiment_consensus:
             return self.sentiment_consensus
@@ -396,8 +419,10 @@ class AnalysisReport(BaseModel):
 # Trading / Broker Models
 # =============================================================================
 
+
 class Position(BaseModel):
     """An open position in the broker account."""
+
     ticker: str
     t212_ticker: str = ""
     quantity: float
@@ -406,7 +431,7 @@ class Position(BaseModel):
     unrealised_pnl: float = 0.0
     unrealised_pnl_pct: float = 0.0
     market_value: float = 0.0
-    opened_at: Optional[datetime] = None
+    opened_at: datetime | None = None
 
     def update_pnl(self, current_price: float) -> None:
         self.current_price = current_price
@@ -419,6 +444,7 @@ class Position(BaseModel):
 
 class TradeRecord(BaseModel):
     """Record of an executed trade."""
+
     id: str = ""
     ticker: str
     side: Side
@@ -434,12 +460,13 @@ class TradeRecord(BaseModel):
 
     # For closed positions — P&L tracking
     is_closing_trade: bool = False
-    realised_pnl: Optional[float] = None
-    realised_pnl_pct: Optional[float] = None
+    realised_pnl: float | None = None
+    realised_pnl_pct: float | None = None
 
 
 class AccountSummary(BaseModel):
     """Broker account overview."""
+
     account_id: int = 0
     currency: str = "GBP"
     cash_available: float = 0.0
@@ -454,18 +481,20 @@ class AccountSummary(BaseModel):
 
 class OrderRequest(BaseModel):
     """Request to place an order with the broker."""
+
     ticker: str
     side: Side
     order_type: OrderType = OrderType.MARKET
     quantity: float = 0.0
     # For value-based orders (T212 supports fractional shares)
-    target_value: Optional[float] = None
-    limit_price: Optional[float] = None
-    stop_price: Optional[float] = None
+    target_value: float | None = None
+    limit_price: float | None = None
+    stop_price: float | None = None
 
 
 class OrderResult(BaseModel):
     """Response from broker after placing an order."""
+
     success: bool
     order_id: str = ""
     ticker: str = ""
@@ -481,8 +510,10 @@ class OrderResult(BaseModel):
 # Trading Statistics
 # =============================================================================
 
+
 class TradingStats(BaseModel):
     """Aggregated trading performance statistics."""
+
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
@@ -493,6 +524,6 @@ class TradingStats(BaseModel):
     worst_trade_pnl: float = 0.0
     avg_hold_time_hours: float = 0.0
     max_drawdown: float = 0.0
-    sharpe_ratio: Optional[float] = None
-    period_start: Optional[datetime] = None
-    period_end: Optional[datetime] = None
+    sharpe_ratio: float | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None

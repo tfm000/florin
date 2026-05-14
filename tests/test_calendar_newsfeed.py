@@ -1,15 +1,16 @@
 """Tests for Calendar and News Feed API endpoints."""
 
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
 from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
-from dashboard.routes.calendar import EarningsEvent, EconomicEvent
+from dashboard.routes.calendar import EarningsEvent
 from db.database import Database
 from news.scraper import RawArticle
 

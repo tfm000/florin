@@ -7,7 +7,7 @@ Implementations: AlpacaProvider
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
 
 from core.models import BarData, StockInfo, StockQuote
 
@@ -15,7 +15,7 @@ from core.models import BarData, StockInfo, StockQuote
 class MarketDataProvider(ABC):
     """
     Interface for any market data source.
-    
+
     Provides:
         - Real-time/near-real-time price snapshots
         - Streaming minute bars

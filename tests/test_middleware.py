@@ -1,18 +1,17 @@
 """Tests for dashboard middleware and exception handling."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from fastapi import APIRouter, FastAPI
+from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
 from core.events import EventBus
 from core.exceptions import (
     ConflictError,
+    FlorinError,
     ForbiddenError,
     NotFoundError,
     RateLimitError,
-    FlorinError,
     ServiceUnavailableError,
     ValidationError,
 )
@@ -171,9 +170,14 @@ class TestExceptionClasses:
         assert e.code == "RATE_LIMIT_EXCEEDED"
 
     def test_all_exceptions_inherit_from_florin_error(self):
-        for cls in [NotFoundError, ValidationError, ConflictError,
-                    ServiceUnavailableError, ForbiddenError,
-                    RateLimitError]:
+        for cls in [
+            NotFoundError,
+            ValidationError,
+            ConflictError,
+            ServiceUnavailableError,
+            ForbiddenError,
+            RateLimitError,
+        ]:
             assert issubclass(cls, FlorinError)
 
 
