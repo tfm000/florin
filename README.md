@@ -11,8 +11,7 @@ setup.bat         # Windows
 ```
 
 ```bash
-source .venv/bin/activate
-python main.py
+uv run python main.py
 ```
 
 Dashboard at `http://localhost:8000` — configure API keys via the Settings page.
@@ -21,8 +20,14 @@ Dashboard at `http://localhost:8000` — configure API keys via the Settings pag
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Python | 3.12+ | Required |
+| uv | Latest | Required — manages the venv, Python, and locked dependencies ([install](https://docs.astral.sh/uv/getting-started/installation/)) |
+| Python | 3.13 | Auto-provisioned by uv from `.python-version` |
 | Node.js | 18+ | Required for dashboard UI |
+
+Dependencies are pinned in the committed `uv.lock`, so `uv sync --frozen` always
+reproduces the exact environment. `setup.sh` / `setup.bat` fall back to a plain
+`python -m venv` + `pip` install if `uv` is not present, but that path is **not**
+locked — installing `uv` is strongly recommended.
 
 ## Features
 
@@ -78,7 +83,7 @@ Dashboard at `http://localhost:8000` — configure API keys via the Settings pag
 ### Alerts & Notifications
 - **Telegram bot** — mobile alerts, trading commands, portfolio monitoring
 - **Screener alerts** — automatic notifications when scan criteria are met
-- **Multi-LLM reports** attached to alerts with fraud risk assessment
+- **Multi-LLM reports** attached to alerts with recommendation and key signals
 
 ## Configuration
 
@@ -120,7 +125,7 @@ Leave `T212_API_KEY` unconfigured to use the **paper broker** (simulated trades,
 | `GEMINI_API_KEY` | Google Gemini API key | [aistudio.google.com](https://aistudio.google.com) — free tier |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API key (optional — CLI auth supported) | [console.anthropic.com](https://console.anthropic.com) or `claude login` |
 
-> **Anthropic CLI:** Claude uses the [Claude Code CLI](https://github.com/anthropics/claude-agent-sdk-python) (`claude-agent-sdk`). Install the CLI with `npm install -g @anthropic-ai/claude-code`, then authenticate with `claude login` (Pro/Max subscribers). An API key is optional — if omitted, CLI session auth is used. Configurable thinking modes: off, low, medium, high, max.
+> **Anthropic (Claude):** set `ANTHROPIC_API_KEY` to use Claude as an LLM provider. The provider is built on the `claude-agent-sdk` package, which can also fall back to local CLI session auth when no API key is set. Thinking modes are configurable: off, low, medium, high, max.
 
 ### Analysis Mode
 
@@ -172,13 +177,12 @@ See [Telegram Bot Setup](#telegram-bot-setup) below.
 | `/kill` | Emergency stop — cancel all pending orders |
 | `/buy TICKER [size]` | Place buy order (e.g. `/buy AAPL £50`) |
 
-The bot sends automatic alerts when screener matches are found or momentum signals are detected, including LLM analysis, fraud risk score, and recommendation with interactive BUY/PASS buttons.
+The bot sends automatic alerts when screener matches are found or momentum signals are detected, including LLM analysis and a recommendation with interactive BUY/PASS buttons.
 
 ## Running Locally
 
 ```bash
-source .venv/bin/activate
-python main.py
+uv run python main.py
 ```
 
 Or double-click `Florin.command` (macOS) / `Florin.bat` (Windows).
@@ -207,7 +211,7 @@ For frontend development with hot reload:
 
 ```bash
 # Terminal 1: backend
-source .venv/bin/activate && python main.py
+uv run python main.py
 
 # Terminal 2: frontend (proxies API to backend)
 cd dashboard_ui && npm run dev
@@ -223,15 +227,15 @@ config/                  # Settings (pydantic-settings) + constants
 core/                    # Event bus, Pydantic models, logging, market hours
 data/                    # Market data providers (Alpaca, yfinance)
 scanner/                 # Screener alert service + market breadth scanner
-sentiment/               # Reddit, StockTwits, SEC EDGAR, news scrapers
-analysis/                # LLM analysers (5 providers), fraud detector, report generators
+sentiment/               # Reddit, ApeWisdom, Alpha Vantage, SEC EDGAR, SEC 8-K, news, web search
+analysis/                # LLM analysers (4 providers), consensus + report generators
 broker/                  # Trading 212 + paper broker (ABC-based)
 telegram_bot/            # aiogram 3.x bot with command handlers
 stats/                   # Statistical models (regime detection, risk metrics)
 dashboard/               # FastAPI REST API (25 route modules) + WebSocket
 dashboard_ui/            # React 19 + Vite 8 + TailwindCSS 4 frontend
 db/                      # SQLAlchemy 2.0 async ORM + Alembic migrations
-tests/                   # pytest + pytest-asyncio test suite (600+ tests)
+tests/                   # pytest + pytest-asyncio test suite (800+ tests)
 ```
 
 ### Navigation Structure
@@ -260,7 +264,7 @@ Leave `T212_API_KEY` unconfigured to use the paper broker. It simulates order ex
 
 ## Technology Stack
 
-- **Backend:** Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), SQLite (WAL mode), Alembic
+- **Backend:** Python 3.13, FastAPI, SQLAlchemy 2.0 (async), SQLite (WAL mode), Alembic
 - **Frontend:** React 19, Vite 8, TailwindCSS 4, React Router 7, Recharts
 - **Real-time:** WebSocket at `/ws`, async EventBus pub/sub
 - **LLM:** Groq, Gemini, Claude CLI, OpenRouter (cloud)
