@@ -17,7 +17,6 @@ All services run concurrently via asyncio.gather().
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import signal
 from typing import Any
@@ -25,7 +24,7 @@ from typing import Any
 from config.settings import LLMProvider, get_settings
 from core.events import EventBus, EventType
 from core.logging import get_logger, setup_logging
-from core.models import AlertSignal, AnalysisReport
+from core.models import AlertSignal, AlertSource, AnalysisReport, Form8KFiling
 from db.database import Database
 from db.models import ReportORM
 
@@ -41,6 +40,16 @@ class Florin:
         self.db: Database | None = None
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
+        # Mutable references for hot-reload
+        self._analysers: dict[str, Any] = {}
+        self._report_gen: Any = None
+        self._consensus_gen: Any = None
+
+    def _require_db(self) -> Database:
+        """Return the initialised database, raising if startup has not run yet."""
+        if self.db is None:
+            raise RuntimeError("Database is not initialised")
+        return self.db
 
     async def start(self) -> None:
         """Initialise and start all services."""
@@ -54,10 +63,13 @@ class Florin:
 
         # --- Database ---
         # Backward compatibility: rename sentinel.db → florin.db if needed
-        if "florin.db" in self.settings.database_url:
-            if not os.path.exists("florin.db") and os.path.exists("sentinel.db"):
-                logger.info("Migrating database: sentinel.db → florin.db")
-                os.rename("sentinel.db", "florin.db")
+        if (
+            "florin.db" in self.settings.database_url
+            and not os.path.exists("florin.db")
+            and os.path.exists("sentinel.db")
+        ):
+            logger.info("Migrating database: sentinel.db → florin.db")
+            os.rename("sentinel.db", "florin.db")
 
         self.db = Database(self.settings.database_url)
         await self.db.init()
@@ -66,7 +78,8 @@ class Florin:
 
         # Load settings overrides from DB (set via dashboard)
         from config.settings import load_db_overrides
-        await load_db_overrides(self.db)
+
+        await load_db_overrides(self._require_db())
 
         # --- Validate required config ---
         warnings = []
@@ -93,67 +106,93 @@ class Florin:
         data_provider = None
         if self.settings.alpaca_configured:
             from data.alpaca_provider import AlpacaProvider
+
             data_provider = AlpacaProvider(self.settings)
             await data_provider.connect()
             logger.info("Alpaca data provider connected")
 
         # Policy rate fetcher (BIS API)
         from data.policy_rates import PolicyRateFetcher
+
         policy_rate_fetcher = PolicyRateFetcher(self.db)
 
         # yfinance provider (always available, no API key needed)
         from data.yfinance_provider import YFinanceProvider
+
         yfinance_provider = YFinanceProvider(policy_rate_fetcher=policy_rate_fetcher)
 
         # Screener alert service (replaces old MomentumScanner + UniverseManager)
         from scanner.screener_alert_service import ScreenerAlertService
+
         screener_alert_svc = ScreenerAlertService(
-            self.db, self.event_bus, yfinance_provider,
+            self.db,
+            self.event_bus,
+            yfinance_provider,
         )
 
         # Sentiment aggregator
         sentiment_agg = self._init_sentiment()
 
-        # LLM analysers
-        analysers = self._init_analysers()
+        # SEC 8-K filing source (standalone, not a sentiment source)
+        from sentiment.sec_8k_source import SEC8KSource
 
-        # Report generators
-        from analysis.report_generator import ReportGenerator
+        sec_8k_source = SEC8KSource()
+
+        # Migrate legacy LLM settings → model registry (first boot only)
+        await self._migrate_legacy_llm_settings()
+
+        # LLM analysers (from DB model registry, with flat-settings fallback)
+        self._analysers = await self._init_analysers_from_db()
+
+        # Report generators (hold mutable references for hot-reload)
         from analysis.consensus_generator import ConsensusGenerator
-        report_gen = ReportGenerator(analysers, self.settings)
-        consensus_gen = ConsensusGenerator(analysers, self.settings)
+        from analysis.report_generator import ReportGenerator
 
-        # Fraud detector
-        from analysis.fraud_detector import FraudDetector
-        fraud_detector = FraudDetector()
+        self._report_gen = ReportGenerator(self._analysers, self.settings)
+        self._consensus_gen = ConsensusGenerator(self._analysers, self.settings)
 
         # Telegram bot
         telegram_bot = None
         if self.settings.telegram_configured:
             from telegram_bot.bot import FlorinBot
+
             telegram_bot = FlorinBot(self.settings, self.event_bus, broker)
             await telegram_bot.setup()
             logger.info("Telegram bot initialised")
 
         # Dashboard
-        from dashboard.app import create_app, serve as dashboard_serve
+        from dashboard.app import create_app
+        from dashboard.app import serve as dashboard_serve
         from dashboard.deps import set_state
+
         set_state("shutdown_callback", self.shutdown)
         set_state("screener_alert_service", screener_alert_svc)
         set_state("data_provider", data_provider)
         set_state("yfinance_provider", yfinance_provider)
-        set_state("analysers", analysers)
-        set_state("report_generator", report_gen)
-        set_state("consensus_generator", consensus_gen)
-        set_state("fraud_detector", fraud_detector)
+        set_state("analysers", self._analysers)
+        set_state("report_generator", self._report_gen)
+        set_state("consensus_generator", self._consensus_gen)
         set_state("sentiment_aggregator", sentiment_agg)
+        set_state("analyser_refresh_callback", self._refresh_analysers)
         from stats.risk_free import RiskFreeRateFetcher
+
         rf_fetcher = RiskFreeRateFetcher(self.db)
         set_state("rf_fetcher", rf_fetcher)
         set_state("policy_rate_fetcher", policy_rate_fetcher)
 
+        # Economic calendar service (CB meeting dates, AV indicators, BIS rates)
+        from data.economic_calendar import EconomicCalendarService
+
+        econ_cal_service = EconomicCalendarService(
+            db=self.db,
+            alphavantage_api_key=self.settings.alphavantage_api_key,
+            policy_rate_fetcher=policy_rate_fetcher,
+        )
+        set_state("economic_calendar_service", econ_cal_service)
+
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
+
         await load_cusip_cache(self.db)
 
         dashboard_app = create_app(self.settings, self.db, self.event_bus, broker)
@@ -165,67 +204,88 @@ class Florin:
         services.append(asyncio.create_task(self._heartbeat(), name="heartbeat"))
 
         # Risk-free rate daily refresh
-        services.append(asyncio.create_task(
-            self._rf_refresh_loop(rf_fetcher), name="rf-refresh"
-        ))
+        services.append(asyncio.create_task(self._rf_refresh_loop(rf_fetcher), name="rf-refresh"))
+
+        # Economic calendar refresh (CB meetings daily, AV indicators every 6h)
+        services.append(
+            asyncio.create_task(
+                self._econ_cal_refresh_loop(econ_cal_service), name="econ-cal-refresh"
+            )
+        )
 
         # Screener alert service (background, periodic screener execution)
-        services.append(asyncio.create_task(
-            screener_alert_svc.run(), name="screener-alerts"
-        ))
+        services.append(asyncio.create_task(screener_alert_svc.run(), name="screener-alerts"))
         logger.info("Screener alert service started")
 
-        # Alert pipeline
-        services.append(asyncio.create_task(
-            self._alert_pipeline(
-                sentiment_agg, report_gen, consensus_gen, fraud_detector
-            ),
-            name="alert-pipeline",
-        ))
+        # Alert pipeline — MOMENTUM_ALERT → LLM analysis
+        services.append(
+            asyncio.create_task(
+                self._alert_pipeline(sentiment_agg, sec_8k_source),
+                name="alert-pipeline",
+            )
+        )
+
+        # Screener alert LLM pipeline — SCREENER_ALERT with include_llm_report
+        services.append(
+            asyncio.create_task(
+                self._screener_llm_pipeline(sentiment_agg, sec_8k_source),
+                name="screener-llm-pipeline",
+            )
+        )
 
         # Position monitor
         if broker:
-            services.append(asyncio.create_task(
-                self._position_monitor(broker), name="position-monitor"
-            ))
+            services.append(
+                asyncio.create_task(self._position_monitor(broker), name="position-monitor")
+            )
 
         # Telegram
         if telegram_bot:
-            services.append(asyncio.create_task(
-                telegram_bot.start_polling(), name="telegram-bot"
-            ))
+            services.append(asyncio.create_task(telegram_bot.start_polling(), name="telegram-bot"))
             # Alert listener — sends enriched alerts to Telegram with account context
             from telegram_bot.handlers.alerts import alert_listener, screener_alert_listener
-            services.append(asyncio.create_task(
-                alert_listener(self.event_bus, telegram_bot, broker, self.settings),
-                name="telegram-alerts",
-            ))
+
+            services.append(
+                asyncio.create_task(
+                    alert_listener(self.event_bus, telegram_bot, broker, self.settings),
+                    name="telegram-alerts",
+                )
+            )
             # Screener alert listener — sends screener alerts to Telegram
-            services.append(asyncio.create_task(
-                screener_alert_listener(
-                    self.event_bus, telegram_bot, broker, self.settings,
-                ),
-                name="telegram-screener-alerts",
-            ))
+            services.append(
+                asyncio.create_task(
+                    screener_alert_listener(
+                        self.event_bus,
+                        telegram_bot,
+                        broker,
+                        self.settings,
+                    ),
+                    name="telegram-screener-alerts",
+                )
+            )
 
         # Dashboard
-        services.append(asyncio.create_task(
-            dashboard_serve(dashboard_app, self.settings), name="dashboard"
-        ))
+        services.append(
+            asyncio.create_task(dashboard_serve(dashboard_app, self.settings), name="dashboard")
+        )
 
         # Market breadth scanner (hourly during market hours)
         from scanner.breadth_scanner import breadth_scan_loop
-        services.append(asyncio.create_task(
-            breadth_scan_loop(self.db, alpaca=data_provider),
-            name="breadth-scanner",
-        ))
+
+        services.append(
+            asyncio.create_task(
+                breadth_scan_loop(self.db, alpaca=data_provider),
+                name="breadth-scanner",
+            )
+        )
 
         # WebSocket event bridge
-        from dashboard.ws import event_bridge
         from dashboard.deps import get_ws_manager
-        services.append(asyncio.create_task(
-            event_bridge(self.event_bus, get_ws_manager()), name="ws-bridge"
-        ))
+        from dashboard.ws import event_bridge
+
+        services.append(
+            asyncio.create_task(event_bridge(self.event_bus, get_ws_manager()), name="ws-bridge")
+        )
 
         self._tasks = services
         logger.info("Florin started — %d service(s) running", len(services))
@@ -243,6 +303,7 @@ class Florin:
             await data_provider.disconnect()
         if broker:
             await broker.disconnect()
+        await econ_cal_service.close()
         if self.db:
             await self.db.close()
 
@@ -252,14 +313,18 @@ class Florin:
 
     async def _init_broker(self) -> Any:
         """Initialise the appropriate broker."""
+        from broker.base import Broker
+
         if self.settings.t212_configured and self.db:
             from broker.trading212 import Trading212Broker
-            broker = Trading212Broker(self.settings, self.db)
+
+            broker: Broker = Trading212Broker(self.settings, self.db)
             await broker.connect()
             logger.info("Trading 212 broker connected (live=%s)", broker.is_live)
             return broker
 
         from broker.paper_broker import PaperBroker
+
         broker = PaperBroker(initial_cash=10_000.0, currency="GBP")
         await broker.connect()
         logger.info("Paper broker active")
@@ -289,16 +354,29 @@ class Florin:
     def _init_sentiment(self) -> Any:
         """Initialise sentiment aggregator with all sources."""
         from sentiment.aggregator import SentimentAggregator
-        from sentiment.reddit_source import RedditSource
-        from sentiment.stocktwits_source import StockTwitsSource
-        from sentiment.sec_edgar_source import SECEdgarSource
         from sentiment.news_source import NewsSource
+        from sentiment.reddit_source import RedditSource
+        from sentiment.sec_edgar_source import SECEdgarSource
 
-        sources = [
-            StockTwitsSource(),
+        sources: list[Any] = [
             SECEdgarSource(),
             NewsSource(self.settings),
         ]
+
+        # ApeWisdom: always available, no API key required
+        from sentiment.apewisdom_source import ApeWisdomSource
+
+        sources.append(ApeWisdomSource())
+        logger.info("ApeWisdom: enabled (no API key required)")
+
+        # Alpha Vantage: conditional on API key
+        if self.settings.alphavantage_api_key:
+            from sentiment.alphavantage_source import AlphaVantageSource
+
+            sources.append(AlphaVantageSource(api_key=self.settings.alphavantage_api_key))
+            logger.info("Alpha Vantage: enabled (API key configured)")
+        else:
+            logger.info("Alpha Vantage: disabled (no API key)")
 
         # Reddit: use OAuth (PRAW) if credentials available, else public .json fallback
         if self.settings.reddit_client_id:
@@ -306,38 +384,265 @@ class Florin:
             logger.info("Reddit: using OAuth (PRAW)")
         else:
             from sentiment.reddit_json_source import RedditJsonSource
+
             sources.append(RedditJsonSource())
             logger.info("Reddit: using public .json fallback (no API key)")
 
+        # Web Search (DuckDuckGo): always available, no API key required
+        from sentiment.web_search_source import WebSearchSource
+
+        sources.append(WebSearchSource())
+        logger.info("Web Search: enabled (DuckDuckGo, no API key required)")
+
         return SentimentAggregator(sources)
 
-    def _init_analysers(self) -> dict[str, Any]:
-        """Initialise available LLM analysers."""
+    def _init_analysers_from_settings(self) -> dict[str, Any]:
+        """Initialise LLM analysers from flat Settings fields (legacy fallback).
+
+        Used when no models are registered in the llm_models table.
+        """
         analysers: dict[str, Any] = {}
         enabled = self.settings.get_enabled_llm_providers()
 
-        if LLMProvider.FINBERT in enabled:
-            from analysis.finbert_analyser import FinBERTAnalyser
-            analysers["finbert"] = FinBERTAnalyser()
-
-        if LLMProvider.OLLAMA in enabled:
-            from analysis.ollama_analyser import OllamaAnalyser
-            analysers["ollama"] = OllamaAnalyser(self.settings)
-
         if LLMProvider.GROQ in enabled:
             from analysis.groq_analyser import GroqAnalyser
+
             analysers["groq"] = GroqAnalyser(self.settings)
 
         if LLMProvider.GEMINI in enabled:
             from analysis.gemini_analyser import GeminiAnalyser
+
             analysers["gemini"] = GeminiAnalyser(self.settings)
 
-        if LLMProvider.CLAUDE in enabled:
+        if LLMProvider.CLAUDE_CLI in enabled:
             from analysis.claude_analyser import ClaudeAnalyser
-            analysers["claude"] = ClaudeAnalyser(self.settings)
 
-        logger.info("LLM analysers initialised", analysers=list(analysers.keys()))
+            analysers["claude-cli"] = ClaudeAnalyser(self.settings)
+
+        if LLMProvider.OPENROUTER in enabled:
+            from analysis.openrouter_analyser import OpenRouterAnalyser
+
+            analysers["openrouter"] = OpenRouterAnalyser(self.settings)
+
+        logger.info("LLM analysers initialised (legacy)", analysers=list(analysers.keys()))
         return analysers
+
+    async def _init_analysers_from_db(self) -> dict[str, Any]:
+        """Initialise LLM analysers from the llm_models DB table.
+
+        Each enabled model in the registry gets its own analyser instance,
+        keyed by model ID. This replaces the flat provider-keyed approach.
+
+        Returns:
+            Dict mapping model_id → LLMAnalyser instance.
+        """
+        from sqlalchemy import select
+
+        from db.models import LLMModelORM
+
+        analysers: dict[str, Any] = {}
+
+        async with self._require_db().session() as session:
+            result = await session.execute(
+                select(LLMModelORM).where(LLMModelORM.enabled == True)  # noqa: E712
+            )
+            models = result.scalars().all()
+
+        if not models:
+            logger.info("No LLM models in registry, falling back to flat settings")
+            return self._init_analysers_from_settings()
+
+        for m in models:
+            try:
+                analyser = self._create_analyser(
+                    m.host,
+                    m.model,
+                    m.api_key,
+                    thinking_mode=m.thinking_mode,
+                )
+                if analyser:
+                    analysers[m.id] = analyser
+                    logger.debug("Loaded analyser: %s (%s)", m.display_name, m.id)
+            except Exception as e:
+                logger.error("Failed to create analyser for %s: %s", m.display_name, e)
+
+        logger.info(
+            "LLM analysers initialised from DB registry",
+            count=len(analysers),
+            models=[m.display_name for m in models if m.id in analysers],
+        )
+        return analysers
+
+    def _create_analyser(
+        self,
+        host: str,
+        model: str,
+        api_key: str,
+        *,
+        thinking_mode: str | None = None,
+    ) -> Any:
+        """Create a single LLM analyser from host/model/key.
+
+        Args:
+            host: Provider host ID (groq, gemini, anthropic-cli, openrouter).
+            model: Model identifier string.
+            api_key: API key for the provider (may be empty for CLI-auth).
+            thinking_mode: Thinking depth for anthropic-cli (off/low/medium/high/max).
+
+        Returns:
+            LLMAnalyser instance, or None if host is unsupported.
+        """
+        from config.settings import Settings
+
+        if host == "groq":
+            from analysis.groq_analyser import GroqAnalyser
+
+            return GroqAnalyser(Settings(groq_api_key=api_key, groq_model=model))
+
+        if host == "gemini":
+            from analysis.gemini_analyser import GeminiAnalyser
+
+            return GeminiAnalyser(Settings(gemini_api_key=api_key, gemini_model=model))
+
+        if host == "anthropic-cli":
+            from analysis.claude_analyser import ClaudeAnalyser
+
+            return ClaudeAnalyser(
+                Settings(
+                    anthropic_api_key=api_key,
+                    claude_model=model,
+                    claude_cli_thinking_mode=thinking_mode or "low",
+                )
+            )
+
+        if host == "openrouter":
+            from analysis.openrouter_analyser import OpenRouterAnalyser
+
+            return OpenRouterAnalyser(Settings(openrouter_api_key=api_key, openrouter_model=model))
+
+        logger.warning("Unsupported LLM host: %s", host)
+        return None
+
+    async def _refresh_analysers(self) -> None:
+        """Re-initialise analysers from the DB model registry.
+
+        Called when LLM models are added/removed/updated via the API.
+        Updates the analyser dict, report generator, and consensus
+        generator in place so running services pick up the changes.
+        """
+        from dashboard.deps import set_state
+
+        new_analysers = await self._init_analysers_from_db()
+
+        # Update the shared analyser dict in-place
+        self._analysers.clear()
+        self._analysers.update(new_analysers)
+
+        # Re-create generators with updated analysers
+        from analysis.consensus_generator import ConsensusGenerator
+        from analysis.report_generator import ReportGenerator
+
+        new_report_gen = ReportGenerator(self._analysers, self.settings)
+        new_consensus_gen = ConsensusGenerator(self._analysers, self.settings)
+
+        # Update dashboard deps
+        set_state("analysers", self._analysers)
+        set_state("report_generator", new_report_gen)
+        set_state("consensus_generator", new_consensus_gen)
+
+        # Update the pipeline references
+        self._report_gen = new_report_gen
+        self._consensus_gen = new_consensus_gen
+
+        logger.info("LLM analysers refreshed", count=len(self._analysers))
+
+    async def _migrate_legacy_llm_settings(self) -> None:
+        """Auto-migrate old flat LLM settings to the new model registry.
+
+        On first boot after the upgrade, if the llm_models table is empty
+        but old-style API keys exist in Settings (from env vars or DB),
+        create model entries automatically so the user doesn't lose their
+        configuration.
+        """
+        from sqlalchemy import func, select
+
+        from db.models import LLMModelORM, generate_id
+
+        async with self._require_db().session() as session:
+            count = await session.scalar(select(func.count()).select_from(LLMModelORM))
+            if count and count > 0:
+                return  # Models already exist, skip migration
+
+        # Map old settings to (host, model_field, key_field)
+        legacy_providers = [
+            ("groq", self.settings.groq_model, self.settings.groq_api_key),
+            ("gemini", self.settings.gemini_model, self.settings.gemini_api_key),
+            ("anthropic-cli", self.settings.claude_model, self.settings.anthropic_api_key),
+            ("openrouter", self.settings.openrouter_model, self.settings.openrouter_api_key),
+        ]
+
+        host_labels = {
+            "openrouter": "OpenRouter",
+            "gemini": "Gemini",
+            "groq": "Groq",
+            "anthropic-cli": "Anthropic CLI",
+        }
+
+        migrated = []
+        first_model_id = ""
+
+        async with self._require_db().session() as session:
+            for host, model, api_key in legacy_providers:
+                if not api_key:
+                    continue  # No key configured for this provider
+
+                model_id = generate_id()
+                label = host_labels.get(host, host.title())
+                display_name = f"{label} / {model}" if model else f"{label} / (default)"
+
+                orm = LLMModelORM(
+                    id=model_id,
+                    host=host,
+                    model=model or "",
+                    api_key=api_key,
+                    display_name=display_name,
+                    enabled=True,
+                )
+                session.add(orm)
+                migrated.append(display_name)
+
+                if not first_model_id:
+                    first_model_id = model_id
+
+            if migrated:
+                await session.commit()
+                logger.info(
+                    "Migrated %d legacy LLM provider(s) to model registry: %s",
+                    len(migrated),
+                    migrated,
+                )
+
+                # Set the first model as default for all roles if not already set
+                if first_model_id and not self.settings.llm_announcement_model_id:
+                    self.settings.llm_announcement_model_id = first_model_id
+                    self.settings.llm_sentiment_model_id = first_model_id
+                    self.settings.llm_consensus_leader_model_id = first_model_id
+
+                    # Persist all role assignments in a single session
+                    from db.models import SettingORM
+
+                    async with self._require_db().session() as s2:
+                        for key in (
+                            "llm_announcement_model_id",
+                            "llm_sentiment_model_id",
+                            "llm_consensus_leader_model_id",
+                        ):
+                            existing = await s2.get(SettingORM, key)
+                            if existing:
+                                existing.value = first_model_id
+                            else:
+                                s2.add(SettingORM(key=key, value=first_model_id))
+                        await s2.commit()
 
     # --- Service loops ---
 
@@ -361,41 +666,75 @@ class Florin:
                 logger.error("Risk-free rate refresh failed: %s", e)
             await asyncio.sleep(86_400)
 
+    async def _econ_cal_refresh_loop(self, service: Any) -> None:
+        """Refresh economic calendar data periodically.
+
+        The service internally manages two refresh cadences:
+        - CB meeting dates: every 24 hours
+        - Alpha Vantage indicators: every 6 hours
+        We call refresh() every hour; the service decides what's stale.
+        """
+        # Initial fetch on startup
+        try:
+            await service.refresh()
+            logger.info("Economic calendar initial refresh complete")
+        except Exception as e:
+            logger.error("Economic calendar initial refresh failed: %s", e)
+
+        while not self._shutdown_event.is_set():
+            await asyncio.sleep(3600)  # Check every hour
+            try:
+                await service.refresh()
+                logger.info("Economic calendar refreshed")
+            except Exception as e:
+                logger.error("Economic calendar refresh failed: %s", e)
+
     async def _alert_pipeline(
         self,
         sentiment_agg: Any,
-        report_gen: Any,
-        consensus_gen: Any,
-        fraud_detector: Any,
+        sec_8k_source: Any,
     ) -> None:
-        """
-        React to momentum alerts.
+        """React to momentum alerts.
 
-        Flow: MOMENTUM_ALERT → scrape sentiment → assess fraud
+        Flow: MOMENTUM_ALERT → fetch sentiment + 8-K filings concurrently
               → generate report (single or consensus) → save to DB
               → publish REPORT_READY
+
+        Uses self._report_gen and self._consensus_gen so that hot-reloaded
+        analysers are picked up without restarting the pipeline.
         """
         async for event in self.event_bus.subscribe(EventType.MOMENTUM_ALERT):
             alert: AlertSignal = event.data
             logger.info("Processing alert", ticker=alert.ticker, change=alert.change_pct)
 
             try:
-                # 1. Scrape sentiment
-                sentiment = await sentiment_agg.fetch(alert.ticker)
+                # 1. Fetch sentiment and 8-K filings concurrently
+                sentiment_task = sentiment_agg.fetch(alert.ticker)
+                filings_task = sec_8k_source.fetch(alert.ticker)
+                sentiment, filings = await asyncio.gather(
+                    sentiment_task,
+                    filings_task,
+                    return_exceptions=False,
+                )
 
-                # 2. Assess fraud risk
-                fraud_risk = await fraud_detector.assess(alert, sentiment)
-
-                # 3. Generate report
+                # 2. Generate report (both analysis types)
                 if self.settings.llm_mode.value == "consensus":
-                    report = await consensus_gen.generate(alert, sentiment, fraud_risk)
+                    report = await self._consensus_gen.generate(
+                        alert,
+                        sentiment,
+                        filings=filings,
+                    )
                 else:
-                    report = await report_gen.generate(alert, sentiment, fraud_risk)
+                    report = await self._report_gen.generate(
+                        alert,
+                        sentiment,
+                        filings=filings,
+                    )
 
-                # 4. Save to database
+                # 3. Save to database
                 await self._save_report(report)
 
-                # 5. Push to Telegram + Dashboard via event bus
+                # 4. Push to Telegram + Dashboard via event bus
                 await self.event_bus.publish(
                     EventType.REPORT_READY, report, source="alert_pipeline"
                 )
@@ -404,7 +743,8 @@ class Florin:
                     "Report generated",
                     ticker=alert.ticker,
                     recommendation=report.final_recommendation.value,
-                    score=report.final_score,
+                    announcement_score=report.announcement_score,
+                    sentiment_score=report.sentiment_score,
                 )
             except Exception as e:
                 logger.error("Alert pipeline failed for %s: %s", alert.ticker, e)
@@ -413,6 +753,111 @@ class Florin:
                     {"ticker": alert.ticker, "error": str(e)},
                     source="alert_pipeline",
                 )
+
+    async def _screener_llm_pipeline(
+        self,
+        sentiment_agg: Any,
+        sec_8k_source: Any,
+    ) -> None:
+        """React to screener alerts that have LLM analysis enabled.
+
+        Flow: SCREENER_ALERT (with include_llm_report=True)
+              → build AlertSignal from screener data
+              → fetch only the requested data sources (based on analysis_types)
+              → generate report → save to DB → publish REPORT_READY
+
+        Respects per-screener analysis_types configuration.
+        """
+        async for event in self.event_bus.subscribe(EventType.SCREENER_ALERT):
+            data = event.data
+            if not isinstance(data, dict):
+                continue
+            if not data.get("include_llm_report"):
+                continue
+
+            ticker = data.get("ticker", "")
+            analysis_types = data.get("analysis_types", ["announcement", "sentiment"])
+
+            if not self._analysers:
+                logger.warning(
+                    "Screener LLM report requested for %s but no analysers configured",
+                    ticker,
+                )
+                continue
+
+            logger.info(
+                "Screener LLM analysis for %s (types=%s)",
+                ticker,
+                analysis_types,
+            )
+
+            try:
+                # Build an AlertSignal from the screener data
+                alert = AlertSignal(
+                    ticker=ticker,
+                    price=data.get("price", 0.0),
+                    change_pct=data.get("change_pct", 0.0),
+                    volume=data.get("volume", 0),
+                    source=AlertSource.MOMENTUM,
+                    metadata={"screener_id": data.get("screener_id", "")},
+                )
+
+                # Fetch only the data needed for the requested analysis types
+                from core.models import SentimentData
+
+                sentiment = SentimentData(ticker=ticker)
+                filings: list[Form8KFiling] = []
+
+                fetch_tasks = {}
+                if "sentiment" in analysis_types:
+                    fetch_tasks["sentiment"] = sentiment_agg.fetch(ticker)
+                if "announcement" in analysis_types:
+                    fetch_tasks["filings"] = sec_8k_source.fetch(ticker)
+
+                if fetch_tasks:
+                    results = await asyncio.gather(
+                        *fetch_tasks.values(),
+                        return_exceptions=True,
+                    )
+                    for key, result in zip(fetch_tasks.keys(), results, strict=True):
+                        if isinstance(result, BaseException):
+                            logger.error("Fetch %s failed for %s: %s", key, ticker, result)
+                        elif key == "sentiment":
+                            sentiment = result
+                        elif key == "filings":
+                            filings = result
+
+                # Generate report with only the requested analysis types
+                if self.settings.llm_mode.value == "consensus":
+                    report = await self._consensus_gen.generate(
+                        alert,
+                        sentiment,
+                        filings=filings if "announcement" in analysis_types else None,
+                        analysis_types=analysis_types,
+                    )
+                else:
+                    report = await self._report_gen.generate(
+                        alert,
+                        sentiment,
+                        filings=filings if "announcement" in analysis_types else None,
+                        analysis_types=analysis_types,
+                    )
+
+                await self._save_report(report)
+
+                await self.event_bus.publish(
+                    EventType.REPORT_READY,
+                    report,
+                    source="screener_llm_pipeline",
+                )
+
+                logger.info(
+                    "Screener LLM report for %s: rec=%s",
+                    ticker,
+                    report.final_recommendation.value,
+                )
+            except Exception as e:
+                logger.error("Screener LLM pipeline failed for %s: %s", ticker, e)
 
     async def _position_monitor(self, broker: Any) -> None:
         """Poll broker positions and publish updates."""
@@ -449,6 +894,9 @@ class Florin:
         if not self.db:
             return
 
+        # Use sentiment_score as final_score for DB, fallback to announcement
+        final_score = report.sentiment_score or report.announcement_score or 0.0
+
         orm = ReportORM(
             id=report.id,
             ticker=report.ticker,
@@ -457,21 +905,18 @@ class Florin:
             alert_change_pct=report.alert.change_pct,
             alert_volume=report.alert.volume,
             final_recommendation=report.final_recommendation.value,
-            final_score=report.final_score,
+            final_score=final_score,
             final_confidence=report.final_confidence,
-            fraud_risk_level=report.fraud_risk.risk_level.value,
-            fraud_risk_score=report.fraud_risk.score,
-            fraud_flags=json.dumps(report.fraud_risk.flags),
             reddit_mentions=report.sentiment.reddit_mention_count,
-            stocktwits_bullish=report.sentiment.stocktwits_bullish_count,
-            stocktwits_bearish=report.sentiment.stocktwits_bearish_count,
+            apewisdom_mentions=report.sentiment.apewisdom_mentions,
+            alphavantage_sentiment=report.sentiment.alphavantage_avg_sentiment,
             insider_buys=report.sentiment.insider_buy_count,
             insider_sells=report.sentiment.insider_sell_count,
             news_count=len(report.sentiment.news_articles),
             report_json=report.model_dump_json(),
         )
 
-        async with self.db.session() as session:
+        async with self._require_db().session() as session:
             session.add(orm)
             await session.commit()
 

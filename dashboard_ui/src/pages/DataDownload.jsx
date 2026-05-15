@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import SearchBar from '../components/SearchBar'
 import PeriodSelector, { INTRADAY_TO_HISTORY } from '../components/PeriodSelector'
 import { exportCSV, exportJSON } from '../utils/export'
@@ -12,7 +12,7 @@ const FREQUENCIES = [
   { value: '1m', label: '1 Min' },
 ]
 
-const FIELDS = [
+const BASE_FIELDS = [
   { key: 'open', label: 'Open' },
   { key: 'high', label: 'High' },
   { key: 'low', label: 'Low' },
@@ -34,10 +34,16 @@ export default function DataDownload() {
   const [frequency, setFrequency] = useState('1d')
   const [fields, setFields] = useState(new Set(['open', 'high', 'low', 'close', 'volume']))
   const [provider, setProvider] = useState('yfinance')
+  const [adjusted, setAdjusted] = useState(true)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
   const [progress, setProgress] = useState('')
   const [error, setError] = useState('')
+
+  const availableFields = useMemo(() => {
+    if (adjusted) return BASE_FIELDS
+    return [...BASE_FIELDS, { key: 'adj_close', label: 'Adj Close' }]
+  }, [adjusted])
 
   const addTicker = (item) => {
     const sym = item.ticker.toUpperCase()
@@ -77,9 +83,10 @@ export default function DataDownload() {
 
         // Use quotes endpoint when bid/ask fields are selected
         const needsBidAsk = fields.has('bid') || fields.has('ask')
+        const adjustedParam = adjusted ? '' : '&adjusted=false'
         const endpoint = needsBidAsk
-          ? `/api/research/asset/${sym}/quotes?${params}`
-          : `/api/research/asset/${sym}/history?${params}`
+          ? `/api/research/asset/${sym}/quotes?${params}${adjustedParam}`
+          : `/api/research/asset/${sym}/history?${params}${adjustedParam}`
         const resp = await fetch(endpoint)
         if (!resp.ok) {
           errors.push(`${sym}: HTTP ${resp.status}`)
@@ -180,12 +187,39 @@ export default function DataDownload() {
               {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-gray-400 text-xs">
+            <span>Adjusted Prices</span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !adjusted
+                setAdjusted(next)
+                setPreview(null)
+                setFields(f => {
+                  const updated = new Set(f)
+                  if (next) {
+                    updated.delete('adj_close')
+                  } else {
+                    updated.add('adj_close')
+                  }
+                  return updated
+                })
+              }}
+              className={`relative w-9 h-5 rounded-full transition-colors ${
+                adjusted ? 'bg-indigo-600' : 'bg-gray-600'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                adjusted ? 'translate-x-4' : ''
+              }`} />
+            </button>
+          </label>
         </div>
 
         {/* Fields */}
         <div className="flex items-center gap-3">
           <span className="text-gray-400 text-xs uppercase font-semibold">Fields</span>
-          {FIELDS.map(f => (
+          {availableFields.map(f => (
             <label key={f.key} className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
               <input type="checkbox" checked={fields.has(f.key)} onChange={() => toggleField(f.key)}
                 className="rounded bg-gray-700 border-gray-600" />

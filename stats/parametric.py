@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ParametricStats:
     var: VaRStats
-    annualized_return: float   # pct
+    annualized_return: float  # pct
     annualized_volatility: float  # pct
     sharpe: float
     sortino: float
@@ -95,7 +95,7 @@ def fit_student_t(
 
         # Sortino
         downside = np.minimum(excess_samples, 0.0)
-        ds_std = float(np.sqrt(np.mean(downside ** 2)))
+        ds_std = float(np.sqrt(np.mean(downside**2)))
         p_sortino = (mean_ex / ds_std * np.sqrt(trading_days)) if ds_std > 0 else 0.0
 
         # Parametric VaR / CVaR via the fitted distribution's PPF

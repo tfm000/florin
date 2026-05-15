@@ -60,9 +60,7 @@ async def get_market_breadth(
 
     if is_default:
         result = await session.execute(
-            select(BreadthSnapshotORM)
-            .order_by(BreadthSnapshotORM.recorded_at.desc())
-            .limit(1)
+            select(BreadthSnapshotORM).order_by(BreadthSnapshotORM.recorded_at.desc()).limit(1)
         )
         latest = result.scalar()
 

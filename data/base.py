@@ -7,7 +7,7 @@ Implementations: AlpacaProvider
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
 
 from core.models import BarData, StockInfo, StockQuote
 
@@ -15,7 +15,7 @@ from core.models import BarData, StockInfo, StockQuote
 class MarketDataProvider(ABC):
     """
     Interface for any market data source.
-    
+
     Provides:
         - Real-time/near-real-time price snapshots
         - Streaming minute bars
@@ -51,11 +51,14 @@ class MarketDataProvider(ABC):
         ...
 
     @abstractmethod
-    async def stream_bars(self, tickers: list[str]) -> AsyncIterator[BarData]:
+    def stream_bars(self, tickers: list[str]) -> AsyncIterator[BarData]:
         """
         Stream real-time minute bars for given tickers.
         Yields BarData objects as they arrive.
         Pass ["*"] for all tickers (if supported by provider).
+
+        Implemented as an async generator, so call without ``await`` and
+        consume with ``async for``.
         """
         ...
 

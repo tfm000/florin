@@ -55,12 +55,11 @@ class SECEdgarSource(SentimentSource):
         try:
             await sec_rate_limit()
             async with httpx.AsyncClient(
-                timeout=10.0, headers=sec_headers(),
+                timeout=10.0,
+                headers=sec_headers(),
             ) as client:
                 # Apple's CIK — known-good test
-                resp = await client.get(
-                    f"{SEC_EDGAR_SUBMISSIONS}/CIK0000320193.json"
-                )
+                resp = await client.get(f"{SEC_EDGAR_SUBMISSIONS}/CIK0000320193.json")
                 return resp.status_code == 200
         except Exception:
             return False
@@ -75,12 +74,10 @@ class SECEdgarSource(SentimentSource):
             filings = await self._get_filings(ticker)
 
             insider_buys = sum(
-                1 for f in filings
-                if f.form_type == "4" and f.transaction_type == "Purchase"
+                1 for f in filings if f.form_type == "4" and f.transaction_type == "Purchase"
             )
             insider_sells = sum(
-                1 for f in filings
-                if f.form_type == "4" and f.transaction_type == "Sale"
+                1 for f in filings if f.form_type == "4" and f.transaction_type == "Sale"
             )
 
             return {
@@ -122,7 +119,9 @@ class SECEdgarSource(SentimentSource):
         form4_refs = form4_refs[:MAX_FORM4_TO_PARSE]
         if form4_refs:
             async with httpx.AsyncClient(
-                headers=sec_headers(), timeout=15.0, follow_redirects=True,
+                headers=sec_headers(),
+                timeout=15.0,
+                follow_redirects=True,
             ) as client:
                 for ref in form4_refs:
                     filing_url = (
@@ -132,25 +131,31 @@ class SECEdgarSource(SentimentSource):
                     xml_text = await fetch_form4_xml(client, ref)
                     if not xml_text:
                         # Still record the filing even without XML details
-                        result.append(SECFiling(
-                            form_type="4",
-                            filed_date=_parse_date(ref.filing_date),
-                            description=SEC_FORM_TYPES.get("4", "Insider Trading"),
-                            url=filing_url,
-                        ))
+                        result.append(
+                            SECFiling(
+                                form_type="4",
+                                filed_date=_parse_date(ref.filing_date),
+                                description=SEC_FORM_TYPES.get("4", "Insider Trading"),
+                                url=filing_url,
+                            )
+                        )
                         continue
 
                     transactions = parse_form4_transactions(
-                        xml_text, ref.filing_date, filing_url,
+                        xml_text,
+                        ref.filing_date,
+                        filing_url,
                     )
 
                     if not transactions:
-                        result.append(SECFiling(
-                            form_type="4",
-                            filed_date=_parse_date(ref.filing_date),
-                            description=SEC_FORM_TYPES.get("4", "Insider Trading"),
-                            url=filing_url,
-                        ))
+                        result.append(
+                            SECFiling(
+                                form_type="4",
+                                filed_date=_parse_date(ref.filing_date),
+                                description=SEC_FORM_TYPES.get("4", "Insider Trading"),
+                                url=filing_url,
+                            )
+                        )
                         continue
 
                     # Create one SECFiling per transaction
@@ -163,12 +168,14 @@ class SECEdgarSource(SentimentSource):
                 f"https://www.sec.gov/Archives/edgar/data/"
                 f"{ref.cik}/{ref.accession}/{ref.primary_document}"
             )
-            result.append(SECFiling(
-                form_type=ref.form_type,
-                filed_date=_parse_date(ref.filing_date),
-                description=SEC_FORM_TYPES.get(ref.form_type, ref.form_type),
-                url=filing_url,
-            ))
+            result.append(
+                SECFiling(
+                    form_type=ref.form_type,
+                    filed_date=_parse_date(ref.filing_date),
+                    description=SEC_FORM_TYPES.get(ref.form_type, ref.form_type),
+                    url=filing_url,
+                )
+            )
 
         # Sort by date descending
         result.sort(key=lambda f: f.filed_date, reverse=True)

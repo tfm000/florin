@@ -8,23 +8,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
-from typing import Any
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from core.exceptions import ExternalServiceError, NotFoundError, ServiceUnavailableError
+from core.exceptions import NotFoundError, ServiceUnavailableError
+from core.models import Form8KFiling, WebSearchResult
 from dashboard.dependencies import get_data_provider_dep, get_settings_dep, get_yfinance_dep
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["research"])
 
+# Bar-interval label → length in seconds, for bucketing intraday quotes onto bars.
+_INTERVAL_SECONDS = {
+    "1Min": 60,
+    "5Min": 300,
+    "15Min": 900,
+    "30Min": 1800,
+    "1Hour": 3600,
+}
+
 
 # =============================================================================
 # Response schemas
 # =============================================================================
+
 
 class SearchResult(BaseModel):
     ticker: str
@@ -118,16 +128,20 @@ class AssetInfo(BaseModel):
 
 
 class HistoryPoint(BaseModel):
+    """OHLCV price bar. When adjusted=True (default), all prices are split/dividend adjusted."""
+
     date: str
     open: float
     high: float
     low: float
     close: float
     volume: int
+    adj_close: float | None = None
 
 
 class QuotePoint(BaseModel):
     """Price bar with optional bid/ask data."""
+
     date: str
     open: float
     high: float
@@ -136,6 +150,7 @@ class QuotePoint(BaseModel):
     volume: int
     bid: float | None = None
     ask: float | None = None
+    adj_close: float | None = None
 
 
 class NewsItem(BaseModel):
@@ -201,23 +216,50 @@ class MacroSummary(BaseModel):
     indicators: dict[str, MacroIndicator]
 
 
-class LLMAnalysisResponse(BaseModel):
-    ticker: str
+class LLMAnalysisResultDetail(BaseModel):
+    """Single analysis result detail (announcement or sentiment)."""
+
+    analysis_type: str = ""  # "announcement" or "sentiment"
     provider: str = ""
     model: str = ""
-    sentiment_score: float = 0.0
+    score: float = 5.0  # 0–10 scale
     confidence: float = 0.5
     bullish_signals: list[str] = []
     bearish_signals: list[str] = []
     recommendation: str = "HOLD"
     summary: str = ""
-    key_factors: list[str] = []
+    key_points: list[str] = []
     error: str | None = None
+
+
+class LLMAnalysisResponse(BaseModel):
+    """Response model for the LLM analysis endpoint.
+
+    Supports returning one or both analysis types. For backward compat,
+    top-level fields reflect the primary analysis result (sentiment if
+    available, else announcement).
+    """
+
+    ticker: str
+    provider: str = ""
+    model: str = ""
+    score: float = 5.0  # 0–10 scale
+    confidence: float = 0.5
+    bullish_signals: list[str] = []
+    bearish_signals: list[str] = []
+    recommendation: str = "HOLD"
+    summary: str = ""
+    key_points: list[str] = []
+    error: str | None = None
+    # Typed results (new in Phase 6)
+    announcement: LLMAnalysisResultDetail | None = None
+    sentiment: LLMAnalysisResultDetail | None = None
 
 
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @router.get("/research/search", response_model=list[SearchResult])
 async def search_assets(
@@ -252,20 +294,38 @@ async def get_asset_info(
     )
 
 
-@router.get("/research/asset/{ticker}/history", response_model=list[HistoryPoint])
+@router.get(
+    "/research/asset/{ticker}/history",
+    response_model=list[HistoryPoint],
+    response_model_exclude_unset=True,
+)
 async def get_asset_history(
     ticker: str,
     period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
-    interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
+    interval: str = Query(
+        default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"
+    ),
     start: str = Query(default="", description="Custom start date (YYYY-MM-DD)"),
     end: str = Query(default="", description="Custom end date (YYYY-MM-DD)"),
+    adjusted: bool = Query(default=True, description="Use split/dividend adjusted prices"),
     yf=Depends(get_yfinance_dep),
 ):
     """Historical OHLCV data. Use start/end for custom date ranges, or period for presets."""
     if start and end:
-        history = await yf.get_history(ticker.upper(), start=start, end=end, interval=interval)
+        history = await yf.get_history(
+            ticker.upper(),
+            start=start,
+            end=end,
+            interval=interval,
+            auto_adjust=adjusted,
+        )
     else:
-        history = await yf.get_history(ticker.upper(), period=period, interval=interval)
+        history = await yf.get_history(
+            ticker.upper(),
+            period=period,
+            interval=interval,
+            auto_adjust=adjusted,
+        )
     return [HistoryPoint(**h) for h in history]
 
 
@@ -312,21 +372,30 @@ def _fill_bid_ask(points: list[dict]) -> list[dict]:
     return points
 
 
-@router.get("/research/asset/{ticker}/quotes", response_model=list[QuotePoint])
+@router.get(
+    "/research/asset/{ticker}/quotes",
+    response_model=list[QuotePoint],
+    response_model_exclude_unset=True,
+)
 async def get_asset_quotes(
     ticker: str,
     period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
-    interval: str = Query(default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"),
+    interval: str = Query(
+        default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"
+    ),
     start: str = Query(default=""),
     end: str = Query(default=""),
+    adjusted: bool = Query(default=True, description="Use split/dividend adjusted prices"),
     yf=Depends(get_yfinance_dep),
 ):
     """OHLCV + bid/ask data (interday via yfinance, current bid/ask snapshot)."""
     tick = ticker.upper()
     if start and end:
-        history = await yf.get_history(tick, start=start, end=end, interval=interval)
+        history = await yf.get_history(
+            tick, start=start, end=end, interval=interval, auto_adjust=adjusted
+        )
     else:
-        history = await yf.get_history(tick, period=period, interval=interval)
+        history = await yf.get_history(tick, period=period, interval=interval, auto_adjust=adjusted)
 
     if not history:
         return []
@@ -362,6 +431,7 @@ async def get_asset_intraday_quotes(
 
     # Fetch bars and quotes concurrently
     import asyncio
+
     bars_task = data_provider.get_intraday_bars([tick], timeframe=interval)
     quotes_task = data_provider.get_intraday_quotes(tick)
     bars_result, raw_quotes = await asyncio.gather(bars_task, quotes_task)
@@ -372,12 +442,6 @@ async def get_asset_intraday_quotes(
 
     # Build a lookup: for each bar timestamp, find the closest quote
     # by bucketing quotes into bar intervals
-    from datetime import datetime, timedelta
-
-    # Parse bar timestamps
-    _INTERVAL_SECONDS = {
-        "1Min": 60, "5Min": 300, "15Min": 900, "30Min": 1800, "1Hour": 3600,
-    }
     interval_secs = _INTERVAL_SECONDS.get(interval, 300)
 
     # Build quote lookup keyed by bar timestamp
@@ -406,16 +470,18 @@ async def get_asset_intraday_quotes(
             norm_key = datetime.fromtimestamp(bar_epoch, tz=bt.tzinfo).isoformat()
             q = quote_by_bar.get(norm_key, {})
 
-        points.append({
-            "date": ts,
-            "open": bar["open"],
-            "high": bar["high"],
-            "low": bar["low"],
-            "close": bar["close"],
-            "volume": bar["volume"],
-            "bid": q.get("bid", 0) if q.get("bid", 0) > 0 else None,
-            "ask": q.get("ask", 0) if q.get("ask", 0) > 0 else None,
-        })
+        points.append(
+            {
+                "date": ts,
+                "open": bar["open"],
+                "high": bar["high"],
+                "low": bar["low"],
+                "close": bar["close"],
+                "volume": bar["volume"],
+                "bid": q.get("bid", 0) if q.get("bid", 0) > 0 else None,
+                "ask": q.get("ask", 0) if q.get("ask", 0) > 0 else None,
+            }
+        )
 
     # Fill gaps
     _fill_bid_ask(points)
@@ -426,102 +492,196 @@ async def get_asset_intraday_quotes(
 @router.post("/research/asset/{ticker}/analyse", response_model=LLMAnalysisResponse)
 async def analyse_asset(
     ticker: str,
+    type_: str = Query(
+        default="sentiment", alias="type", pattern="^(announcement|sentiment|both)$"
+    ),
     mode: str = Query(default="all", pattern="^(all|legitimate)$"),
     yf=Depends(get_yfinance_dep),
     settings=Depends(get_settings_dep),
 ):
-    """
-    Generate an LLM analysis report for any asset.
+    """Generate an LLM analysis report for any asset.
+
+    Args:
+        ticker: Stock symbol to analyse.
+        type_: Analysis type — "announcement" (Form 8-K), "sentiment" (social/news),
+            or "both" to run both concurrently. Exposed as the ``type`` query param.
+        mode: Sentiment source filter — "all" uses all sources, "legitimate"
+            excludes Reddit and social aggregators (ApeWisdom).
 
     Enriches the prompt with macro context, news, performance data, and sentiment.
-    mode="all" uses all sentiment sources; mode="legitimate" excludes Reddit/StockTwits.
     """
-    ticker = ticker.upper()
-
-    # Gather data concurrently
     import asyncio
+
+    from core.models import SentimentData
+    from dashboard.deps import _state
+
+    ticker = ticker.upper()
+    run_announcement = type_ in ("announcement", "both")
+    run_sentiment = type_ in ("sentiment", "both")
+
+    # Gather asset info
     info_task = yf.get_info(ticker)
     perf_task = yf.get_performance_metrics(ticker)
-    macro_task = yf.get_macro_summary()
-    news_task = yf.get_news(ticker)
-
-    info, performance, macro, news = await asyncio.gather(
-        info_task, perf_task, macro_task, news_task
-    )
+    info, performance = await asyncio.gather(info_task, perf_task)
 
     if not info.get("name") and not info.get("current_price"):
         raise NotFoundError(f"No data found for ticker {ticker}")
 
     # Get the available analysers
-    from dashboard.deps import _state
     analysers = _state.get("analysers", {})
-    default_provider = settings.llm_default_provider.value
 
-    analyser = analysers.get(default_provider)
-    if not analyser:
-        # Try any non-finbert analyser
-        for name, a in analysers.items():
-            if name != "finbert":
-                analyser = a
-                break
-
-    if not analyser:
-        raise ServiceUnavailableError(
-            "No LLM analysers available. Configure Groq, Claude, Gemini, or start Ollama."
+    def _select_analyser(role: str):
+        """Select analyser for a given role (announcement/sentiment)."""
+        a = None
+        model_id = (
+            settings.llm_announcement_model_id
+            if role == "announcement"
+            else settings.llm_sentiment_model_id
         )
+        if model_id:
+            a = analysers.get(model_id)
+        if not a:
+            a = analysers.get(settings.llm_default_provider.value)
+        if not a:
+            for _name, v in analysers.items():
+                return v
+        return a
 
-    # Build a minimal AlertSignal and fetch real sentiment data
-    from core.models import AlertSignal, FraudRiskScore, SentimentData
+    # Fetch data sources concurrently based on requested type
+    sentiment = SentimentData(ticker=ticker)
+    filings: list[Form8KFiling] = []
+    fetch_tasks = {}
 
-    alert = AlertSignal(
-        ticker=ticker,
-        price=info.get("current_price") or 0.0,
-        change_pct=0.0,
-        volume=0,
-    )
-
-    # Fetch sentiment from aggregator (with source filtering)
-    sentiment_agg = _state.get("sentiment_aggregator")
-    if sentiment_agg:
-        try:
+    if run_sentiment:
+        sentiment_agg = _state.get("sentiment_aggregator")
+        if sentiment_agg:
             company_name = info.get("name", "")
             if mode == "legitimate":
-                sentiment = await sentiment_agg.fetch_filtered(
+                fetch_tasks["sentiment"] = sentiment_agg.fetch_filtered(
                     ticker, company_name, ["SEC EDGAR", "News"]
                 )
             else:
-                sentiment = await sentiment_agg.fetch(ticker, company_name)
-        except Exception as e:
-            logger.warning("Sentiment fetch failed for %s: %s", ticker, e)
-            sentiment = SentimentData(ticker=ticker)
-    else:
-        sentiment = SentimentData(ticker=ticker)
+                fetch_tasks["sentiment"] = sentiment_agg.fetch(ticker, company_name)
 
-    fraud_risk = FraudRiskScore(ticker=ticker)
+    if run_announcement:
+        from sentiment.sec_8k_source import SEC8KSource
 
-    try:
-        analysis = await analyser.analyse(alert, sentiment, fraud_risk)
-    except Exception as e:
-        logger.exception("LLM analysis failed for %s", ticker)
-        # Return error in response body rather than 502, so the frontend can show it
-        return LLMAnalysisResponse(
-            ticker=ticker,
-            provider=getattr(analyser, "provider_name", "unknown"),
-            error=f"LLM connection failed: {e}",
+        sec_8k = SEC8KSource()
+        fetch_tasks["filings"] = sec_8k.fetch(ticker)
+
+    if fetch_tasks:
+        results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        for key, result in zip(fetch_tasks.keys(), results, strict=True):
+            if isinstance(result, BaseException):
+                logger.warning("Fetch %s failed for %s: %s", key, ticker, result)
+            elif key == "sentiment":
+                sentiment = result
+            elif key == "filings":
+                filings = result
+
+    # Build alert context for sentiment prompts
+    alert_context = {
+        "price": info.get("current_price") or 0.0,
+        "change_pct": 0.0,
+        "volume": 0,
+        "avg_volume": 0,
+    }
+
+    # Run requested analyses concurrently
+    analysis_tasks = {}
+    announcement_detail = None
+    sentiment_detail = None
+
+    if run_announcement:
+        ann_analyser = _select_analyser("announcement")
+        if ann_analyser:
+            analysis_tasks["announcement"] = (
+                ann_analyser,
+                asyncio.create_task(
+                    ann_analyser.analyse_announcements(
+                        ticker,
+                        filings,
+                        settings.llm_user_context,
+                    )
+                ),
+            )
+        else:
+            announcement_detail = LLMAnalysisResultDetail(
+                analysis_type="announcement",
+                error="No LLM analyser available for announcement analysis",
+            )
+
+    if run_sentiment:
+        sent_analyser = _select_analyser("sentiment")
+        if sent_analyser:
+            analysis_tasks["sentiment"] = (
+                sent_analyser,
+                asyncio.create_task(
+                    sent_analyser.analyse_sentiment(
+                        ticker,
+                        sentiment,
+                        alert_context,
+                        settings.llm_user_context,
+                    )
+                ),
+            )
+        else:
+            sentiment_detail = LLMAnalysisResultDetail(
+                analysis_type="sentiment",
+                error="No LLM analyser available for sentiment analysis",
+            )
+
+    if not analysis_tasks and not announcement_detail and not sentiment_detail:
+        raise ServiceUnavailableError(
+            "No LLM analysers available. Register a model in Settings > LLM Models."
         )
 
+    # Await all analysis tasks
+    for key, (analyser_inst, task) in analysis_tasks.items():
+        try:
+            result = await task
+            detail = LLMAnalysisResultDetail(
+                analysis_type=key,
+                provider=result.provider,
+                model=result.model,
+                score=result.score,
+                confidence=result.confidence,
+                bullish_signals=result.bullish_signals,
+                bearish_signals=result.bearish_signals,
+                recommendation=result.recommendation.value,
+                summary=result.summary,
+                key_points=result.key_points,
+                error=result.error,
+            )
+        except Exception as e:
+            logger.exception("LLM %s analysis failed for %s", key, ticker)
+            detail = LLMAnalysisResultDetail(
+                analysis_type=key,
+                provider=getattr(analyser_inst, "provider_name", "unknown"),
+                error=f"LLM connection failed: {e}",
+            )
+
+        if key == "announcement":
+            announcement_detail = detail
+        else:
+            sentiment_detail = detail
+
+    # Build response — top-level fields mirror the primary result for backward compat
+    primary = sentiment_detail or announcement_detail
     return LLMAnalysisResponse(
         ticker=ticker,
-        provider=analysis.provider,
-        model=analysis.model,
-        sentiment_score=analysis.sentiment_score,
-        confidence=analysis.confidence,
-        bullish_signals=analysis.bullish_signals,
-        bearish_signals=analysis.bearish_signals,
-        recommendation=analysis.recommendation.value,
-        summary=analysis.summary,
-        key_factors=analysis.key_factors,
-        error=analysis.error,
+        provider=primary.provider if primary else "",
+        model=primary.model if primary else "",
+        score=primary.score if primary else 5.0,
+        confidence=primary.confidence if primary else 0.5,
+        bullish_signals=primary.bullish_signals if primary else [],
+        bearish_signals=primary.bearish_signals if primary else [],
+        recommendation=primary.recommendation if primary else "HOLD",
+        summary=primary.summary if primary else "",
+        key_points=primary.key_points if primary else [],
+        error=primary.error if primary else None,
+        announcement=announcement_detail,
+        sentiment=sentiment_detail,
     )
 
 
@@ -541,6 +701,7 @@ async def get_market_news(
     else:
         # Aggregate news from major indices
         import asyncio
+
         results = await asyncio.gather(
             yf.get_news("^GSPC"),
             yf.get_news("^IXIC"),
@@ -560,6 +721,24 @@ async def get_market_news(
         news = unique[:20]
 
     return [NewsItem(**n) for n in news]
+
+
+@router.get("/research/web-search", response_model=list[WebSearchResult])
+async def get_web_search_results(
+    ticker: str = Query(..., min_length=1, description="Ticker symbol to search for"),
+):
+    """
+    Web search results for a ticker via DuckDuckGo news search.
+
+    Delegates to WebSearchSource for the actual search. Returns recent
+    news articles from across the web for the given ticker.
+    No API key required — uses DuckDuckGo's free search.
+    """
+    from sentiment.web_search_source import WebSearchSource
+
+    source = WebSearchSource()
+    result = await source.fetch(ticker.upper())
+    return result.get("web_search_results", [])
 
 
 @router.get("/research/yield-curve", response_model=YieldCurveResponse)
@@ -621,12 +800,18 @@ SECTOR_ETFS: dict[str, str] = {
 
 # Number of trading days per timeframe for return calculations
 _RETURN_DAYS: dict[str, int] = {
-    "1d": 1, "1w": 5, "1m": 21, "3m": 63, "6m": 126, "1y": 252,
+    "1d": 1,
+    "1w": 5,
+    "1m": 21,
+    "3m": 63,
+    "6m": 126,
+    "1y": 252,
 }
 
 
 class SectorReturn(BaseModel):
     """Return percentages at multiple timeframes."""
+
     d1: float | None = Field(None, alias="1d")
     w1: float | None = Field(None, alias="1w")
     m1: float | None = Field(None, alias="1m")
@@ -639,6 +824,7 @@ class SectorReturn(BaseModel):
 
 class SectorItem(BaseModel):
     """Single sector ETF summary."""
+
     name: str
     etf: str
     price: float | None = None
@@ -652,6 +838,7 @@ class SectorsResponse(BaseModel):
 
 class SectorHistoryResponse(BaseModel):
     """Aligned daily close prices for all sector ETFs."""
+
     dates: list[str]
     series: dict[str, list[float]]
 
@@ -661,13 +848,16 @@ def _compute_return(closes: list[float], days: int) -> float | None:
 
     Returns percentage (e.g. 5.0 for +5%) or None if insufficient data.
     """
+    from stats.core import simple_pct_change
+
     if len(closes) <= days:
         return None
     end_price = closes[-1]
     start_price = closes[-(days + 1)]
-    if start_price <= 0 or end_price <= 0:
+    if end_price <= 0:
         return None
-    return round((end_price / start_price - 1) * 100, 2)
+    result = simple_pct_change(end_price, start_price)
+    return round(result, 2) if result is not None else None
 
 
 @router.get("/research/sectors", response_model=SectorsResponse)
@@ -687,7 +877,7 @@ async def get_sectors(
 
     sectors: list[SectorItem] = []
     for (sector_name, etf), info_result, hist_result in zip(
-        SECTOR_ETFS.items(), infos, histories
+        SECTOR_ETFS.items(), infos, histories, strict=True
     ):
         if isinstance(info_result, Exception):
             logger.warning("Failed to fetch info for %s: %s", etf, info_result)
@@ -702,13 +892,15 @@ async def get_sectors(
         for tf, days in _RETURN_DAYS.items():
             returns_dict[tf] = _compute_return(closes, days)
 
-        sectors.append(SectorItem(
-            name=sector_name,
-            etf=etf,
-            price=info_result.get("current_price"),
-            market_cap=info_result.get("market_cap"),
-            returns=SectorReturn(**returns_dict),
-        ))
+        sectors.append(
+            SectorItem(
+                name=sector_name,
+                etf=etf,
+                price=info_result.get("current_price"),
+                market_cap=info_result.get("market_cap"),
+                returns=SectorReturn(**returns_dict),
+            )
+        )
 
     return SectorsResponse(sectors=sectors)
 
@@ -733,7 +925,7 @@ async def get_sectors_history(
     date_sets: list[set[str]] = []
     lookups: list[dict[str, float]] = []
     for hist_result in all_histories:
-        if isinstance(hist_result, Exception) or not hist_result:
+        if isinstance(hist_result, BaseException) or not hist_result:
             date_sets.append(set())
             lookups.append({})
             continue
@@ -751,17 +943,21 @@ async def get_sectors_history(
         return SectorHistoryResponse(dates=[], series={})
 
     # Build series: cumulative return from first date
+    from stats.core import simple_pct_change
+
     series: dict[str, list[float]] = {}
-    for name, lookup in zip(sector_names, lookups):
+    for name, lookup in zip(sector_names, lookups, strict=True):
         if not lookup or common_dates[0] not in lookup:
             continue
         base_price = lookup[common_dates[0]]
         if base_price <= 0:
             continue
         series[name] = [
-            round((lookup[d] / base_price - 1) * 100, 2)
+            round(pct, 2)
             for d in common_dates
             if d in lookup
+            for pct in (simple_pct_change(lookup[d], base_price),)
+            if pct is not None
         ]
 
     return SectorHistoryResponse(dates=common_dates, series=series)
@@ -770,6 +966,7 @@ async def get_sectors_history(
 # =============================================================================
 # Holders
 # =============================================================================
+
 
 class HolderEntry(BaseModel):
     holder: str
@@ -807,7 +1004,9 @@ async def get_holders(
 @router.get("/research/iv-spread", response_model=PutCallIVResponse)
 async def get_put_call_iv_spread(
     ticker: str = Query(default="SPY", description="Equity ticker (default SPY)"),
-    expiry: str = Query(default="", description="Specific expiry date (YYYY-MM-DD), empty for auto-select"),
+    expiry: str = Query(
+        default="", description="Specific expiry date (YYYY-MM-DD), empty for auto-select"
+    ),
     yf=Depends(get_yfinance_dep),
 ):
     """Put-call implied volatility spread: skew across strikes and term structure."""

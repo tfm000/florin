@@ -18,9 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, UTC
-from typing import Any
+from dataclasses import dataclass
 from xml.etree import ElementTree
 
 import httpx
@@ -89,7 +87,8 @@ async def resolve_ticker_to_cik(ticker: str) -> str | None:
     await sec_rate_limit()
     try:
         async with httpx.AsyncClient(
-            headers=sec_headers(), timeout=15.0,
+            headers=sec_headers(),
+            timeout=15.0,
         ) as client:
             resp = await client.get(SEC_COMPANY_TICKERS_URL)
             if resp.status_code != 200:
@@ -116,9 +115,11 @@ async def resolve_ticker_to_cik(ticker: str) -> str | None:
 # Company filings from submissions API
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FilingRef:
     """Reference to a single SEC filing from the submissions API."""
+
     form_type: str
     filing_date: str  # YYYY-MM-DD
     accession: str  # no dashes (for URL building)
@@ -154,11 +155,10 @@ async def get_company_filings(
 
     try:
         async with httpx.AsyncClient(
-            headers=sec_headers(), timeout=15.0,
+            headers=sec_headers(),
+            timeout=15.0,
         ) as client:
-            resp = await client.get(
-                f"{SEC_EDGAR_SUBMISSIONS}/CIK{cik_padded}.json"
-            )
+            resp = await client.get(f"{SEC_EDGAR_SUBMISSIONS}/CIK{cik_padded}.json")
             if resp.status_code != 200:
                 logger.warning("SEC submissions returned %d for CIK %s", resp.status_code, cik)
                 return []
@@ -174,14 +174,16 @@ async def get_company_filings(
             for i, form in enumerate(forms):
                 if form not in expanded:
                     continue
-                filings.append(FilingRef(
-                    form_type=form.split("/")[0],  # "4/A" -> "4"
-                    filing_date=dates[i] if i < len(dates) else "",
-                    accession=accessions[i].replace("-", "") if i < len(accessions) else "",
-                    accession_dashed=accessions[i] if i < len(accessions) else "",
-                    primary_document=docs[i] if i < len(docs) else "",
-                    cik=cik_padded,
-                ))
+                filings.append(
+                    FilingRef(
+                        form_type=form.split("/")[0],  # "4/A" -> "4"
+                        filing_date=dates[i] if i < len(dates) else "",
+                        accession=accessions[i].replace("-", "") if i < len(accessions) else "",
+                        accession_dashed=accessions[i] if i < len(accessions) else "",
+                        primary_document=docs[i] if i < len(docs) else "",
+                        cik=cik_padded,
+                    )
+                )
                 if len(filings) >= limit:
                     break
 
@@ -196,12 +198,16 @@ async def get_company_filings(
 # Form 4 XML parsing
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Form4Transaction:
     """Parsed transaction from a Form 4 XML filing."""
+
     insider_name: str = ""
     insider_title: str = ""
-    transaction_type: str = ""  # "Purchase" | "Sale" | "Grant" | "Exercise" | "Gift" | "Tax" | "Other"
+    transaction_type: str = (
+        ""  # "Purchase" | "Sale" | "Grant" | "Exercise" | "Gift" | "Tax" | "Other"
+    )
     transaction_date: str = ""  # YYYY-MM-DD
     shares: float = 0.0
     price_per_share: float = 0.0
@@ -321,10 +327,11 @@ def parse_form4_transactions(
                     if _flag_is_set(rel, "isDirector"):
                         insider_title = "Director"
                     elif _flag_is_set(rel, "isOfficer"):
-                        t = rel.find("officerTitle")
-                        insider_title = (
-                            t.text.strip() if t is not None and t.text else "Officer"
-                        )
+                        officer_el = rel.find("officerTitle")
+                        if officer_el is not None and officer_el.text:
+                            insider_title = officer_el.text.strip()
+                        else:
+                            insider_title = "Officer"
                     elif _flag_is_set(rel, "isTenPercentOwner"):
                         insider_title = "10% Owner"
 
@@ -367,11 +374,7 @@ def _parse_xml_transaction(
     try:
         # Transaction date
         date_el = txn.find(".//transactionDate/value")
-        txn_date = (
-            date_el.text.strip()
-            if date_el is not None and date_el.text
-            else filing_date
-        )
+        txn_date = date_el.text.strip() if date_el is not None and date_el.text else filing_date
 
         # Transaction code
         code_el = txn.find(".//transactionCoding/transactionCode")

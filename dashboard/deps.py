@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.settings import Settings
     from core.events import EventBus
-    from db.database import Database
     from dashboard.ws import ConnectionManager
+    from db.database import Database
 
 _state: dict = {}
 
@@ -22,15 +22,15 @@ def set_state(key: str, value: object) -> None:
     _state[key] = value
 
 
-def get_db() -> "Database":
+def get_db() -> Database:
     return _state["db"]
 
 
-def get_event_bus() -> "EventBus":
+def get_event_bus() -> EventBus:
     return _state["event_bus"]
 
 
-def get_settings() -> "Settings":
+def get_settings() -> Settings:
     return _state["settings"]
 
 
@@ -38,7 +38,7 @@ def get_broker():
     return _state.get("broker")
 
 
-def get_ws_manager() -> "ConnectionManager":
+def get_ws_manager() -> ConnectionManager:
     return _state["ws_manager"]
 
 
@@ -68,3 +68,27 @@ def get_rf_fetcher():
 
 def get_policy_rate_fetcher():
     return _state.get("policy_rate_fetcher")
+
+
+def get_analysers() -> dict:
+    """Return the current dict of LLM analyser instances."""
+    return _state.get("analysers", {})
+
+
+def get_analyser_refresh_callback():
+    """Return the callback to refresh LLM analysers after config changes.
+
+    The callback is an async callable that re-initialises analysers
+    from the DB model registry and updates the report/consensus
+    generators. Set by main.py at startup.
+    """
+    return _state.get("analyser_refresh_callback")
+
+
+def get_state_value(key: str):
+    """Return an arbitrary value from the service state dict.
+
+    Used for services that don't have dedicated getter functions yet.
+    Returns None if the key is not set.
+    """
+    return _state.get(key)

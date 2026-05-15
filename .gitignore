@@ -36,6 +36,7 @@ alembic/versions/__pycache__/
 .coverage
 htmlcov/
 .mypy_cache/
+.ruff_cache/
 .hypothesis/
 
 # IDE
@@ -60,5 +61,9 @@ dashboard/static/
 # HuggingFace model cache
 models/
 
-# Claude Code
+# Generated launchers (created by setup.sh / setup.bat)
+Florin.command
+Florin.bat
+
+# Local tooling / editor config
 .claude/

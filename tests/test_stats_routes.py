@@ -1,8 +1,8 @@
 """Tests for GET /api/stats/returns/{ticker} endpoint."""
 
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -20,14 +20,16 @@ def _make_history(prices, start_date="2024-01-02"):
     result = []
     for i, close in enumerate(prices):
         d = base + timedelta(days=i)
-        result.append({
-            "date": d.strftime("%Y-%m-%d"),
-            "open": close * 0.998,
-            "high": close * 1.005,
-            "low": close * 0.995,
-            "close": close,
-            "volume": 50_000_000,
-        })
+        result.append(
+            {
+                "date": d.strftime("%Y-%m-%d"),
+                "open": close * 0.998,
+                "high": close * 1.005,
+                "low": close * 0.995,
+                "close": close,
+                "volume": 50_000_000,
+            }
+        )
     return result
 
 
@@ -81,10 +83,20 @@ async def yf_mock(app):
 
 
 EXPECTED_FIELDS = {
-    "ticker", "period", "trading_days", "total_return",
-    "annualized_return", "annualized_volatility", "sharpe",
-    "max_drawdown", "mean_daily_pct", "std_dev_daily_pct",
-    "skewness", "excess_kurtosis", "var_95_pct", "cvar_95_pct",
+    "ticker",
+    "period",
+    "trading_days",
+    "total_return",
+    "annualized_return",
+    "annualized_volatility",
+    "sharpe",
+    "max_drawdown",
+    "mean_daily_pct",
+    "std_dev_daily_pct",
+    "skewness",
+    "excess_kurtosis",
+    "var_95_pct",
+    "cvar_95_pct",
 }
 
 
@@ -145,7 +157,10 @@ class TestReturnsStats:
     async def test_returns_stats_sharpe_nonzero(self, client, yf_mock):
         # Use enough data with drift for nonzero Sharpe
         yf_mock.get_history.return_value = _generate_realistic_history(
-            n=60, start=100.0, drift=0.002, seed=99,
+            n=60,
+            start=100.0,
+            drift=0.002,
+            seed=99,
         )
         resp = await client.get("/api/stats/returns/AAPL")
         assert resp.status_code == 200
@@ -155,14 +170,14 @@ class TestReturnsStats:
     @pytest.mark.asyncio
     async def test_returns_stats_custom_dates(self, client, yf_mock):
         yf_mock.get_history.return_value = _generate_realistic_history(20)
-        resp = await client.get(
-            "/api/stats/returns/AAPL?start=2024-01-02&end=2024-02-01"
-        )
+        resp = await client.get("/api/stats/returns/AAPL?start=2024-01-02&end=2024-02-01")
         assert resp.status_code == 200
         data = resp.json()
         assert "2024-01-02" in data["period"]
         assert "2024-02-01" in data["period"]
         # Verify yf mock was called with start/end kwargs
         yf_mock.get_history.assert_called_with(
-            "AAPL", start="2024-01-02", end="2024-02-01",
+            "AAPL",
+            start="2024-01-02",
+            end="2024-02-01",
         )

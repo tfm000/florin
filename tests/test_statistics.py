@@ -4,26 +4,28 @@ import numpy as np
 import pytest
 
 from stats.core import (
-    simple_returns,
-    log_returns,
     annualized_return,
     annualized_volatility,
-    sharpe_ratio,
-    sortino_ratio,
-    max_drawdown,
-    max_drawdown_from_log_returns,
-    historical_var,
-    historical_cvar,
-    var_cvar,
-    distribution_stats,
-    period_return,
+    compute_full_stats,
     compute_return_stats,
     compute_risk_adjusted,
-    compute_full_stats,
+    distribution_stats,
+    historical_cvar,
+    historical_var,
+    log_returns,
+    max_drawdown,
+    max_drawdown_from_log_returns,
+    period_return,
+    sharpe_ratio,
+    simple_pct_change,
+    simple_returns,
+    sortino_ratio,
+    total_return,
+    var_cvar,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def prices():
@@ -38,6 +40,7 @@ def deterministic_prices():
 
 
 # ── Return computation ───────────────────────────────────────────────
+
 
 class TestReturns:
     def test_simple_returns_basic(self, prices):
@@ -60,13 +63,14 @@ class TestReturns:
         assert len(log_returns(np.array([100.0]))) == 0
 
     def test_simple_vs_log_close_for_small_returns(self, deterministic_prices):
-        s = simple_returns(deterministic_prices)
-        l = log_returns(deterministic_prices)
+        simple_r = simple_returns(deterministic_prices)
+        log_r = log_returns(deterministic_prices)
         # For small returns, simple ≈ log
-        np.testing.assert_allclose(s, l, atol=0.001)
+        np.testing.assert_allclose(simple_r, log_r, atol=0.001)
 
 
 # ── Annualised metrics ───────────────────────────────────────────────
+
 
 class TestAnnualised:
     def test_annualized_return_zero_for_empty(self):
@@ -90,6 +94,7 @@ class TestAnnualised:
 
 
 # ── Sharpe / Sortino ─────────────────────────────────────────────────
+
 
 class TestRiskAdjusted:
     def test_sharpe_with_zero_rf(self, prices):
@@ -130,12 +135,13 @@ class TestRiskAdjusted:
         # There are negative returns, so sortino should be non-zero
         excess = rets
         downside = np.minimum(excess, 0.0)
-        ds_std = np.sqrt(np.mean(downside ** 2))
+        ds_std = np.sqrt(np.mean(downside**2))
         expected = float(np.mean(excess) / ds_std * np.sqrt(252))
         assert abs(s - expected) < 1e-8
 
 
 # ── Drawdown ─────────────────────────────────────────────────────────
+
 
 class TestDrawdown:
     def test_max_drawdown_from_prices(self):
@@ -162,6 +168,7 @@ class TestDrawdown:
 
 
 # ── VaR / CVaR ───────────────────────────────────────────────────────
+
 
 class TestVaR:
     def test_historical_var_95(self):
@@ -192,6 +199,7 @@ class TestVaR:
 
 # ── Distribution stats ──────────────────────────────────────────────
 
+
 class TestDistribution:
     def test_distribution_uses_sample_std(self):
         rets_pct = np.array([1.0, -1.0, 2.0, -2.0, 1.5])
@@ -212,6 +220,109 @@ class TestDistribution:
 
 # ── Period return ────────────────────────────────────────────────────
 
+
+class TestSimplePctChange:
+    """Tests for simple_pct_change — single source of truth for (end/start - 1) * 100."""
+
+    def test_positive_return(self):
+        result = simple_pct_change(110.0, 100.0)
+        assert result == pytest.approx(10.0)
+
+    def test_negative_return(self):
+        result = simple_pct_change(90.0, 100.0)
+        assert result == pytest.approx(-10.0)
+
+    def test_zero_return(self):
+        result = simple_pct_change(100.0, 100.0)
+        assert result == pytest.approx(0.0)
+
+    def test_start_zero_returns_none(self):
+        assert simple_pct_change(100.0, 0.0) is None
+
+    def test_start_negative_returns_none(self):
+        assert simple_pct_change(100.0, -5.0) is None
+
+    def test_end_zero(self):
+        """End price of zero is valid (total loss)."""
+        result = simple_pct_change(0.0, 100.0)
+        assert result == pytest.approx(-100.0)
+
+    def test_end_negative(self):
+        """Negative end price produces a result (caller validates domain)."""
+        result = simple_pct_change(-5.0, 100.0)
+        assert result == pytest.approx(-105.0)
+
+    def test_large_return(self):
+        result = simple_pct_change(1000.0, 100.0)
+        assert result == pytest.approx(900.0)
+
+    def test_small_fractional_change(self):
+        result = simple_pct_change(100.01, 100.0)
+        assert result == pytest.approx(0.01, abs=1e-10)
+
+    def test_algebraic_equivalence(self):
+        """Verify (end/start - 1)*100 == (end - start)/start * 100."""
+        end, start = 157.32, 143.87
+        expected = (end - start) / start * 100
+        assert simple_pct_change(end, start) == pytest.approx(expected)
+
+
+class TestTotalReturn:
+    """Tests for total_return — total return of a price series as a percentage."""
+
+    def test_basic_return(self):
+        prices = np.array([100.0, 105.0, 110.0])
+        assert total_return(prices) == pytest.approx(10.0)
+
+    def test_negative_return(self):
+        prices = np.array([100.0, 95.0, 90.0])
+        assert total_return(prices) == pytest.approx(-10.0)
+
+    def test_flat_series(self):
+        prices = np.array([100.0, 100.0, 100.0])
+        assert total_return(prices) == pytest.approx(0.0)
+
+    def test_single_price_returns_none(self):
+        assert total_return(np.array([100.0])) is None
+
+    def test_empty_returns_none(self):
+        assert total_return(np.array([])) is None
+
+    def test_leading_zeros_skipped(self):
+        """First positive price is used as base when leading zeros exist."""
+        prices = np.array([0.0, 0.0, 100.0, 110.0])
+        assert total_return(prices) == pytest.approx(10.0)
+
+    def test_all_zeros_returns_none(self):
+        prices = np.array([0.0, 0.0, 0.0])
+        assert total_return(prices) is None
+
+    def test_leading_negative_skipped(self):
+        """Negative prices are treated as invalid (not > 0)."""
+        prices = np.array([-5.0, 0.0, 100.0, 120.0])
+        assert total_return(prices) == pytest.approx(20.0)
+
+    def test_accepts_list_input(self):
+        """Should accept list via np.asarray coercion."""
+        result = total_return(np.array([100.0, 150.0]))
+        assert result == pytest.approx(50.0)
+
+    def test_consistency_with_simple_pct_change(self):
+        """total_return(prices) should equal simple_pct_change(prices[-1], prices[0])
+        when all prices are positive."""
+        prices = np.array([100.0, 105.0, 98.0, 112.0])
+        tr = total_return(prices)
+        spc = simple_pct_change(prices[-1], prices[0])
+        assert tr == pytest.approx(spc)
+
+    def test_consistency_with_period_return(self):
+        """total_return should match period_return(prices, len(prices)) for clean data."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0])
+        tr = total_return(prices)
+        pr = period_return(prices, len(prices))
+        assert tr == pytest.approx(pr)
+
+
 class TestPeriodReturn:
     def test_period_return_basic(self):
         prices = np.array([100, 105, 110, 115, 120])
@@ -225,6 +336,7 @@ class TestPeriodReturn:
 
 
 # ── Composite ────────────────────────────────────────────────────────
+
 
 class TestComposite:
     def test_compute_return_stats(self, prices):
@@ -254,6 +366,7 @@ class TestComposite:
 
 # ── Parametric (Student-t) ──────────────────────────────────────────
 
+
 class TestParametric:
     """Tests for stats.parametric.fit_student_t."""
 
@@ -265,7 +378,7 @@ class TestParametric:
         assert result is None
 
     def test_fit_returns_parametric_stats(self):
-        from stats.parametric import fit_student_t, ParametricStats
+        from stats.parametric import ParametricStats, fit_student_t
 
         # Seed 1 produces non-degenerate copulax Student-t fits
         np.random.seed(1)
@@ -315,3 +428,53 @@ class TestParametric:
         # similar results. Not exact because MC sampling advances the
         # random state between calls.
         assert abs(result.sharpe - result_scalar.sharpe) < 1.0
+
+
+# ── Return type conventions ─────────────────────────────────────────
+
+
+class TestReturnTypeConventions:
+    """Verify that the codebase uses simple returns for standard statistics
+    and reserves log returns only for parametric distribution fitting."""
+
+    def test_annualized_volatility_uses_simple_returns(self):
+        """annualized_volatility with simple returns should match the
+        standard formula: std(simple_rets, ddof=1) * sqrt(252) * 100."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0, 108.0, 106.0])
+        rets = simple_returns(prices)
+        vol = annualized_volatility(rets)
+        expected = float(np.std(rets, ddof=1) * np.sqrt(252) * 100)
+        assert vol == pytest.approx(expected)
+
+    def test_simple_vs_log_vol_differ_for_large_moves(self):
+        """For assets with large price moves, log and simple return vol
+        should produce different values — confirming the choice matters."""
+        # Simulate a volatile penny stock: 50% swings
+        prices = np.array([1.0, 1.5, 0.75, 1.2, 0.6, 1.1, 0.8])
+        simple_rets = simple_returns(prices)
+        log_rets = log_returns(prices)
+        simple_vol = annualized_volatility(simple_rets)
+        log_vol = annualized_volatility(log_rets)
+        # They should not be identical
+        assert simple_vol != pytest.approx(log_vol, abs=1e-6)
+
+    def test_compute_full_stats_uses_simple_returns(self):
+        """compute_full_stats internally uses simple_returns — verify by
+        comparing its vol output against a manual simple-return calculation."""
+        prices = np.array([100.0, 102.0, 99.0, 105.0, 103.0, 108.0])
+        fs = compute_full_stats(prices)
+        rets = simple_returns(prices)
+        expected_vol = float(np.std(rets, ddof=1) * np.sqrt(252) * 100)
+        assert fs.returns.annualized_volatility == pytest.approx(expected_vol)
+
+    def test_fit_student_t_accepts_log_returns(self):
+        """fit_student_t is the one place log returns are correct — verify
+        it accepts them without error."""
+        from stats.parametric import fit_student_t
+
+        np.random.seed(42)
+        log_rets = np.random.normal(0.0005, 0.02, 200)
+        result = fit_student_t(log_rets)
+        if result is None:
+            pytest.skip("copulax not installed or fit degenerate")
+        assert result.var.var_95 < 0  # VaR should be negative (loss)

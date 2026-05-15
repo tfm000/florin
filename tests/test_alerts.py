@@ -1,7 +1,8 @@
 """Tests for Price Alert CRUD API endpoints."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
@@ -51,11 +52,14 @@ class TestAlertsCRUD:
 
     @pytest.mark.asyncio
     async def test_create_alert(self, client):
-        resp = await client.post("/api/alerts", json={
-            "ticker": "AAPL",
-            "direction": "above",
-            "target_price": 200.0,
-        })
+        resp = await client.post(
+            "/api/alerts",
+            json={
+                "ticker": "AAPL",
+                "direction": "above",
+                "target_price": 200.0,
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["ticker"] == "AAPL"
@@ -68,22 +72,28 @@ class TestAlertsCRUD:
 
     @pytest.mark.asyncio
     async def test_create_alert_uppercase_ticker(self, client):
-        resp = await client.post("/api/alerts", json={
-            "ticker": "msft",
-            "direction": "below",
-            "target_price": 350.0,
-        })
+        resp = await client.post(
+            "/api/alerts",
+            json={
+                "ticker": "msft",
+                "direction": "below",
+                "target_price": 350.0,
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["ticker"] == "MSFT"
 
     @pytest.mark.asyncio
     async def test_delete_alert(self, client):
-        create_resp = await client.post("/api/alerts", json={
-            "ticker": "GOOG",
-            "direction": "above",
-            "target_price": 150.0,
-        })
+        create_resp = await client.post(
+            "/api/alerts",
+            json={
+                "ticker": "GOOG",
+                "direction": "above",
+                "target_price": 150.0,
+            },
+        )
         alert_id = create_resp.json()["id"]
 
         resp = await client.delete(f"/api/alerts/{alert_id}")
@@ -103,16 +113,22 @@ class TestAlertsCRUD:
     @pytest.mark.asyncio
     async def test_list_filters_active_only(self, client):
         # Create two alerts
-        resp1 = await client.post("/api/alerts", json={
-            "ticker": "AAPL",
-            "direction": "above",
-            "target_price": 200.0,
-        })
-        resp2 = await client.post("/api/alerts", json={
-            "ticker": "TSLA",
-            "direction": "below",
-            "target_price": 100.0,
-        })
+        resp1 = await client.post(
+            "/api/alerts",
+            json={
+                "ticker": "AAPL",
+                "direction": "above",
+                "target_price": 200.0,
+            },
+        )
+        resp2 = await client.post(
+            "/api/alerts",
+            json={
+                "ticker": "TSLA",
+                "direction": "below",
+                "target_price": 100.0,
+            },
+        )
         assert resp1.status_code == 201
         assert resp2.status_code == 201
 

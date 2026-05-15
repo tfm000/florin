@@ -50,14 +50,18 @@ def _is_forex_open(now_utc: datetime) -> bool:
         return False
     if wd == 5:  # Saturday
         return False
-    if wd == 6 and t < time(17, 0):  # Sun before 5 PM
-        return False
-    return True
+    # Otherwise open, except Sunday before the 5 PM ET re-open
+    return not (wd == 6 and t < time(17, 0))
 
 
 def _check_open(
-    tz_name: str, oh: int, om: int, ch: int, cm: int,
-    weekdays_only: bool, now_utc: datetime,
+    tz_name: str,
+    oh: int,
+    om: int,
+    ch: int,
+    cm: int,
+    weekdays_only: bool,
+    now_utc: datetime,
 ) -> bool:
     local = now_utc.astimezone(ZoneInfo(tz_name))
     if weekdays_only and local.weekday() >= 5:
@@ -89,15 +93,17 @@ async def get_market_hours():
             opens_str = f"{oh}:{om:02d}"
             closes_str = f"{ch}:{cm:02d}"
 
-        markets.append(MarketStatus(
-            name=name,
-            region=region,
-            is_open=is_open,
-            local_time=local.strftime("%H:%M"),
-            opens=opens_str,
-            closes=closes_str,
-            timezone=tz,
-        ))
+        markets.append(
+            MarketStatus(
+                name=name,
+                region=region,
+                is_open=is_open,
+                local_time=local.strftime("%H:%M"),
+                opens=opens_str,
+                closes=closes_str,
+                timezone=tz,
+            )
+        )
 
     return MarketHoursResponse(
         utc_now=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -108,23 +114,37 @@ async def get_market_hours():
 # Exchange → market name mapping for per-asset lookups
 _EXCHANGE_TO_MARKET: dict[str, str] = {
     # US
-    "NMS": "NYSE / NASDAQ", "NGM": "NYSE / NASDAQ", "NCM": "NYSE / NASDAQ",
-    "NYQ": "NYSE / NASDAQ", "ASE": "NYSE / NASDAQ", "PCX": "NYSE / NASDAQ",
-    "BTS": "NYSE / NASDAQ", "NASDAQ": "NYSE / NASDAQ", "NYSE": "NYSE / NASDAQ",
+    "NMS": "NYSE / NASDAQ",
+    "NGM": "NYSE / NASDAQ",
+    "NCM": "NYSE / NASDAQ",
+    "NYQ": "NYSE / NASDAQ",
+    "ASE": "NYSE / NASDAQ",
+    "PCX": "NYSE / NASDAQ",
+    "BTS": "NYSE / NASDAQ",
+    "NASDAQ": "NYSE / NASDAQ",
+    "NYSE": "NYSE / NASDAQ",
     # London
-    "LSE": "London (LSE)", "LON": "London (LSE)", "IOB": "London (LSE)",
+    "LSE": "London (LSE)",
+    "LON": "London (LSE)",
+    "IOB": "London (LSE)",
     # Frankfurt
-    "GER": "Frankfurt (XETRA)", "FRA": "Frankfurt (XETRA)",
+    "GER": "Frankfurt (XETRA)",
+    "FRA": "Frankfurt (XETRA)",
     # Tokyo
-    "JPX": "Tokyo (TSE)", "TYO": "Tokyo (TSE)",
+    "JPX": "Tokyo (TSE)",
+    "TYO": "Tokyo (TSE)",
     # Hong Kong
     "HKG": "Hong Kong (HKEX)",
     # Shanghai
-    "SHH": "Shanghai (SSE)", "SHZ": "Shanghai (SSE)",
+    "SHH": "Shanghai (SSE)",
+    "SHZ": "Shanghai (SSE)",
     # Sydney
-    "ASX": "Sydney (ASX)", "AX": "Sydney (ASX)",
+    "ASX": "Sydney (ASX)",
+    "AX": "Sydney (ASX)",
     # Toronto
-    "TOR": "Toronto (TSX)", "TSX": "Toronto (TSX)", "CNQ": "Toronto (TSX)",
+    "TOR": "Toronto (TSX)",
+    "TSX": "Toronto (TSX)",
+    "CNQ": "Toronto (TSX)",
 }
 
 
@@ -145,11 +165,8 @@ async def get_exchange_status(exchange: str):
     market_name = _EXCHANGE_TO_MARKET.get(exchange_upper)
 
     if not market_name:
-        # Check if it's a crypto or forex ticker pattern
-        if exchange_upper in ("CCC", "CCY"):
-            market_name = "Crypto"
-        else:
-            market_name = "NYSE / NASDAQ"  # default fallback
+        # Crypto pseudo-exchanges (CCC/CCY); otherwise default to US equities
+        market_name = "Crypto" if exchange_upper in ("CCC", "CCY") else "NYSE / NASDAQ"
 
     for name, _region, tz, oh, om, ch, cm, wd_only in _MARKETS:
         if name != market_name:
@@ -160,26 +177,35 @@ async def get_exchange_status(exchange: str):
 
         if name == "Crypto":
             return AssetMarketStatus(
-                market_name=name, is_open=True,
+                market_name=name,
+                is_open=True,
                 local_time=local.strftime("%H:%M"),
-                opens="24/7", closes="24/7",
+                opens="24/7",
+                closes="24/7",
             )
         if name == "Forex":
             return AssetMarketStatus(
-                market_name=name, is_open=_is_forex_open(now),
+                market_name=name,
+                is_open=_is_forex_open(now),
                 local_time=local.strftime("%H:%M"),
-                opens="Sun 5:00 PM ET", closes="Fri 5:00 PM ET",
+                opens="Sun 5:00 PM ET",
+                closes="Fri 5:00 PM ET",
             )
 
         is_open = _check_open(tz, oh, om, ch, cm, wd_only, now)
         return AssetMarketStatus(
-            market_name=name, is_open=is_open,
+            market_name=name,
+            is_open=is_open,
             local_time=local.strftime("%H:%M"),
-            opens=f"{oh}:{om:02d}", closes=f"{ch}:{cm:02d}",
+            opens=f"{oh}:{om:02d}",
+            closes=f"{ch}:{cm:02d}",
         )
 
     # Fallback
     return AssetMarketStatus(
-        market_name="Unknown", is_open=False,
-        local_time="", opens="", closes="",
+        market_name="Unknown",
+        is_open=False,
+        local_time="",
+        opens="",
+        closes="",
     )

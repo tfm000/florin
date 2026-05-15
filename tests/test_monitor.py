@@ -1,7 +1,8 @@
 """Tests for Live Monitor API endpoints."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings

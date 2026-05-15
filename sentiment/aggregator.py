@@ -13,11 +13,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.models import (
+    AlphaVantageNewsSentiment,
     NewsArticle,
     RedditPost,
     SECFiling,
     SentimentData,
-    StockTwitsMessage,
+    WebSearchResult,
 )
 from sentiment.base import SentimentSource
 
@@ -51,10 +52,7 @@ class SentimentAggregator:
         (with appropriate data quality markers).
         """
         # Run all sources concurrently with individual timeouts
-        tasks = [
-            self._fetch_with_timeout(source, ticker, company_name)
-            for source in self._sources
-        ]
+        tasks = [self._fetch_with_timeout(source, ticker, company_name) for source in self._sources]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Merge results
@@ -62,11 +60,9 @@ class SentimentAggregator:
         sources_succeeded = 0
         merged: dict[str, Any] = {}
 
-        for source, result in zip(self._sources, results):
+        for source, result in zip(self._sources, results, strict=True):
             if isinstance(result, Exception):
-                logger.warning(
-                    "Sentiment source %s failed: %s", source.name, result
-                )
+                logger.warning("Sentiment source %s failed: %s", source.name, result)
                 continue
 
             if isinstance(result, dict) and result:
@@ -75,18 +71,27 @@ class SentimentAggregator:
 
         # Build SentimentData from merged results
         sentiment = self._build_sentiment_data(
-            ticker, merged, sources_queried, sources_succeeded,
+            ticker,
+            merged,
+            sources_queried,
+            sources_succeeded,
         )
 
         logger.info(
             "Sentiment for %s: %d/%d sources succeeded (quality: %s)",
-            ticker, sources_succeeded, sources_queried, sentiment.data_quality,
+            ticker,
+            sources_succeeded,
+            sources_queried,
+            sentiment.data_quality,
         )
 
         return sentiment
 
     async def fetch_filtered(
-        self, ticker: str, company_name: str = "", source_names: list[str] | None = None,
+        self,
+        ticker: str,
+        company_name: str = "",
+        source_names: list[str] | None = None,
     ) -> SentimentData:
         """Fetch sentiment from a named subset of sources."""
         if source_names is None:
@@ -107,15 +112,16 @@ class SentimentAggregator:
         results = {}
         for source in self._sources:
             try:
-                results[source.name] = await asyncio.wait_for(
-                    source.health_check(), timeout=10.0
-                )
+                results[source.name] = await asyncio.wait_for(source.health_check(), timeout=10.0)
             except Exception:
                 results[source.name] = False
         return results
 
     async def _fetch_with_timeout(
-        self, source: SentimentSource, ticker: str, company_name: str,
+        self,
+        source: SentimentSource,
+        ticker: str,
+        company_name: str,
     ) -> dict[str, Any]:
         """Fetch from a single source with timeout."""
         try:
@@ -123,7 +129,7 @@ class SentimentAggregator:
                 source.fetch(ticker, company_name),
                 timeout=SOURCE_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Sentiment source %s timed out for %s", source.name, ticker)
             return {}
 
@@ -134,59 +140,75 @@ class SentimentAggregator:
         sources_queried: int,
         sources_succeeded: int,
     ) -> SentimentData:
-        """Build a SentimentData object from merged source results."""
-        # Reddit
+        """Build a SentimentData object from merged source results.
+
+        Extracts and type-validates data from each source, then
+        assembles the unified SentimentData model.
+        """
         reddit_data = merged.get("Reddit", {})
-        reddit_posts = reddit_data.get("posts", [])
-        if reddit_posts and not isinstance(reddit_posts[0], RedditPost):
-            reddit_posts = []  # Safety check
-
-        # StockTwits
-        st_data = merged.get("StockTwits", {})
-        st_messages = st_data.get("messages", [])
-        if st_messages and not isinstance(st_messages[0], StockTwitsMessage):
-            st_messages = []
-
-        # SEC EDGAR
+        aw_data = merged.get("ApeWisdom", {})
+        av_data = merged.get("Alpha Vantage", {})
         sec_data = merged.get("SEC EDGAR", {})
-        sec_filings = sec_data.get("filings", [])
-        if sec_filings and not isinstance(sec_filings[0], SECFiling):
-            sec_filings = []
-
-        # News
         news_data = merged.get("News", {})
-        news_articles = news_data.get("articles", [])
-        if news_articles and not isinstance(news_articles[0], NewsArticle):
-            news_articles = []
-
-        # Determine data quality
-        if sources_succeeded == 0:
-            quality = "insufficient"
-        elif sources_succeeded == 1:
-            quality = "low"
-        elif sources_succeeded <= sources_queried // 2:
-            quality = "medium"
-        else:
-            quality = "high"
+        ws_data = merged.get("Web Search", {})
 
         return SentimentData(
             ticker=ticker,
             collected_at=datetime.now(UTC),
-            # Reddit
-            reddit_posts=reddit_posts,
+            reddit_posts=_safe_list(reddit_data, "posts", RedditPost),
             reddit_mention_count=reddit_data.get("mention_count", 0),
-            # StockTwits
-            stocktwits_messages=st_messages,
-            stocktwits_bullish_count=st_data.get("bullish_count", 0),
-            stocktwits_bearish_count=st_data.get("bearish_count", 0),
-            # SEC
-            sec_filings=sec_filings,
+            apewisdom_rank=aw_data.get("apewisdom_rank", 0),
+            apewisdom_mentions=aw_data.get("apewisdom_mentions", 0),
+            apewisdom_upvotes=aw_data.get("apewisdom_upvotes", 0),
+            alphavantage_articles=_safe_list(
+                av_data, "alphavantage_articles", AlphaVantageNewsSentiment
+            ),
+            alphavantage_avg_sentiment=av_data.get("alphavantage_avg_sentiment", 0.0),
+            sec_filings=_safe_list(sec_data, "filings", SECFiling),
             insider_buy_count=sec_data.get("insider_buys", 0),
             insider_sell_count=sec_data.get("insider_sells", 0),
-            # News
-            news_articles=news_articles,
-            # Metadata
+            news_articles=_safe_list(news_data, "articles", NewsArticle),
+            web_search_results=_safe_list(ws_data, "web_search_results", WebSearchResult),
             sources_queried=sources_queried,
             sources_succeeded=sources_succeeded,
-            data_quality=quality,
+            data_quality=_assess_quality(sources_queried, sources_succeeded),
         )
+
+
+def _safe_list(data: dict[str, Any], key: str, expected_type: type) -> list:
+    """Extract a list from source data with type safety.
+
+    Returns the list only if the first element matches expected_type.
+    Otherwise returns an empty list to prevent corrupt data propagation.
+
+    Args:
+        data: Source result dict.
+        key: Key to extract.
+        expected_type: Expected Pydantic model type for list elements.
+
+    Returns:
+        Validated list, or empty list on type mismatch.
+    """
+    items = data.get(key, [])
+    if items and not isinstance(items[0], expected_type):
+        return []
+    return items
+
+
+def _assess_quality(sources_queried: int, sources_succeeded: int) -> str:
+    """Assess data quality based on source success ratio.
+
+    Args:
+        sources_queried: Total number of sources attempted.
+        sources_succeeded: Number of sources that returned data.
+
+    Returns:
+        Quality string: "high", "medium", "low", or "insufficient".
+    """
+    if sources_succeeded == 0:
+        return "insufficient"
+    if sources_succeeded == 1:
+        return "low"
+    if sources_succeeded <= sources_queried // 2:
+        return "medium"
+    return "high"

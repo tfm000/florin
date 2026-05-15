@@ -1,25 +1,25 @@
 """Tests for data.policy_rates — PolicyRateFetcher BIS CBPOL integration."""
 
 import time
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from data.policy_rates import (
-    PolicyRateFetcher,
-    G10_COUNTRIES,
-    _SEED_RATES,
-    _CACHE_TTL,
     _BIS_URL,
+    _CACHE_TTL,
+    _SEED_RATES,
+    G10_COUNTRIES,
+    PolicyRateFetcher,
 )
 from db.database import Database
 from db.models import PolicyRateORM
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 async def db():
@@ -58,9 +58,7 @@ BIS_CSV_FULL = (
 )
 
 BIS_CSV_PARTIAL = (
-    "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE,OBS_STATUS\n"
-    "M,US,2024-12,4.50,\n"
-    "M,GB,2024-12,4.50,\n"
+    "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE,OBS_STATUS\nM,US,2024-12,4.50,\nM,GB,2024-12,4.50,\n"
 )
 
 BIS_CSV_EMPTY = "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE,OBS_STATUS\n"
@@ -69,6 +67,7 @@ BIS_CSV_EMPTY = "FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE,OBS_STATUS\n"
 # ---------------------------------------------------------------------------
 # CSV Parsing
 # ---------------------------------------------------------------------------
+
 
 class TestBISCSVParsing:
     """Test BIS CBPOL CSV parsing logic."""
@@ -184,7 +183,8 @@ class TestBISCSVParsing:
 
     @pytest.mark.asyncio
     async def test_rate_metadata_is_correct(self, fetcher):
-        """Each rate dict includes correct country, central_bank, and currency from G10_COUNTRIES."""
+        """Each rate dict includes correct country, central_bank, and currency
+        from G10_COUNTRIES."""
         mock_resp = MagicMock()
         mock_resp.text = BIS_CSV_FULL
         mock_resp.raise_for_status = MagicMock()
@@ -206,6 +206,7 @@ class TestBISCSVParsing:
 # HTTP Error Handling
 # ---------------------------------------------------------------------------
 
+
 class TestHTTPErrors:
     """Test BIS API error handling."""
 
@@ -223,9 +224,7 @@ class TestHTTPErrors:
     @pytest.mark.asyncio
     async def test_timeout_returns_empty(self, fetcher):
         """Connection timeout returns empty list, does not raise."""
-        fetcher._client.get = AsyncMock(
-            side_effect=httpx.TimeoutException("timeout")
-        )
+        fetcher._client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
         rates = await fetcher._fetch_from_bis()
         assert rates == []
@@ -233,9 +232,7 @@ class TestHTTPErrors:
     @pytest.mark.asyncio
     async def test_connection_error_returns_empty(self, fetcher):
         """Network connection error returns empty list."""
-        fetcher._client.get = AsyncMock(
-            side_effect=httpx.ConnectError("DNS resolution failed")
-        )
+        fetcher._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS resolution failed"))
 
         rates = await fetcher._fetch_from_bis()
         assert rates == []
@@ -245,6 +242,7 @@ class TestHTTPErrors:
 # Database Persistence
 # ---------------------------------------------------------------------------
 
+
 class TestDBPersistence:
     """Test database storage and retrieval of policy rates."""
 
@@ -252,17 +250,28 @@ class TestDBPersistence:
     async def test_persist_inserts_new_rows(self, fetcher, db):
         """First persist creates new rows for each country."""
         rates = [
-            {"country_code": "US", "country": "United States",
-             "central_bank": "Federal Reserve", "currency": "USD",
-             "rate": 4.50, "effective_date": "2024-12"},
-            {"country_code": "GB", "country": "United Kingdom",
-             "central_bank": "Bank of England", "currency": "GBP",
-             "rate": 4.50, "effective_date": "2024-12"},
+            {
+                "country_code": "US",
+                "country": "United States",
+                "central_bank": "Federal Reserve",
+                "currency": "USD",
+                "rate": 4.50,
+                "effective_date": "2024-12",
+            },
+            {
+                "country_code": "GB",
+                "country": "United Kingdom",
+                "central_bank": "Bank of England",
+                "currency": "GBP",
+                "rate": 4.50,
+                "effective_date": "2024-12",
+            },
         ]
 
         await fetcher._persist(rates)
 
         from sqlalchemy import select as sa_select
+
         async with db.session() as session:
             result = await session.execute(sa_select(PolicyRateORM))
             rows = result.scalars().all()
@@ -276,20 +285,31 @@ class TestDBPersistence:
     async def test_persist_upserts_existing_rows(self, fetcher, db):
         """Second persist with same country_code updates rate and date, not duplicate."""
         rates_v1 = [
-            {"country_code": "US", "country": "United States",
-             "central_bank": "Federal Reserve", "currency": "USD",
-             "rate": 5.50, "effective_date": "2024-01"},
+            {
+                "country_code": "US",
+                "country": "United States",
+                "central_bank": "Federal Reserve",
+                "currency": "USD",
+                "rate": 5.50,
+                "effective_date": "2024-01",
+            },
         ]
         rates_v2 = [
-            {"country_code": "US", "country": "United States",
-             "central_bank": "Federal Reserve", "currency": "USD",
-             "rate": 4.50, "effective_date": "2024-12"},
+            {
+                "country_code": "US",
+                "country": "United States",
+                "central_bank": "Federal Reserve",
+                "currency": "USD",
+                "rate": 4.50,
+                "effective_date": "2024-12",
+            },
         ]
 
         await fetcher._persist(rates_v1)
         await fetcher._persist(rates_v2)
 
         from sqlalchemy import select as sa_select
+
         async with db.session() as session:
             result = await session.execute(sa_select(PolicyRateORM))
             rows = result.scalars().all()
@@ -302,9 +322,14 @@ class TestDBPersistence:
     async def test_read_from_db_returns_stored_rates(self, fetcher, db):
         """_read_from_db returns previously persisted rates."""
         rates = [
-            {"country_code": "JP", "country": "Japan",
-             "central_bank": "Bank of Japan", "currency": "JPY",
-             "rate": 0.50, "effective_date": "2024-12"},
+            {
+                "country_code": "JP",
+                "country": "Japan",
+                "central_bank": "Bank of Japan",
+                "currency": "JPY",
+                "rate": 0.50,
+                "effective_date": "2024-12",
+            },
         ]
         await fetcher._persist(rates)
 
@@ -324,20 +349,30 @@ class TestDBPersistence:
     @pytest.mark.asyncio
     async def test_persist_handles_db_errors_gracefully(self):
         """DB write failure is caught and logged, not raised."""
+
         class _BrokenDB:
             def session(self):
                 raise RuntimeError("DB connection lost")
 
         fetcher = PolicyRateFetcher(_BrokenDB())
         # Should not raise
-        await fetcher._persist([{"country_code": "US", "country": "US",
-                                 "central_bank": "Fed", "currency": "USD",
-                                 "rate": 4.50}])
+        await fetcher._persist(
+            [
+                {
+                    "country_code": "US",
+                    "country": "US",
+                    "central_bank": "Fed",
+                    "currency": "USD",
+                    "rate": 4.50,
+                }
+            ]
+        )
         await fetcher.close()
 
     @pytest.mark.asyncio
     async def test_read_handles_db_errors_gracefully(self):
         """DB read failure returns empty list, not an exception."""
+
         class _BrokenDB:
             def session(self):
                 raise RuntimeError("DB connection lost")
@@ -351,6 +386,7 @@ class TestDBPersistence:
 # ---------------------------------------------------------------------------
 # Fallback Chain
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackChain:
     """Test the cache → API → DB → seeds fallback logic."""
@@ -378,16 +414,19 @@ class TestFallbackChain:
         """When BIS API fails, previously stored DB rates are returned."""
         # Pre-populate DB
         stored = [
-            {"country_code": "US", "country": "United States",
-             "central_bank": "Federal Reserve", "currency": "USD",
-             "rate": 5.00, "effective_date": "2024-06"},
+            {
+                "country_code": "US",
+                "country": "United States",
+                "central_bank": "Federal Reserve",
+                "currency": "USD",
+                "rate": 5.00,
+                "effective_date": "2024-06",
+            },
         ]
         await fetcher._persist(stored)
 
         # Mock API failure
-        fetcher._client.get = AsyncMock(
-            side_effect=httpx.ConnectError("BIS down")
-        )
+        fetcher._client.get = AsyncMock(side_effect=httpx.ConnectError("BIS down"))
 
         rates = await fetcher.get_rates()
 
@@ -397,14 +436,13 @@ class TestFallbackChain:
     @pytest.mark.asyncio
     async def test_api_and_db_failure_falls_back_to_seeds(self):
         """When both API and DB fail, seed values are returned."""
+
         class _BrokenDB:
             def session(self):
                 raise RuntimeError("DB gone")
 
         fetcher = PolicyRateFetcher(_BrokenDB())
-        fetcher._client.get = AsyncMock(
-            side_effect=httpx.ConnectError("BIS down")
-        )
+        fetcher._client.get = AsyncMock(side_effect=httpx.ConnectError("BIS down"))
 
         rates = await fetcher.get_rates()
 
@@ -459,6 +497,7 @@ class TestFallbackChain:
 # Seed Values
 # ---------------------------------------------------------------------------
 
+
 class TestSeedValues:
     """Test hardcoded seed rate fallback values."""
 
@@ -476,8 +515,14 @@ class TestSeedValues:
 
     def test_seed_rates_have_required_fields(self):
         """Each seed rate dict has all required keys."""
-        required_keys = {"country", "central_bank", "rate", "currency",
-                         "effective_date", "country_code"}
+        required_keys = {
+            "country",
+            "central_bank",
+            "rate",
+            "currency",
+            "effective_date",
+            "country_code",
+        }
         for r in PolicyRateFetcher._seed_rates():
             assert required_keys.issubset(r.keys()), f"Missing keys in {r}"
 
@@ -491,6 +536,7 @@ class TestSeedValues:
 # G10 Countries Metadata
 # ---------------------------------------------------------------------------
 
+
 class TestG10Metadata:
     """Test G10_COUNTRIES mapping completeness and consistency."""
 
@@ -498,7 +544,7 @@ class TestG10Metadata:
         assert len(G10_COUNTRIES) == 10
 
     def test_all_countries_have_required_keys(self):
-        for code, meta in G10_COUNTRIES.items():
+        for _code, meta in G10_COUNTRIES.items():
             assert "country" in meta
             assert "central_bank" in meta
             assert "currency" in meta
@@ -513,6 +559,7 @@ class TestG10Metadata:
 # ---------------------------------------------------------------------------
 # API Route Integration
 # ---------------------------------------------------------------------------
+
 
 class TestPolicyRatesRoute:
     """Test the /api/research/policy-rates endpoint with a real fetcher."""
@@ -539,12 +586,14 @@ class TestPolicyRatesRoute:
         fetcher._client.get = AsyncMock(return_value=mock_resp)
 
         from data.yfinance_provider import YFinanceProvider
+
         yf = YFinanceProvider(policy_rate_fetcher=fetcher)
 
         app = create_app(settings, db, event_bus)
         set_state("yfinance_provider", yf)
 
         from httpx import ASGITransport, AsyncClient
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c

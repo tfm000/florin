@@ -23,11 +23,14 @@ class AsyncRateLimiter:
     window_seconds : float
         Time window in seconds.
     name : str
-        Label for debug logging (e.g. "SEC", "StockTwits").
+        Label for debug logging (e.g. "SEC", "AlphaVantage").
     """
 
     def __init__(
-        self, max_requests: int, window_seconds: float, name: str = "",
+        self,
+        max_requests: int,
+        window_seconds: float,
+        name: str = "",
     ) -> None:
         self._min_interval = window_seconds / max_requests
         self._lock = asyncio.Lock()

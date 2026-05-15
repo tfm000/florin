@@ -11,7 +11,6 @@ Used by the universe manager to enrich stocks with T212 ticker mappings.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import httpx
 
@@ -85,14 +84,16 @@ class T212InstrumentProvider:
                 parts = t212_ticker.split("_")
                 standard_ticker = parts[0] if parts else t212_ticker
 
-                instruments.append(StockInfo(
-                    ticker=standard_ticker,
-                    name=item.get("name", ""),
-                    exchange=exchange,
-                    t212_ticker=t212_ticker,
-                    sector=item.get("sector", "") or "",
-                    industry=item.get("industry", "") or "",
-                ))
+                instruments.append(
+                    StockInfo(
+                        ticker=standard_ticker,
+                        name=item.get("name", ""),
+                        exchange=exchange,
+                        t212_ticker=t212_ticker,
+                        sector=item.get("sector", "") or "",
+                        industry=item.get("industry", "") or "",
+                    )
+                )
 
             logger.info("T212: fetched %d US equity instruments", len(instruments))
             return instruments

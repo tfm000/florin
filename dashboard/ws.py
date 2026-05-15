@@ -10,7 +10,6 @@ Clients connect to /ws and receive JSON messages for:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -107,11 +106,14 @@ async def event_bridge(event_bus: EventBus, ws_manager: ConnectionManager) -> No
                 elif hasattr(payload, "__dict__"):
                     payload = payload.__dict__
 
-                await ws_manager.broadcast(channel, {
-                    "event_type": event.type.value,
-                    "event_id": event.id,
-                    "timestamp": str(event.timestamp),
-                    "payload": payload,
-                })
+                await ws_manager.broadcast(
+                    channel,
+                    {
+                        "event_type": event.type.value,
+                        "event_id": event.id,
+                        "timestamp": str(event.timestamp),
+                        "payload": payload,
+                    },
+                )
             except Exception as e:
                 logger.error("Failed to broadcast event %s: %s", event.id, e)

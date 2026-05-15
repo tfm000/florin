@@ -7,7 +7,7 @@ All endpoints use Pydantic response models and FastAPI Depends() for DI.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -27,6 +27,7 @@ router = APIRouter(tags=["watchlist"])
 # =============================================================================
 # Request / Response schemas
 # =============================================================================
+
 
 class WatchlistItem(BaseModel):
     id: str
@@ -51,6 +52,7 @@ class WatchlistUpdateRequest(BaseModel):
 # Endpoints
 # =============================================================================
 
+
 @router.get("/watchlist", response_model=PaginatedResponse[WatchlistItem])
 async def list_watchlist(
     limit: int = Query(default=50, ge=1, le=500),
@@ -63,12 +65,7 @@ async def list_watchlist(
     total = count_result.scalar() or 0
 
     # Paginated items
-    query = (
-        select(WatchlistORM)
-        .order_by(WatchlistORM.added_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    query = select(WatchlistORM).order_by(WatchlistORM.added_at.desc()).offset(offset).limit(limit)
     result = await session.execute(query)
     rows = result.scalars().all()
 
@@ -104,9 +101,7 @@ async def add_to_watchlist(
     ticker = req.ticker.upper()
 
     # Check for duplicates
-    existing = await session.execute(
-        select(WatchlistORM).where(WatchlistORM.ticker == ticker)
-    )
+    existing = await session.execute(select(WatchlistORM).where(WatchlistORM.ticker == ticker))
     if existing.scalar():
         raise ConflictError(f"{ticker} is already in your watchlist")
 
@@ -152,9 +147,7 @@ async def update_watchlist_item(
 ):
     """Update notes on a watchlist item."""
     ticker = ticker.upper()
-    result = await session.execute(
-        select(WatchlistORM).where(WatchlistORM.ticker == ticker)
-    )
+    result = await session.execute(select(WatchlistORM).where(WatchlistORM.ticker == ticker))
     row = result.scalar()
     if not row:
         raise NotFoundError(f"{ticker} not found in watchlist")
@@ -181,9 +174,7 @@ async def remove_from_watchlist(
 ):
     """Remove a ticker from the watchlist."""
     ticker = ticker.upper()
-    result = await session.execute(
-        select(WatchlistORM).where(WatchlistORM.ticker == ticker)
-    )
+    result = await session.execute(select(WatchlistORM).where(WatchlistORM.ticker == ticker))
     row = result.scalar()
     if not row:
         raise NotFoundError(f"{ticker} not found in watchlist")

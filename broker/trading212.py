@@ -20,16 +20,16 @@ Critical safety measures:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
 
 from broker.base import Broker
-from config.constants import T212_TICKER_SUFFIX, T212_ORDER_RATE_LIMIT, T212_SUMMARY_RATE_LIMIT
+from config.constants import T212_ORDER_RATE_LIMIT, T212_SUMMARY_RATE_LIMIT, T212_TICKER_SUFFIX
 from config.settings import Settings, T212Environment
 from core.models import (
     AccountSummary,
@@ -150,8 +150,9 @@ class Trading212Broker(Broker):
         GET /equity/account/cash
         Rate limit: 1 request / 5 seconds
         """
-        data = await self._request("GET", "/equity/account/cash", rate_key="summary",
-                                   rate_interval=T212_SUMMARY_RATE_LIMIT)
+        data = await self._request(
+            "GET", "/equity/account/cash", rate_key="summary", rate_interval=T212_SUMMARY_RATE_LIMIT
+        )
 
         return AccountSummary(
             currency=data.get("currencyCode", "GBP"),
@@ -174,8 +175,9 @@ class Trading212Broker(Broker):
         GET /equity/portfolio
         Rate limit: 1 request / 5 seconds
         """
-        data = await self._request("GET", "/equity/portfolio", rate_key="portfolio",
-                                   rate_interval=T212_SUMMARY_RATE_LIMIT)
+        data = await self._request(
+            "GET", "/equity/portfolio", rate_key="portfolio", rate_interval=T212_SUMMARY_RATE_LIMIT
+        )
 
         positions = []
         for item in data:
@@ -249,8 +251,12 @@ class Trading212Broker(Broker):
             return False
 
         try:
-            await self._request("DELETE", f"/equity/orders/{order_id}",
-                                rate_key="orders", rate_interval=T212_ORDER_RATE_LIMIT)
+            await self._request(
+                "DELETE",
+                f"/equity/orders/{order_id}",
+                rate_key="orders",
+                rate_interval=T212_ORDER_RATE_LIMIT,
+            )
             logger.info("Cancelled order %s", order_id)
             return True
         except Exception:
@@ -261,8 +267,9 @@ class Trading212Broker(Broker):
         """
         GET /equity/orders
         """
-        data = await self._request("GET", "/equity/orders", rate_key="orders",
-                                   rate_interval=T212_ORDER_RATE_LIMIT)
+        data = await self._request(
+            "GET", "/equity/orders", rate_key="orders", rate_interval=T212_ORDER_RATE_LIMIT
+        )
         return data if isinstance(data, list) else []
 
     # =========================================================================
@@ -274,9 +281,13 @@ class Trading212Broker(Broker):
         GET /equity/history/orders
         Returns executed orders from T212 history.
         """
-        data = await self._request("GET", "/equity/history/orders",
-                                   params={"limit": limit},
-                                   rate_key="history", rate_interval=T212_SUMMARY_RATE_LIMIT)
+        data = await self._request(
+            "GET",
+            "/equity/history/orders",
+            params={"limit": limit},
+            rate_key="history",
+            rate_interval=T212_SUMMARY_RATE_LIMIT,
+        )
 
         trades = []
         for item in data.get("items", []) if isinstance(data, dict) else data:
@@ -318,7 +329,9 @@ class Trading212Broker(Broker):
             body["quantity"] = order.quantity
         else:
             return OrderResult(
-                success=False, ticker=order.ticker, side=order.side,
+                success=False,
+                ticker=order.ticker,
+                side=order.side,
                 error_message="Order must specify quantity or target_value",
             )
 
@@ -328,7 +341,9 @@ class Trading212Broker(Broker):
         """POST /equity/orders/limit"""
         if not order.limit_price:
             return OrderResult(
-                success=False, ticker=order.ticker, side=order.side,
+                success=False,
+                ticker=order.ticker,
+                side=order.side,
                 error_message="Limit order requires limit_price",
             )
 
@@ -345,7 +360,9 @@ class Trading212Broker(Broker):
         """POST /equity/orders/stop"""
         if not order.stop_price:
             return OrderResult(
-                success=False, ticker=order.ticker, side=order.side,
+                success=False,
+                ticker=order.ticker,
+                side=order.side,
                 error_message="Stop order requires stop_price",
             )
 
@@ -359,12 +376,16 @@ class Trading212Broker(Broker):
         return await self._send_order("stop", body, order)
 
     async def _send_order(
-        self, order_type: str, body: dict[str, Any], order: OrderRequest,
+        self,
+        order_type: str,
+        body: dict[str, Any],
+        order: OrderRequest,
     ) -> OrderResult:
         """Send order to T212 API and parse response."""
         try:
             data = await self._request(
-                "POST", f"/equity/orders/{order_type}",
+                "POST",
+                f"/equity/orders/{order_type}",
                 json_body=body,
                 rate_key="orders",
                 rate_interval=T212_ORDER_RATE_LIMIT,
@@ -398,7 +419,11 @@ class Trading212Broker(Broker):
 
             logger.info(
                 "Order placed: %s %s %s qty=%.4f id=%s",
-                order.side.value, order_type, order.ticker, order.quantity, order_id,
+                order.side.value,
+                order_type,
+                order.ticker,
+                order.quantity,
+                order_id,
             )
 
             # Record the trade in DB
@@ -448,7 +473,10 @@ class Trading212Broker(Broker):
         for attempt in range(max_retries):
             try:
                 resp = await self._http.request(
-                    method, path, params=params, json=json_body,
+                    method,
+                    path,
+                    params=params,
+                    json=json_body,
                 )
                 resp.raise_for_status()
 
@@ -463,8 +491,9 @@ class Trading212Broker(Broker):
 
                 # Don't retry client errors (except 429 rate limit)
                 if 400 <= status < 500 and status != 429:
-                    logger.error("T212 API %s %s → %d: %s", method, path, status,
-                                 e.response.text[:200])
+                    logger.error(
+                        "T212 API %s %s → %d: %s", method, path, status, e.response.text[:200]
+                    )
                     raise
 
                 # Rate limited — wait and retry
@@ -475,19 +504,26 @@ class Trading212Broker(Broker):
                     continue
 
                 # Server error — exponential backoff
-                backoff = (2 ** attempt) * 1.0
+                backoff = (2**attempt) * 1.0
                 logger.warning(
                     "T212 API %s %s → %d — retrying in %.1fs (attempt %d/%d)",
-                    method, path, status, backoff, attempt + 1, max_retries,
+                    method,
+                    path,
+                    status,
+                    backoff,
+                    attempt + 1,
+                    max_retries,
                 )
                 await asyncio.sleep(backoff)
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 last_error = e
-                backoff = (2 ** attempt) * 1.0
+                backoff = (2**attempt) * 1.0
                 logger.warning(
                     "T212 connection error on %s %s — retrying in %.1fs",
-                    method, path, backoff,
+                    method,
+                    path,
+                    backoff,
                 )
                 await asyncio.sleep(backoff)
 
@@ -541,10 +577,8 @@ class Trading212Broker(Broker):
             executed_str = item.get("dateExecuted", "")
             executed_at = datetime.now(UTC)
             if executed_str:
-                try:
+                with contextlib.suppress(ValueError):
                     executed_at = datetime.fromisoformat(executed_str.replace("Z", "+00:00"))
-                except ValueError:
-                    pass
 
             return TradeRecord(
                 id=str(item.get("id", "")),

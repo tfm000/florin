@@ -48,11 +48,13 @@ class TestSettingsProperties:
 
 
 class TestGetEnabledLLMProviders:
-    def test_always_includes_ollama_and_finbert(self):
-        s = Settings()
-        providers = s.get_enabled_llm_providers()
-        assert LLMProvider.OLLAMA in providers
-        assert LLMProvider.FINBERT in providers
+    def test_empty_when_no_keys(self):
+        from unittest.mock import patch
+
+        with patch("config.settings._claude_sdk_available", return_value=False):
+            s = Settings()
+            providers = s.get_enabled_llm_providers()
+            assert len(providers) == 0
 
     def test_includes_groq_when_configured(self):
         s = Settings(groq_api_key="test")
@@ -64,17 +66,20 @@ class TestGetEnabledLLMProviders:
         providers = s.get_enabled_llm_providers()
         assert LLMProvider.GEMINI in providers
 
-    def test_includes_claude_when_configured(self):
+    def test_includes_claude_cli_when_configured(self):
         s = Settings(anthropic_api_key="test")
         providers = s.get_enabled_llm_providers()
-        assert LLMProvider.CLAUDE in providers
+        assert LLMProvider.CLAUDE_CLI in providers
 
     def test_excludes_unconfigured_cloud_providers(self):
-        s = Settings()
-        providers = s.get_enabled_llm_providers()
-        assert LLMProvider.GROQ not in providers
-        assert LLMProvider.GEMINI not in providers
-        assert LLMProvider.CLAUDE not in providers
+        from unittest.mock import patch
+
+        with patch("config.settings._claude_sdk_available", return_value=False):
+            s = Settings()
+            providers = s.get_enabled_llm_providers()
+            assert LLMProvider.GROQ not in providers
+            assert LLMProvider.GEMINI not in providers
+            assert LLMProvider.CLAUDE_CLI not in providers
 
 
 class TestLoadDbOverrides:
@@ -91,6 +96,7 @@ class TestLoadDbOverrides:
         s = Settings(scan_interval_seconds=120)
         # Monkey-patch the global singleton for this test
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -112,6 +118,7 @@ class TestLoadDbOverrides:
 
         s = Settings(scan_price_max=5.0)
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -133,6 +140,7 @@ class TestLoadDbOverrides:
 
         s = Settings()
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:
@@ -154,6 +162,7 @@ class TestLoadDbOverrides:
 
         s = Settings(llm_default_provider=LLMProvider.GROQ)
         import config.settings as mod
+
         old = mod._settings_instance
         mod._settings_instance = s
         try:

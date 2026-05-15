@@ -7,18 +7,14 @@ and LLM-based summarization with mocked dependencies.
 
 from __future__ import annotations
 
-import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from news.scraper import RawArticle, _parse_feed_xml, scrape_all_feeds
+from news.scraper import RawArticle, scrape_all_feeds
 from news.summarizer import (
-    CATEGORIES,
-    SummarizedArticle,
-    _SYSTEM_PROMPT,
     _deduplicate,
     _fallback_summaries,
     _parse_batch_response,
@@ -55,7 +51,9 @@ VALID_RSS_XML = f"""\
 MALFORMED_XML = "<<< this is not valid XML at all >>>"
 
 
-def _mock_response(text: str, status_code: int = 200, content_type: str = "application/xml") -> httpx.Response:
+def _mock_response(
+    text: str, status_code: int = 200, content_type: str = "application/xml"
+) -> httpx.Response:
     """Build a fake httpx.Response."""
     return httpx.Response(
         status_code=status_code,
@@ -190,7 +188,10 @@ class TestSummarizeFormatsPrompt:
         # Mock the Groq client so we can inspect what prompt was sent
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '[{"index": 0, "summary": "Fed raised rates", "category": "Economy", "importance": 9, "tickers": []}]'
+        mock_response.choices[0].message.content = (
+            '[{"index": 0, "summary": "Fed raised rates", "category": "Economy", '
+            '"importance": 9, "tickers": []}]'
+        )
 
         mock_client_instance = AsyncMock()
         mock_client_instance.chat.completions.create = AsyncMock(return_value=mock_response)
@@ -231,7 +232,9 @@ class TestParseBatchResponse:
     """Additional coverage for the JSON parsing helper."""
 
     def test_parse_plain_array(self):
-        raw = '[{"index": 0, "summary": "test", "category": "Tech", "importance": 5, "tickers": []}]'
+        raw = (
+            '[{"index": 0, "summary": "test", "category": "Tech", "importance": 5, "tickers": []}]'
+        )
         result = _parse_batch_response(raw)
         assert len(result) == 1
         assert result[0]["category"] == "Tech"

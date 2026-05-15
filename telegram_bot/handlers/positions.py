@@ -57,9 +57,7 @@ async def position_listener(
                     await bot.send_message(msg)
                     alerted.add(key)
                 except Exception:
-                    logger.exception(
-                        "Failed to send position alert for %s", pos.ticker
-                    )
+                    logger.exception("Failed to send position alert for %s", pos.ticker)
 
     # Listen for stop-loss events too
     async for event in event_bus.subscribe(EventType.POSITION_STOP_LOSS):

@@ -17,13 +17,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from config.settings import Settings
 from core.events import EventBus
 from core.exceptions import FlorinError
-from db.database import Database
 from dashboard.deps import set_state
 from dashboard.middleware import (
     RequestIdMiddleware,
     florin_exception_handler,
 )
 from dashboard.ws import ConnectionManager
+from db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def create_app(
     )
 
     # Exception handler for domain exceptions
-    app.add_exception_handler(FlorinError, florin_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)  # type: ignore[arg-type]
 
     # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
     # In production the frontend is served from the same origin, so CORS
@@ -70,11 +70,33 @@ def create_app(
 
     # Register API routes (import here to avoid circular imports)
     from dashboard.routes import (
-        positions, reports, trades, account, orders,
-        stats, health, settings, research, watchlist, monitor,
-        calendar, screener, correlation, risk, filings_13f, portfolio,
-        short_interest, breadth, news_feed, regime, alerts, insiders,
+        account,
+        alerts,
+        breadth,
+        calendar,
+        correlation,
+        filings_13f,
+        health,
+        insiders,
+        llm_models,
         market_hours,
+        monitor,
+        news_feed,
+        orders,
+        portfolio,
+        positions,
+        regime,
+        reports,
+        research,
+        risk,
+        screener,
+        short_interest,
+        stats,
+        trades,
+        watchlist,
+    )
+    from dashboard.routes import (
+        settings as settings_routes,
     )
 
     app.include_router(health.router, prefix="/api")
@@ -87,7 +109,7 @@ def create_app(
     app.include_router(account.router, prefix="/api")
     app.include_router(orders.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
-    app.include_router(settings.router, prefix="/api")
+    app.include_router(settings_routes.router, prefix="/api")
     app.include_router(calendar.router, prefix="/api")
     app.include_router(screener.router, prefix="/api")
     app.include_router(correlation.router, prefix="/api")
@@ -101,9 +123,11 @@ def create_app(
     app.include_router(alerts.router, prefix="/api")
     app.include_router(insiders.router, prefix="/api")
     app.include_router(market_hours.router, prefix="/api")
+    app.include_router(llm_models.router, prefix="/api")
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint
+
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # Serve React SPA — catch-all route for client-side routing.

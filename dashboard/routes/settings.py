@@ -9,6 +9,7 @@ API keys are masked when returned to the frontend.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from fastapi import APIRouter
@@ -21,14 +22,26 @@ from db.models import SettingORM
 router = APIRouter(tags=["settings"])
 
 # Keys that contain secrets — mask when returning to frontend
-_SECRET_KEYS = frozenset({
-    "t212_api_key", "t212_api_secret",
-    "alpaca_api_key", "alpaca_api_secret",
-    "openfigi_api_key",
-    "reddit_client_id", "reddit_client_secret",
-    "groq_api_key", "gemini_api_key", "anthropic_api_key",
-    "telegram_bot_token",
-})
+_SECRET_KEYS = frozenset(
+    {
+        "t212_api_key",
+        "t212_api_secret",
+        "alpaca_api_key",
+        "alpaca_api_secret",
+        "openfigi_api_key",
+        "reddit_client_id",
+        "reddit_client_secret",
+        "groq_api_key",
+        "gemini_api_key",
+        "anthropic_api_key",
+        "openrouter_api_key",
+        # LLM model API keys are in llm_models table now, but keep
+        # these in the mask set for backward compat with env-var loading
+        "telegram_bot_token",
+        "alphavantage_api_key",
+        "finnhub_api_key",
+    }
+)
 
 # Settings grouped by section for the UI
 _SECTIONS = [
@@ -36,14 +49,18 @@ _SECTIONS = [
         "id": "broker",
         "label": "Broker (Trading 212)",
         "keys": [
-            "t212_api_key", "t212_api_secret", "t212_environment",
+            "t212_api_key",
+            "t212_api_secret",
+            "t212_environment",
         ],
     },
     {
         "id": "market_data",
         "label": "Market Data",
         "keys": [
-            "alpaca_api_key", "alpaca_api_secret", "alpaca_feed",
+            "alpaca_api_key",
+            "alpaca_api_secret",
+            "alpaca_feed",
             "openfigi_api_key",
         ],
     },
@@ -51,48 +68,48 @@ _SECTIONS = [
         "id": "sentiment",
         "label": "Sentiment Sources",
         "keys": [
-            "reddit_client_id", "reddit_client_secret", "reddit_user_agent",
+            "reddit_client_id",
+            "reddit_client_secret",
+            "reddit_user_agent",
+            "alphavantage_api_key",
         ],
     },
     {
-        "id": "llm",
-        "label": "LLM Providers",
+        "id": "economic_calendar",
+        "label": "Economic Calendar",
         "keys": [
-            "ollama_base_url", "ollama_model",
-            "groq_api_key", "groq_model",
-            "gemini_api_key", "gemini_model",
-            "anthropic_api_key", "claude_model",
+            "finnhub_api_key",
         ],
     },
-    {
-        "id": "analysis",
-        "label": "Analysis Mode",
-        "keys": [
-            "llm_mode", "llm_default_provider", "llm_consensus_meta_provider",
-            "llm_user_context",
-        ],
-    },
+    # LLM Providers and Analysis Mode sections removed — now managed
+    # via /api/llm-models and /api/llm-settings endpoints.
     {
         "id": "telegram",
         "label": "Telegram",
         "keys": [
-            "telegram_bot_token", "telegram_chat_id",
+            "telegram_bot_token",
+            "telegram_chat_id",
         ],
     },
     {
         "id": "trading",
         "label": "Trading",
         "keys": [
-            "default_position_size", "position_size_unit",
+            "default_position_size",
+            "position_size_unit",
             "default_stop_loss_pct",
-            "max_open_positions", "max_daily_trades",
+            "max_open_positions",
+            "max_daily_trades",
         ],
     },
     {
         "id": "general",
         "label": "General",
         "keys": [
-            "app_env", "log_level", "dashboard_host", "dashboard_port",
+            "app_env",
+            "log_level",
+            "dashboard_host",
+            "dashboard_port",
         ],
     },
 ]
@@ -104,8 +121,8 @@ _CHOICES: dict[str, list[str]] = {
     "t212_environment": ["demo", "live", "readonly"],
     "alpaca_feed": ["iex", "sip"],
     "llm_mode": ["single", "consensus"],
-    "llm_default_provider": ["ollama", "groq", "gemini", "claude", "finbert"],
-    "llm_consensus_meta_provider": ["ollama", "groq", "gemini", "claude"],
+    "llm_default_provider": ["groq", "gemini", "claude-cli", "openrouter"],
+    "llm_consensus_meta_provider": ["groq", "gemini", "claude-cli", "openrouter"],
     "position_size_unit": ["gbp", "usd", "shares"],
     "market_cap_source": ["yfinance", "inferred"],
 }
@@ -168,21 +185,25 @@ async def get_all_settings() -> dict:
             is_secret = key in _SECRET_KEYS
             has_db_override = key in db_overrides
 
-            fields.append({
-                "key": key,
-                "value": _mask(key, current) if is_secret else current,
-                "is_secret": is_secret,
-                "is_set": bool(current) if is_secret else True,
-                "has_db_override": has_db_override,
-                "type": _FIELD_TYPES.get(key, "select" if key in _CHOICES else "text"),
-                "choices": _CHOICES.get(key),
-            })
+            fields.append(
+                {
+                    "key": key,
+                    "value": _mask(key, current) if is_secret else current,
+                    "is_secret": is_secret,
+                    "is_set": bool(current) if is_secret else True,
+                    "has_db_override": has_db_override,
+                    "type": _FIELD_TYPES.get(key, "select" if key in _CHOICES else "text"),
+                    "choices": _CHOICES.get(key),
+                }
+            )
 
-        sections.append({
-            "id": section["id"],
-            "label": section["label"],
-            "fields": fields,
-        })
+        sections.append(
+            {
+                "id": section["id"],
+                "label": section["label"],
+                "fields": fields,
+            }
+        )
 
     return {"sections": sections}
 
@@ -261,10 +282,8 @@ def _apply_setting(settings: Any, key: str, value: str) -> None:
     elif hasattr(current, "value"):
         # Enum — find matching member
         enum_cls = type(current)
-        try:
+        with contextlib.suppress(ValueError):
             setattr(settings, key, enum_cls(value))
-        except ValueError:
-            pass
     else:
         setattr(settings, key, value)
 
@@ -272,9 +291,15 @@ def _apply_setting(settings: Any, key: str, value: str) -> None:
 def _needs_restart(keys: list[str]) -> bool:
     """Check if any updated keys require an app restart to take effect."""
     restart_keys = {
-        "database_url", "dashboard_host", "dashboard_port",
-        "t212_api_key", "t212_api_secret", "t212_environment",
-        "alpaca_api_key", "alpaca_api_secret",
-        "telegram_bot_token", "telegram_chat_id",
+        "database_url",
+        "dashboard_host",
+        "dashboard_port",
+        "t212_api_key",
+        "t212_api_secret",
+        "t212_environment",
+        "alpaca_api_key",
+        "alpaca_api_secret",
+        "telegram_bot_token",
+        "telegram_chat_id",
     }
     return bool(set(keys) & restart_keys)

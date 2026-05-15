@@ -3,13 +3,13 @@
 import pytest
 
 from stats.risk_free import (
+    _DAY_COUNT_BASIS,
+    BENCHMARKS,
     RateObservation,
     RiskFreeRateFetcher,
+    _normalize_date,
     _parse_boe_date,
     _parse_rba_date,
-    _normalize_date,
-    BENCHMARKS,
-    _DAY_COUNT_BASIS,
 )
 
 
@@ -107,8 +107,10 @@ class TestDayCountConventions:
 class TestRateObservation:
     def test_creation(self):
         obs = RateObservation(
-            currency="USD", benchmark="SOFR",
-            date="2024-01-15", rate=5.31,
+            currency="USD",
+            benchmark="SOFR",
+            date="2024-01-15",
+            rate=5.31,
             source="NY Fed Markets API",
         )
         assert obs.currency == "USD"
@@ -126,27 +128,33 @@ class TestHTTPErrorHandling:
                     class _R:
                         def all(self):
                             return []
+
                         def first(self):
                             return None
+
                     return _R()
+
                 async def commit(self):
                     pass
+
                 async def __aenter__(self):
                     return self
+
                 async def __aexit__(self, *a):
                     pass
+
             def session(self):
                 return self._Session()
+
         return RiskFreeRateFetcher(_NullDB())
 
     @pytest.mark.asyncio
     async def test_dispatch_handles_http_400(self, fetcher):
         """A 400/403/500 from a central bank API should return empty, not raise."""
+
         import httpx
-        from unittest.mock import AsyncMock
 
         # Simulate a 403 Forbidden like RBNZ returns
-        original = fetcher._fetch_ocr
         async def _mock_403(start, end):
             resp = httpx.Response(403, request=httpx.Request("GET", "https://example.com"))
             raise httpx.HTTPStatusError("Forbidden", request=resp.request, response=resp)
@@ -179,6 +187,7 @@ class TestHTTPErrorHandling:
 # via: pytest -m "not integration"
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 class TestFetcherIntegration:
     """Test each central bank fetcher against the REAL API.
@@ -196,7 +205,7 @@ class TestFetcherIntegration:
     # Use a historical range that definitely has data for all G10 central banks.
     # Avoid recent dates (may not be published yet) and weekends.
     START = "2025-01-06"  # Monday
-    END = "2025-01-10"    # Friday — 5 business days
+    END = "2025-01-10"  # Friday — 5 business days
 
     @pytest.fixture
     def fetcher(self):
@@ -208,10 +217,13 @@ class TestFetcherIntegration:
                     class _R:
                         def all(self):
                             return []
+
                         def first(self):
                             return None
+
                         def scalars(self):
                             return self
+
                     return _R()
 
                 async def commit(self):
@@ -239,6 +251,7 @@ class TestFetcherIntegration:
             # Date must be YYYY-MM-DD (10 chars, parseable)
             assert len(o.date) == 10, f"Bad date format: {o.date!r}"
             from datetime import date as d
+
             d.fromisoformat(o.date)  # will raise if invalid
             # Rate must be a sane annual percentage
             assert -1 < o.rate < 20, f"Rate {o.rate}% out of range for {currency}"
@@ -337,6 +350,7 @@ class TestFetcherIntegration:
     async def test_get_daily_rates_returns_correct_length(self, fetcher):
         """get_daily_rates should return an array matching the input dates length."""
         import numpy as np
+
         dates = ["2025-01-06", "2025-01-07", "2025-01-08", "2025-01-09", "2025-01-10"]
         rates = await fetcher.get_daily_rates("USD", dates)
         assert len(rates) == len(dates)
@@ -345,7 +359,6 @@ class TestFetcherIntegration:
     @pytest.mark.asyncio
     async def test_get_daily_rates_with_yfinance_datetime_format(self, fetcher):
         """Dates from yfinance include timezone info — must be handled."""
-        import numpy as np
         dates = [
             "2025-01-06 00:00:00-05:00",
             "2025-01-07 00:00:00-05:00",

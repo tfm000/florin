@@ -59,12 +59,16 @@ async def get_risk_free_rate(
     rf_fetcher = get_rf_fetcher()
     if rf_fetcher is None:
         return RiskFreeRateResponse(
-            currency=currency.upper(), rate=0.0, source="unavailable",
+            currency=currency.upper(),
+            rate=0.0,
+            source="unavailable",
         )
 
     rate, source = await rf_fetcher.get_current_rate(currency)
     return RiskFreeRateResponse(
-        currency=currency.upper(), rate=rate, source=source,
+        currency=currency.upper(),
+        rate=rate,
+        source=source,
     )
 
 
@@ -86,10 +90,15 @@ async def get_risk_metrics(
         history = await yf.get_history(ticker, period=period)
 
     empty = RiskMetricsResponse(
-        ticker=ticker, period=period, trading_days=0,
-        annualized_return=0, annualized_vol=0,
+        ticker=ticker,
+        period=period,
+        trading_days=0,
+        annualized_return=0,
+        annualized_vol=0,
         historical=VaRResult(var_95=0, var_99=0, cvar_95=0, cvar_99=0),
-        risk_free_rate=0, sharpe=0, sortino=0,
+        risk_free_rate=0,
+        sharpe=0,
+        sortino=0,
     )
 
     if not history or len(history) < 10:
@@ -115,8 +124,11 @@ async def get_risk_metrics(
 
     def _compute():
         from stats.core import (
-            simple_returns, log_returns,
-            compute_return_stats, compute_risk_adjusted, var_cvar,
+            compute_return_stats,
+            compute_risk_adjusted,
+            log_returns,
+            simple_returns,
+            var_cvar,
         )
         from stats.parametric import fit_student_t
 

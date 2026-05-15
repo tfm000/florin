@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -46,9 +45,13 @@ async def list_alerts(
     result = await session.execute(query)
     return [
         PriceAlertResponse(
-            id=a.id, ticker=a.ticker, direction=a.direction,
-            target_price=a.target_price, is_active=a.is_active,
-            triggered=a.triggered, created_at=str(a.created_at),
+            id=a.id,
+            ticker=a.ticker,
+            direction=a.direction,
+            target_price=a.target_price,
+            is_active=a.is_active,
+            triggered=a.triggered,
+            created_at=str(a.created_at),
         )
         for a in result.scalars().all()
     ]
@@ -65,9 +68,13 @@ async def create_alert(req: PriceAlertCreate, session=Depends(get_db_session)):
     await session.commit()
     await session.refresh(alert)
     return PriceAlertResponse(
-        id=alert.id, ticker=alert.ticker, direction=alert.direction,
-        target_price=alert.target_price, is_active=alert.is_active,
-        triggered=alert.triggered, created_at=str(alert.created_at),
+        id=alert.id,
+        ticker=alert.ticker,
+        direction=alert.direction,
+        target_price=alert.target_price,
+        is_active=alert.is_active,
+        triggered=alert.triggered,
+        created_at=str(alert.created_at),
     )
 
 

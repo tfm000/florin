@@ -24,13 +24,9 @@ class TestDatabaseInit:
         from sqlalchemy import inspect
 
         async with db._engine.connect() as conn:
-            table_names = await conn.run_sync(
-                lambda c: inspect(c).get_table_names()
-            )
+            table_names = await conn.run_sync(lambda c: inspect(c).get_table_names())
 
-        assert len(table_names) == 0, (
-            f"init() should not create tables, but found: {table_names}"
-        )
+        assert len(table_names) == 0, f"init() should not create tables, but found: {table_names}"
         await db.close()
 
     @pytest.mark.asyncio
@@ -43,9 +39,7 @@ class TestDatabaseInit:
         from sqlalchemy import inspect
 
         async with db._engine.connect() as conn:
-            table_names = await conn.run_sync(
-                lambda c: inspect(c).get_table_names()
-            )
+            table_names = await conn.run_sync(lambda c: inspect(c).get_table_names())
 
         # Should have all tables defined in models
         model_tables = set(Base.metadata.tables.keys())

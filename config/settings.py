@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +32,10 @@ class LLMMode(str, Enum):
 
 
 class LLMProvider(str, Enum):
-    OLLAMA = "ollama"
     GROQ = "groq"
     GEMINI = "gemini"
-    CLAUDE = "claude"
-    FINBERT = "finbert"
+    CLAUDE_CLI = "claude-cli"
+    OPENROUTER = "openrouter"
 
 
 class T212Environment(str, Enum):
@@ -96,10 +98,6 @@ class Settings(BaseSettings):
     reddit_client_secret: str = ""
     reddit_user_agent: str = "florin-terminal/0.2"
 
-    # --- LLM: Ollama ---
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2:8b"
-
     # --- LLM: Groq ---
     groq_api_key: str = ""
     groq_model: str = "llama-4-scout-17b-16e-instruct"
@@ -108,9 +106,20 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash-lite"
 
-    # --- LLM: Claude ---
-    anthropic_api_key: str = ""
-    claude_model: str = "claude-haiku-4-5-20251001"
+    # --- LLM: Claude (CLI) ---
+    anthropic_api_key: str = ""  # Optional — CLI auth used if empty
+    claude_model: str = "claude-sonnet-4-20250514"
+    claude_cli_thinking_mode: str = "low"  # off, low, medium, high, max
+
+    # --- LLM: OpenRouter ---
+    openrouter_api_key: str = ""
+    openrouter_model: str = ""
+
+    # --- Alpha Vantage ---
+    alphavantage_api_key: str = ""
+
+    # --- Finnhub ---
+    finnhub_api_key: str = ""
 
     # --- Telegram ---
     telegram_bot_token: str = ""
@@ -138,8 +147,13 @@ class Settings(BaseSettings):
     # --- LLM Mode ---
     llm_mode: LLMMode = LLMMode.SINGLE
     llm_default_provider: LLMProvider = LLMProvider.GROQ
-    llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE
+    llm_consensus_meta_provider: LLMProvider = LLMProvider.CLAUDE_CLI
     llm_user_context: str = ""
+
+    # --- LLM Model Registry (new — model IDs reference llm_models table) ---
+    llm_announcement_model_id: str = ""  # ID of model for announcement analysis
+    llm_sentiment_model_id: str = ""  # ID of model for sentiment analysis
+    llm_consensus_leader_model_id: str = ""  # ID of model for consensus leader
 
     # --- Dashboard ---
     dashboard_host: str = "0.0.0.0"
@@ -164,18 +178,20 @@ class Settings(BaseSettings):
         return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     def get_enabled_llm_providers(self) -> list[LLMProvider]:
-        """Return list of LLM providers that have valid credentials configured."""
-        providers = []
-        # Ollama is always available if the server is running (no API key needed)
-        providers.append(LLMProvider.OLLAMA)
-        # FinBERT is always available (local model)
-        providers.append(LLMProvider.FINBERT)
+        """Return list of LLM providers that have valid credentials configured.
+
+        Claude CLI is enabled if an API key is provided **or** the
+        ``claude-agent-sdk`` package is importable (CLI session auth).
+        """
+        providers: list[LLMProvider] = []
         if self.groq_api_key:
             providers.append(LLMProvider.GROQ)
         if self.gemini_api_key:
             providers.append(LLMProvider.GEMINI)
-        if self.anthropic_api_key:
-            providers.append(LLMProvider.CLAUDE)
+        if self.anthropic_api_key or _claude_sdk_available():
+            providers.append(LLMProvider.CLAUDE_CLI)
+        if self.openrouter_api_key:
+            providers.append(LLMProvider.OPENROUTER)
         return providers
 
     @field_validator("log_level")
@@ -186,6 +202,17 @@ class Settings(BaseSettings):
         if upper not in valid:
             raise ValueError(f"log_level must be one of {valid}")
         return upper
+
+
+def _claude_sdk_available() -> bool:
+    """Check if the ``claude-agent-sdk`` package is importable.
+
+    Used to determine whether Claude CLI auth is available even
+    without an explicit API key.
+    """
+    import importlib.util
+
+    return importlib.util.find_spec("claude_agent_sdk") is not None
 
 
 _settings_instance: Settings | None = None
@@ -199,14 +226,15 @@ def get_settings() -> Settings:
     return _settings_instance
 
 
-async def load_db_overrides(db: object) -> None:
+async def load_db_overrides(db: Database) -> None:
     """Load setting overrides from the database."""
     from sqlalchemy import select
+
     from db.models import SettingORM
 
     settings = get_settings()
 
-    async with db.session() as session:  # type: ignore[union-attr]
+    async with db.session() as session:
         result = await session.execute(select(SettingORM))
         for row in result.scalars():
             key, value = row.key, row.value
@@ -224,6 +252,4 @@ async def load_db_overrides(db: object) -> None:
                 else:
                     setattr(settings, key, value)
             except (ValueError, KeyError):
-                logger.warning(
-                    "Failed to apply DB override for setting %s=%r", key, value
-                )
+                logger.warning("Failed to apply DB override for setting %s=%r", key, value)

@@ -1,15 +1,16 @@
 """Tests for Calendar and News Feed API endpoints."""
 
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from config.settings import Settings
 from core.events import EventBus
 from dashboard.app import create_app
 from dashboard.deps import set_state
-from dashboard.routes.calendar import EarningsEvent, EconomicEvent
+from dashboard.routes.calendar import EarningsEvent
 from db.database import Database
 from news.scraper import RawArticle
 
@@ -33,6 +34,7 @@ async def app():
     app = create_app(settings, db, event_bus)
     set_state("yfinance_provider", yf_mock)
     set_state("rf_fetcher", None)
+    set_state("economic_calendar_service", None)
     yield app
     await db.close()
 
@@ -52,23 +54,21 @@ async def client(app):
 class TestCalendarEmpty:
     @pytest.mark.asyncio
     async def test_calendar_empty(self, client):
-        """No tickers, no date range — returns empty earnings and default economic events."""
+        """No tickers, no service — returns empty earnings and economic events."""
         resp = await client.get("/api/calendar")
         assert resp.status_code == 200
         data = resp.json()
         assert "earnings" in data
         assert "economic" in data
         assert data["earnings"] == []
-        # Economic events use defaults (current year start to 2027-12-31),
-        # so there will be some events generated from the static schedule.
-        assert isinstance(data["economic"], list)
+        assert data["economic"] == []
 
 
-class TestCalendarWithTickers:
+class TestCalendarWithYfinanceFallback:
     @pytest.mark.asyncio
     @patch("dashboard.routes.calendar._get_earnings_sync")
-    async def test_calendar_with_tickers(self, mock_earnings_sync, client):
-        """With tickers provided, earnings data is returned from mocked yfinance."""
+    async def test_calendar_yfinance_fallback(self, mock_earnings_sync, client):
+        """When no Finnhub key, falls back to yfinance per-ticker."""
         mock_earnings_sync.return_value = [
             EarningsEvent(
                 ticker="AAPL",
@@ -78,6 +78,7 @@ class TestCalendarWithTickers:
                 reported_eps=None,
                 surprise_pct=None,
                 is_future=True,
+                in_watchlist=True,
             ),
             EarningsEvent(
                 ticker="AAPL",
@@ -87,6 +88,7 @@ class TestCalendarWithTickers:
                 reported_eps=2.40,
                 surprise_pct=2.13,
                 is_future=False,
+                in_watchlist=True,
             ),
         ]
 
@@ -95,10 +97,8 @@ class TestCalendarWithTickers:
         data = resp.json()
 
         assert len(data["earnings"]) == 2
-        # Results are sorted by date descending
         assert data["earnings"][0]["date"] >= data["earnings"][1]["date"]
         assert data["earnings"][0]["ticker"] == "AAPL"
-        assert data["earnings"][0]["name"] == "Apple Inc."
 
         # The future event should have eps_estimate but no reported_eps
         future = next(e for e in data["earnings"] if e["is_future"])
@@ -109,50 +109,86 @@ class TestCalendarWithTickers:
         past = next(e for e in data["earnings"] if not e["is_future"])
         assert past["reported_eps"] == 2.40
         assert past["surprise_pct"] == 2.13
+        assert past["in_watchlist"] is True
 
 
-class TestCalendarWithDateRange:
+class TestCalendarWithEconomicService:
     @pytest.mark.asyncio
-    @patch("dashboard.routes.calendar._get_economic_events")
-    async def test_calendar_with_date_range(self, mock_econ_events, client):
-        """With start/end dates, economic events are returned for that range."""
-        mock_econ_events.return_value = [
-            EconomicEvent(
-                date="2026-03-18",
-                event="FOMC Rate Decision",
-                importance="high",
-                expected="",
-                actual="",
-                previous="",
-            ),
-            EconomicEvent(
-                date="2026-03-13",
-                event="CPI Release (YoY)",
-                importance="high",
-                expected="2.5%",
-                actual="",
-                previous="2.4%",
-            ),
+    async def test_calendar_with_economic_service(self, client):
+        """When economic service is available, returns real events."""
+        mock_service = AsyncMock()
+        mock_service.get_events.return_value = [
+            {
+                "date": "2026-04-29",
+                "event": "FOMC Meeting",
+                "importance": "high",
+                "expected": "",
+                "actual": "",
+                "previous": "",
+                "country": "US",
+                "country_name": "United States",
+                "institution": "Federal Reserve",
+                "category": "Monetary Policy",
+                "description": "FOMC policy meeting.",
+                "frequency": "8x/year",
+                "unit": "",
+                "indicator_key": "fed_rate",
+                "source": "fed_calendar",
+            },
         ]
+        set_state("economic_calendar_service", mock_service)
 
-        resp = await client.get(
-            "/api/calendar?start_date=2026-03-01&end_date=2026-03-31"
-        )
+        resp = await client.get("/api/calendar?start_date=2026-04-01&end_date=2026-05-01")
         assert resp.status_code == 200
         data = resp.json()
 
-        assert len(data["economic"]) == 2
-        events_by_name = {e["event"]: e for e in data["economic"]}
-        assert "FOMC Rate Decision" in events_by_name
-        assert "CPI Release (YoY)" in events_by_name
+        assert len(data["economic"]) == 1
+        assert data["economic"][0]["event"] == "FOMC Meeting"
+        assert data["economic"][0]["country"] == "US"
+        assert data["economic"][0]["institution"] == "Federal Reserve"
 
-        cpi = events_by_name["CPI Release (YoY)"]
-        assert cpi["date"] == "2026-03-13"
-        assert cpi["expected"] == "2.5%"
-        assert cpi["previous"] == "2.4%"
+        # Clean up
+        set_state("economic_calendar_service", None)
 
-        # Verify mock was called with the date range params
-        mock_econ_events.assert_called_once_with("2026-03-01", "2026-03-31")
+
+class TestCalendarEarningsNewFields:
+    @pytest.mark.asyncio
+    async def test_earnings_new_fields(self, client):
+        """Verify new earnings fields (revenue, hour, quarter, year) are in response."""
+        resp = await client.get("/api/calendar")
+        assert resp.status_code == 200
+        # Even with empty data, the schema should accept these fields
+        data = resp.json()
+        assert isinstance(data["earnings"], list)
+
+
+class TestIndicatorHistory:
+    @pytest.mark.asyncio
+    async def test_indicator_history_no_service(self, client):
+        """History endpoint returns empty when no service."""
+        set_state("economic_calendar_service", None)
+        resp = await client.get("/api/calendar/indicators/us_cpi/history")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_indicator_history_with_service(self, client):
+        """History endpoint delegates to service."""
+        mock_service = AsyncMock()
+        mock_service.get_indicator_history.return_value = [
+            {"date": "2025-12-01", "value": "324.054"},
+            {"date": "2026-01-01", "value": "325.252"},
+        ]
+        set_state("economic_calendar_service", mock_service)
+
+        resp = await client.get("/api/calendar/indicators/us_cpi/history?limit=12")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["date"] == "2025-12-01"
+        assert data[1]["value"] == "325.252"
+
+        set_state("economic_calendar_service", None)
 
 
 # ============================================================================

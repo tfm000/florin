@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -21,9 +20,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["correlation"])
 
 COPULAX_METHODS = [
-    "pearson", "spearman", "kendall", "pp_kendall",
-    "rm_pearson", "rm_spearman", "rm_kendall", "rm_pp_kendall",
-    "laloux_pearson", "laloux_spearman", "laloux_kendall", "laloux_pp_kendall",
+    "pearson",
+    "spearman",
+    "kendall",
+    "pp_kendall",
+    "rm_pearson",
+    "rm_spearman",
+    "rm_kendall",
+    "rm_pp_kendall",
+    "laloux_pearson",
+    "laloux_spearman",
+    "laloux_kendall",
+    "laloux_pp_kendall",
 ]
 
 
@@ -60,12 +68,15 @@ async def get_correlation_matrix(
 
     def _compute():
         import numpy as np
+
         try:
             from copulax.multivariate import corr
         except ImportError:
             logger.error("copulax not installed")
-            return [[1.0 if i == j else 0.0 for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [1.0 if i == j else 0.0 for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
 
         # Build aligned returns matrix
         # Normalise dates to YYYY-MM-DD (strip timezone info) so that
@@ -83,45 +94,53 @@ async def get_correlation_matrix(
                 date_sets.append(set())
 
         if not date_sets:
-            return [[1.0 if i == j else 0.0 for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [1.0 if i == j else 0.0 for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
 
         common_dates = sorted(set.intersection(*date_sets)) if all(date_sets) else []
         if len(common_dates) < 10:
-            return [[1.0 if i == j else 0.0 for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [1.0 if i == j else 0.0 for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
 
         # Build price lookup per ticker (keyed by normalised date)
         returns_matrix = []
         for hist in histories:
             price_map = {_date_key(h["date"]): h["close"] for h in hist}
             prices = [price_map[d] for d in common_dates if d in price_map]
-            # Compute log returns
-            log_returns = [
-                np.log(prices[i] / prices[i - 1])
-                for i in range(1, len(prices))
-                if prices[i] > 0 and prices[i - 1] > 0
+            # Compute simple returns
+            rets = [
+                (prices[i] / prices[i - 1]) - 1 for i in range(1, len(prices)) if prices[i - 1] > 0
             ]
-            returns_matrix.append(log_returns)
+            returns_matrix.append(rets)
 
         # Align lengths
         min_len = min(len(r) for r in returns_matrix)
         if min_len < 5:
-            return [[1.0 if i == j else 0.0 for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [1.0 if i == j else 0.0 for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
 
         x = np.array([r[:min_len] for r in returns_matrix]).T  # (T, N)
 
         try:
             corr_matrix = corr(x, method=method)
-            return [[round(float(corr_matrix[i, j]), 4) for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [round(float(corr_matrix[i, j]), 4) for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
         except Exception:
             logger.exception("copulax corr() failed with method=%s", method)
             # Fallback to numpy
             corr_matrix = np.corrcoef(x.T)
-            return [[round(float(corr_matrix[i, j]), 4) for j in range(len(ticker_list))]
-                    for i in range(len(ticker_list))]
+            return [
+                [round(float(corr_matrix[i, j]), 4) for j in range(len(ticker_list))]
+                for i in range(len(ticker_list))
+            ]
 
     matrix = await asyncio.to_thread(_compute)
     return CorrelationResponse(tickers=ticker_list, method=method, matrix=matrix)

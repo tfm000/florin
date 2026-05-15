@@ -44,10 +44,16 @@ async def screen_stocks(
     pe_max: float = Query(default=0, description="0 = no limit"),
     dividend_yield_min: float = Query(default=0, ge=0),
     sector: str = Query(default="", description="Filter by sector name"),
-    region: str = Query(default="", description="Region code(s): us, gb, de, jp, ca, hk, etc. Empty = default"),
+    region: str = Query(
+        default="", description="Region code(s): us, gb, de, jp, ca, hk, etc. Empty = default"
+    ),
     exchange: str = Query(default="", description="Exchange codes: NMS, NYQ, PCX, LSE, etc."),
-    asset_type: str = Query(default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"),
-    momentum_min: float | None = Query(default=None, description="Min return % for momentum filter"),
+    asset_type: str = Query(
+        default="", description="EQUITY, ETF, MUTUALFUND, INDEX, CRYPTOCURRENCY"
+    ),
+    momentum_min: float | None = Query(
+        default=None, description="Min return % for momentum filter"
+    ),
     momentum_max: float | None = Query(default=None, description="Max return % (None = no limit)"),
     momentum_period: str = Query(default="", description="1d, 5d, 1w, 1mo, 3mo, 1y"),
     sort_by: str = Query(default="intradaymarketcap", description="Sort field"),
@@ -58,18 +64,32 @@ async def screen_stocks(
 ):
     """General-purpose multi-factor stock screener with momentum filtering."""
     results, total = await run_screen(
-        price_min=price_min, price_max=price_max,
-        market_cap_min=market_cap_min, market_cap_max=market_cap_max,
-        pe_min=pe_min, pe_max=pe_max,
+        price_min=price_min,
+        price_max=price_max,
+        market_cap_min=market_cap_min,
+        market_cap_max=market_cap_max,
+        pe_min=pe_min,
+        pe_max=pe_max,
         dividend_yield_min=dividend_yield_min,
-        region=region, sector=sector, exchange=exchange, asset_type=asset_type,
-        sort_by=sort_by, sort_asc=sort_asc, offset=offset, limit=limit, yf=yf,
+        region=region,
+        sector=sector,
+        exchange=exchange,
+        asset_type=asset_type,
+        sort_by=sort_by,
+        sort_asc=sort_asc,
+        offset=offset,
+        limit=limit,
+        yf=yf,
     )
 
     # Apply momentum post-filter if requested
     if momentum_period and (momentum_min is not None or momentum_max is not None):
         results = await apply_momentum_filter(
-            results, momentum_min, momentum_max, momentum_period, yf,
+            results,
+            momentum_min,
+            momentum_max,
+            momentum_period,
+            yf,
         )
         total = len(results)
 
@@ -102,6 +122,7 @@ class SavedScreenerResponse(BaseModel):
     is_alert_active: bool
     max_alerts_per_day: int
     include_llm_report: bool
+    analysis_types: list[str]  # Subset of ["announcement", "sentiment"]
     run_interval_seconds: int
     last_run_at: str | None
     created_at: str
@@ -109,6 +130,12 @@ class SavedScreenerResponse(BaseModel):
 
 
 def _orm_to_response(orm: SavedScreenerORM) -> SavedScreenerResponse:
+    # Parse analysis_types JSON safely
+    try:
+        analysis_types = json.loads(orm.analysis_types)
+    except (json.JSONDecodeError, TypeError):
+        analysis_types = ["announcement", "sentiment"]
+
     return SavedScreenerResponse(
         id=orm.id,
         name=orm.name,
@@ -118,6 +145,7 @@ def _orm_to_response(orm: SavedScreenerORM) -> SavedScreenerResponse:
         is_alert_active=orm.is_alert_active,
         max_alerts_per_day=orm.max_alerts_per_day,
         include_llm_report=orm.include_llm_report,
+        analysis_types=analysis_types,
         run_interval_seconds=orm.run_interval_seconds,
         last_run_at=str(orm.last_run_at) if orm.last_run_at else None,
         created_at=str(orm.created_at),
@@ -230,14 +258,17 @@ async def delete_saved_screener(screener_id: str, session=Depends(get_db_session
 
 class AlertSettingsUpdate(BaseModel):
     """Update alert-related settings on a saved screener."""
+
     is_alert_active: bool | None = None
     max_alerts_per_day: int | None = Field(None, ge=1, le=100)
     run_interval_seconds: int | None = Field(None, ge=60, le=86400)
     include_llm_report: bool | None = None
+    analysis_types: list[str] | None = None  # Subset of ["announcement", "sentiment"]
 
 
 class ScreenerAlertLogResponse(BaseModel):
     """Single entry in the screener alert log."""
+
     id: str
     screener_id: str
     ticker: str
@@ -269,6 +300,18 @@ async def update_alert_settings(
         orm.run_interval_seconds = req.run_interval_seconds
     if req.include_llm_report is not None:
         orm.include_llm_report = req.include_llm_report
+    if req.analysis_types is not None:
+        # Validate values — must be non-empty subset of valid types
+        valid = {"announcement", "sentiment"}
+        if not req.analysis_types:
+            from core.exceptions import ValidationError
+
+            raise ValidationError("analysis_types cannot be empty — at least one type is required")
+        if not all(t in valid for t in req.analysis_types):
+            from core.exceptions import ValidationError
+
+            raise ValidationError(f"analysis_types must be a subset of {sorted(valid)}")
+        orm.analysis_types = json.dumps(req.analysis_types)
 
     orm.updated_at = datetime.now(UTC)
     await session.commit()

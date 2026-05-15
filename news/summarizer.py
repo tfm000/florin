@@ -44,7 +44,8 @@ CATEGORIES = [
     "Other",
 ]
 
-_SYSTEM_PROMPT = """You are a financial news analyst. You will receive a batch of news article headlines and excerpts.
+_SYSTEM_PROMPT = """You are a financial news analyst. You will receive a batch of \
+news article headlines and excerpts.
 
 For each article, return a JSON array where each element has:
 - "index": the article's position in the input list (0-based)
@@ -58,9 +59,7 @@ For each article, return a JSON array where each element has:
     1-2: Filler, opinion pieces, listicles
 - "tickers": list of stock tickers mentioned (empty list if none)
 
-Return ONLY a JSON array. No markdown, no explanation.""".format(
-    categories=", ".join(CATEGORIES)
-)
+Return ONLY a JSON array. No markdown, no explanation.""".format(categories=", ".join(CATEGORIES))
 
 
 @dataclass

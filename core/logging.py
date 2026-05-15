@@ -30,6 +30,7 @@ def setup_logging(log_level: str = "INFO", app_env: AppEnv = AppEnv.DEVELOPMENT)
         structlog.processors.UnicodeDecoder(),
     ]
 
+    renderer: structlog.types.Processor
     if app_env == AppEnv.PRODUCTION:
         # JSON output for production (machine-parseable)
         renderer = structlog.processors.JSONRenderer()

@@ -6,19 +6,19 @@ Uses SQLAlchemy 2.0 async with aiosqlite for zero-config local storage.
 Usage:
     db = Database("sqlite+aiosqlite:///./florin.db")
     await db.init()
-    
+
     async with db.session() as session:
         session.add(trade)
         await session.commit()
-    
+
     await db.close()
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -58,12 +58,14 @@ class Database:
                 "check_same_thread": False,
                 # Wait up to 30s for the write lock instead of failing immediately
                 "timeout": 30,
-            } if is_sqlite else {},
+            }
+            if is_sqlite
+            else {},
         )
 
         # Enable WAL mode for concurrent reads + single writer without locking
         if is_sqlite:
-            from sqlalchemy import event, text
+            from sqlalchemy import event
 
             @event.listens_for(self._engine.sync_engine, "connect")
             def _set_sqlite_pragma(dbapi_connection, _connection_record):
@@ -87,7 +89,7 @@ class Database:
         For **tests only** — production code should use :meth:`run_migrations`
         so that Alembic tracks schema history.
         """
-        async with self._engine.begin() as conn:
+        async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
     async def run_migrations(self) -> None:
@@ -96,18 +98,19 @@ class Database:
         Called during application startup so the schema is always up
         to date without requiring a separate ``alembic`` CLI step.
         """
-        from alembic.config import Config
         from alembic import command
+        from alembic.config import Config
 
         def _run(connection):
             import pathlib
+
             # Resolve alembic.ini relative to the project root (parent of db/)
             project_root = pathlib.Path(__file__).resolve().parent.parent
             cfg = Config(str(project_root / "alembic.ini"))
             cfg.attributes["connection"] = connection
             command.upgrade(cfg, "head")
 
-        async with self._engine.begin() as conn:
+        async with self.engine.begin() as conn:
             await conn.run_sync(_run)
 
         logger.info("Database migrations applied")
@@ -122,7 +125,7 @@ class Database:
     async def session(self) -> AsyncIterator[AsyncSession]:
         """
         Provide a transactional async session scope.
-        
+
         Usage:
             async with db.session() as session:
                 session.add(obj)

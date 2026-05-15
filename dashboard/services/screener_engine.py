@@ -25,8 +25,11 @@ class MarketDataProvider(Protocol):
     """Protocol for market data providers used by the screener engine."""
 
     async def get_history(
-        self, ticker: str, period: str = "1y",
+        self,
+        ticker: str,
+        period: str = "1y",
     ) -> list[dict] | None: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,7 @@ _SORT_FIELD_DEFAULTS = {
 
 class ScreenerResult(BaseModel):
     """Single result from a stock screen."""
+
     ticker: str
     name: str = ""
     exchange: str = ""
@@ -65,6 +69,7 @@ class ScreenerResult(BaseModel):
 
 class ScreenerResponse(BaseModel):
     """Wrapper response for screener results."""
+
     total: int
     results: list[ScreenerResult]
 
@@ -117,9 +122,7 @@ def _build_equity_operands(
         if len(regions) == 1:
             operands.append(EquityQuery("eq", ["region", regions[0]]))
         elif len(regions) > 1:
-            operands.append(EquityQuery("or", [
-                EquityQuery("eq", ["region", r]) for r in regions
-            ]))
+            operands.append(EquityQuery("or", [EquityQuery("eq", ["region", r]) for r in regions]))
         else:
             operands.append(EquityQuery("eq", ["region", "us"]))
 
@@ -145,9 +148,9 @@ def _build_equity_operands(
         if len(exchanges) == 1:
             operands.append(EquityQuery("eq", ["exchange", exchanges[0]]))
         else:
-            operands.append(EquityQuery("or", [
-                EquityQuery("eq", ["exchange", e]) for e in exchanges
-            ]))
+            operands.append(
+                EquityQuery("or", [EquityQuery("eq", ["exchange", e]) for e in exchanges])
+            )
 
     # EquityQuery AND requires at least 2 operands
     if len(operands) < 2:
@@ -216,13 +219,41 @@ async def run_screen(
             if at == "MUTUALFUND":
                 return _screen_funds(regions, sector, effective_sort, sort_asc, offset, limit)
             elif at in _DIRECT_POST_TYPES:
-                return _screen_direct(at, regions, exchanges, price_min, price_max,
-                                      market_cap_min, market_cap_max, pe_min, pe_max,
-                                      dividend_yield_min, sector, effective_sort, sort_asc, offset, limit)
+                return _screen_direct(
+                    at,
+                    regions,
+                    exchanges,
+                    price_min,
+                    price_max,
+                    market_cap_min,
+                    market_cap_max,
+                    pe_min,
+                    pe_max,
+                    dividend_yield_min,
+                    sector,
+                    effective_sort,
+                    sort_asc,
+                    offset,
+                    limit,
+                )
             else:
-                return _screen_equity(regions, exchanges, price_min, price_max,
-                                      market_cap_min, market_cap_max, pe_min, pe_max,
-                                      dividend_yield_min, sector, at, effective_sort, sort_asc, offset, limit)
+                return _screen_equity(
+                    regions,
+                    exchanges,
+                    price_min,
+                    price_max,
+                    market_cap_min,
+                    market_cap_max,
+                    pe_min,
+                    pe_max,
+                    dividend_yield_min,
+                    sector,
+                    at,
+                    effective_sort,
+                    sort_asc,
+                    offset,
+                    limit,
+                )
         except Exception:
             logger.exception("Screener query failed")
             return [], 0
@@ -231,15 +262,36 @@ async def run_screen(
 
 
 def _screen_equity(
-    regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-    pe_min, pe_max, dividend_yield_min, sector, asset_type, sort_by, sort_asc, offset, limit,
+    regions,
+    exchanges,
+    price_min,
+    price_max,
+    market_cap_min,
+    market_cap_max,
+    pe_min,
+    pe_max,
+    dividend_yield_min,
+    sector,
+    asset_type,
+    sort_by,
+    sort_asc,
+    offset,
+    limit,
 ) -> tuple[list[ScreenerResult], int]:
     """Screen equities via yfinance's EquityQuery + screen()."""
     from yfinance import EquityQuery, screen
 
     operands = _build_equity_operands(
-        regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-        pe_min, pe_max, dividend_yield_min, sector,
+        regions,
+        exchanges,
+        price_min,
+        price_max,
+        market_cap_min,
+        market_cap_max,
+        pe_min,
+        pe_max,
+        dividend_yield_min,
+        sector,
     )
     query = EquityQuery("and", operands)
     resp = screen(query, size=limit, offset=offset, sortField=sort_by, sortAsc=sort_asc)
@@ -252,8 +304,21 @@ def _screen_equity(
 
 
 def _screen_direct(
-    quote_type, regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-    pe_min, pe_max, dividend_yield_min, sector, sort_by, sort_asc, offset, limit,
+    quote_type,
+    regions,
+    exchanges,
+    price_min,
+    price_max,
+    market_cap_min,
+    market_cap_max,
+    pe_min,
+    pe_max,
+    dividend_yield_min,
+    sector,
+    sort_by,
+    sort_asc,
+    offset,
+    limit,
 ) -> tuple[list[ScreenerResult], int]:
     """Screen ETFs, indices, or crypto via direct Yahoo POST with custom quoteType."""
     from yfinance import EquityQuery
@@ -271,8 +336,16 @@ def _screen_direct(
         query = EquityQuery("and", operands)
     else:
         operands = _build_equity_operands(
-            regions, exchanges, price_min, price_max, market_cap_min, market_cap_max,
-            pe_min, pe_max, dividend_yield_min, sector,
+            regions,
+            exchanges,
+            price_min,
+            price_max,
+            market_cap_min,
+            market_cap_max,
+            pe_min,
+            pe_max,
+            dividend_yield_min,
+            sector,
         )
         query = EquityQuery("and", operands)
 
@@ -306,7 +379,9 @@ def _screen_direct(
     return [_quote_to_result(q) for q in quotes], total
 
 
-def _screen_funds(regions, sector, sort_by, sort_asc, offset, limit) -> tuple[list[ScreenerResult], int]:
+def _screen_funds(
+    regions, sector, sort_by, sort_asc, offset, limit
+) -> tuple[list[ScreenerResult], int]:
     """Screen mutual funds via yfinance's FundQuery."""
     from yfinance import FundQuery, screen
 
@@ -356,15 +431,23 @@ async def apply_momentum_filter(
     """
     # Map period labels to yfinance format
     period_map = {
-        "1d": "5d", "5d": "1mo", "1w": "1mo",
-        "1mo": "1mo", "3mo": "3mo", "1y": "1y",
+        "1d": "5d",
+        "5d": "1mo",
+        "1w": "1mo",
+        "1mo": "1mo",
+        "3mo": "3mo",
+        "1y": "1y",
     }
     yf_period = period_map.get(period, "1mo")
 
     # Day counts for return calculation
     day_counts = {
-        "1d": 1, "5d": 5, "1w": 5,
-        "1mo": 21, "3mo": 63, "1y": 252,
+        "1d": 1,
+        "5d": 5,
+        "1w": 5,
+        "1mo": 21,
+        "3mo": 63,
+        "1y": 252,
     }
     days = day_counts.get(period, 21)
 
@@ -374,6 +457,8 @@ async def apply_momentum_filter(
         return []
 
     # Fetch histories concurrently
+    from stats.core import simple_pct_change
+
     async def _get_return(item: ScreenerResult) -> tuple[ScreenerResult, float | None]:
         try:
             hist = await yf.get_history(item.ticker, period=yf_period)
@@ -382,7 +467,7 @@ async def apply_momentum_filter(
             closes = [h["close"] for h in hist if h.get("close") and h["close"] > 0]
             if len(closes) <= days:
                 return item, None
-            ret = (closes[-1] / closes[-(days + 1)] - 1) * 100
+            ret = simple_pct_change(closes[-1], closes[-(days + 1)])
             return item, ret
         except Exception:
             logger.debug("Momentum fetch failed for %s", item.ticker, exc_info=True)

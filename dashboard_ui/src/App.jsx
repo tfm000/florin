@@ -21,7 +21,9 @@ import Reports from './pages/Reports'
 import TradeHistory from './pages/TradeHistory'
 import Account from './pages/Account'
 import Stats from './pages/Stats'
-import Calendar from './pages/Calendar'
+import NewsLayout from './pages/NewsLayout'
+import EconomicCalendar from './pages/EconomicCalendar'
+import EarningsCalendar from './pages/EarningsCalendar'
 import Screener from './pages/Screener'
 import Filings13F from './pages/Filings13F'
 import MonitorAsset from './pages/MonitorAsset'
@@ -36,7 +38,6 @@ const NAV_ITEMS = [
   { path: '/screener', label: 'Screener' },
   { path: '/13f', label: '13F' },
   { path: '/news', label: 'News' },
-  { path: '/calendar', label: 'Calendar' },
   { path: '/reports', label: 'Reports' },
   { path: '/portfolio', label: 'Portfolio' },
   { path: '/data', label: 'Data' },
@@ -173,8 +174,12 @@ export default function App() {
 
             {/* Standalone pages */}
             <Route path="/13f" element={<Filings13F />} />
-            <Route path="/news" element={<MarketNews />} />
-            <Route path="/calendar" element={<Calendar />} />
+            <Route path="/news" element={<NewsLayout />}>
+              <Route index element={<MarketNews />} />
+              <Route path="economic" element={<EconomicCalendar />} />
+              <Route path="earnings" element={<EarningsCalendar />} />
+            </Route>
+            <Route path="/calendar" element={<Navigate to="/news/economic" replace />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/portfolio/:portfolioId" element={<PortfolioDetail />} />

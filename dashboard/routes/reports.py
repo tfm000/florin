@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
 from dashboard.deps import get_db
 from db.models import ReportORM
@@ -42,9 +42,7 @@ async def get_report(report_id: str):
     """Get full report detail by ID."""
     db = get_db()
     async with db.session() as session:
-        result = await session.execute(
-            select(ReportORM).where(ReportORM.id == report_id)
-        )
+        result = await session.execute(select(ReportORM).where(ReportORM.id == report_id))
         report = result.scalar_one_or_none()
 
     if not report:
@@ -70,12 +68,9 @@ def _report_summary(r: ReportORM) -> dict:
         "final_recommendation": r.final_recommendation,
         "final_score": r.final_score,
         "final_confidence": r.final_confidence,
-        "fraud_risk_level": r.fraud_risk_level,
-        "fraud_risk_score": r.fraud_risk_score,
-        "fraud_flags": json.loads(r.fraud_flags) if r.fraud_flags else [],
         "reddit_mentions": r.reddit_mentions,
-        "stocktwits_bullish": r.stocktwits_bullish,
-        "stocktwits_bearish": r.stocktwits_bearish,
+        "apewisdom_mentions": r.apewisdom_mentions,
+        "alphavantage_sentiment": r.alphavantage_sentiment,
         "insider_buys": r.insider_buys,
         "insider_sells": r.insider_sells,
         "news_count": r.news_count,
