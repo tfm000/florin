@@ -38,7 +38,7 @@ function d2(S, K, T, r, sigma) {
 /**
  * Black-Scholes option price
  */
-export function bsPrice(S, K, T, r, sigma, type = 'call') {
+function bsPrice(S, K, T, r, sigma, type = 'call') {
   if (T <= 0) return Math.max(type === 'call' ? S - K : K - S, 0)
   const D1 = d1(S, K, T, r, sigma)
   const D2 = d2(S, K, T, r, sigma)
@@ -101,61 +101,4 @@ export function allGreeks(S, K, T, r, sigma, type = 'call') {
     theta: theta(S, K, T, r, sigma, type),
     rho: rho(S, K, T, r, sigma, type),
   }
-}
-
-/**
- * Payoff at expiry for a position
- *
- * positions: Array of { type: 'call'|'put', strike, quantity, premium }
- * spotRange: Array of spot prices to compute payoff at
- *
- * Returns: Array of { spot, payoff, breakeven }
- */
-export function computePayoff(positions, spotRange) {
-  return spotRange.map(spot => {
-    let payoff = 0
-    for (const pos of positions) {
-      const intrinsic = pos.type === 'call'
-        ? Math.max(spot - pos.strike, 0)
-        : Math.max(pos.strike - spot, 0)
-      payoff += pos.quantity * (intrinsic - pos.premium)
-    }
-    return { spot, payoff }
-  })
-}
-
-/**
- * Pre-built strategy payoffs
- */
-export const STRATEGIES = {
-  longCall: (strike, premium) => [{ type: 'call', strike, quantity: 1, premium }],
-  longPut: (strike, premium) => [{ type: 'put', strike, quantity: 1, premium }],
-  shortCall: (strike, premium) => [{ type: 'call', strike, quantity: -1, premium }],
-  shortPut: (strike, premium) => [{ type: 'put', strike, quantity: -1, premium }],
-  coveredCall: (entryPrice, strike, premium) => [
-    { type: 'call', strike, quantity: -1, premium },
-    { type: 'call', strike: 0, quantity: 1, premium: entryPrice }, // synthetic stock
-  ],
-  bullCallSpread: (lowStrike, highStrike, lowPrem, highPrem) => [
-    { type: 'call', strike: lowStrike, quantity: 1, premium: lowPrem },
-    { type: 'call', strike: highStrike, quantity: -1, premium: highPrem },
-  ],
-  bearPutSpread: (lowStrike, highStrike, lowPrem, highPrem) => [
-    { type: 'put', strike: highStrike, quantity: 1, premium: highPrem },
-    { type: 'put', strike: lowStrike, quantity: -1, premium: lowPrem },
-  ],
-  straddle: (strike, callPrem, putPrem) => [
-    { type: 'call', strike, quantity: 1, premium: callPrem },
-    { type: 'put', strike, quantity: 1, premium: putPrem },
-  ],
-}
-
-/**
- * Generate spot range for payoff diagrams
- */
-export function spotRange(center, width = 0.3, steps = 100) {
-  const low = center * (1 - width)
-  const high = center * (1 + width)
-  const step = (high - low) / steps
-  return Array.from({ length: steps + 1 }, (_, i) => Math.round((low + i * step) * 100) / 100)
 }

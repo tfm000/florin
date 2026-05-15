@@ -12,6 +12,7 @@ import asyncio
 import logging
 import math
 import time
+from datetime import UTC
 from typing import Any
 
 import yfinance as yf
@@ -31,6 +32,9 @@ INFO_TTL = 3600  # 1 hour (asset info — sector/PE/beta change slowly)
 MACRO_TTL = 60  # 1 minute (indices, commodities, crypto, FX)
 HISTORY_TTL = 3600  # 1 hour (daily OHLCV doesn't change intraday)
 SEARCH_TTL = 300  # 5 minutes
+OPTION_CHAIN_TTL = 1800  # 30 minutes — option chains move with the
+# underlying, so a stale chain is acceptable for ~half-hour windows
+# but not full-hour ones. Used by ``get_option_chain_raw``.
 
 # yfinance returns a tiny sentinel implied-volatility (~2e-5) for strikes where IV
 # is undefined (e.g. deep ITM). Treat anything at or below this as "no IV".
@@ -38,6 +42,36 @@ SENTINEL_IV = 0.00002
 
 # Page size for the yfinance equity screener pagination loop.
 _SCREEN_PAGE_SIZE = 250
+
+
+def _safe_int(v: Any, default: int = 0) -> int:
+    """Coerce a yfinance cell to int, treating NaN and None as the default.
+
+    yfinance can return ``float('nan')`` for missing ``volume`` /
+    ``openInterest`` instead of ``None``. ``NaN`` is *truthy* in Python so
+    a naive ``int(v or 0)`` lets the NaN through and crashes
+    ``int(NaN)``. Centralise the guard here so every yfinance →
+    JSON-shape coercion uses the same rule.
+    """
+    if v is None:
+        return int(default)
+    if isinstance(v, float) and math.isnan(v):
+        return int(default)
+    return int(v)
+
+
+def _safe_float_or_none(v: Any) -> float | None:
+    """Coerce a yfinance cell to float, mapping NaN/None to ``None``.
+
+    Counterpart to :func:`_safe_int` for fields where "missing" is
+    semantically distinct from zero (e.g. ``lastPrice``, ``bid``,
+    ``ask``).
+    """
+    if v is None:
+        return None
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return float(v)
 
 
 def _normalize_dividend_yield(raw: float | None) -> float | None:
@@ -1179,6 +1213,308 @@ class YFinanceProvider:
 
         result = await asyncio.to_thread(_get)
         _set_cached(cache_key, result)
+        return result
+
+    async def get_option_chain_raw(
+        self,
+        ticker: str,
+        expiry: str | None = None,
+    ) -> dict:
+        """Raw option chain for one expiry — full quote fields, OTM + ITM.
+
+        Unlike :meth:`get_put_call_iv_spread` (which is lossy — drops bid/ask
+        and rounds IVs to 2 dp), this method preserves every quote field the
+        downstream IV-surface pipeline needs. Used by the SSVI / SABR +
+        Gaussian-process pipeline in ``stats/options/pipeline.py``.
+
+        Args:
+            ticker:  equity / ETF / index ticker.
+            expiry:  specific expiry as ``YYYY-MM-DD``; if ``None`` the
+                     method auto-selects the most liquid expiry from the
+                     first 5 available (matching ``get_put_call_iv_spread``).
+
+        Returns:
+            Dict with::
+
+                {
+                    'ticker': str,
+                    'spot': float,
+                    'expiry': str,                # the resolved expiry
+                    'expiry_ts': float,           # unix seconds, 16:00 ET
+                    'available_expiries': [str],  # full list, up to 20
+                    'calls': [
+                        {strike, bid, ask, mid, last, volume, oi,
+                         iv_yahoo, contract_symbol},
+                        ...
+                    ],
+                    'puts': [...],
+                    'n_dropped_at_parse': int,    # rows rejected by semantic
+                                                  # validation (NaN strike,
+                                                  # crossed quote, etc.)
+                }
+
+            Missing fields default to ``None`` (last, iv_yahoo) or 0
+            (volume / oi) via :func:`_safe_float_or_none` and
+            :func:`_safe_int`. ``mid = (bid + ask) / 2`` is attached;
+            ``spread = ask − bid`` is computed by the pipeline via
+            ``_ensure_mid_spread``.
+        """
+
+        def _get() -> dict:
+            empty: dict = {
+                "ticker": ticker,
+                "spot": 0.0,
+                "expiry": "",
+                "expiry_ts": 0.0,
+                "available_expiries": [],
+                "calls": [],
+                "puts": [],
+                "n_dropped_at_parse": 0,
+                "stale_fraction": 0.0,
+            }
+            try:
+                t = yf.Ticker(ticker)
+                info = t.info or {}
+                spot = float(
+                    info.get("regularMarketPrice") or info.get("previousClose") or 0
+                )
+                expirations = list(t.options or [])
+                if not expirations or spot <= 0:
+                    return empty
+
+                available = expirations[:20]
+
+                # Resolve expiry — explicit if provided & valid, else
+                # auto-select the most liquid of the first 5 (same heuristic
+                # as get_put_call_iv_spread for consistency).
+                if expiry and expiry in expirations:
+                    best_exp = expiry
+                else:
+                    # Auto-select the most *quotable* expiry from the
+                    # first 5. We count rows with ``bid > 0`` rather than
+                    # ``impliedVolatility > SENTINEL_IV`` because Yahoo
+                    # publishes an IV on settled-but-unquoted strikes
+                    # (e.g. an expiry-day chain after close), which the
+                    # old heuristic happily selected — but every quote
+                    # had bid = 0 and the downstream cleaning filter
+                    # dropped 100 % of rows. The bid-count heuristic
+                    # picks the first expiry with genuine live quotes.
+                    #
+                    # Skip zero/one-DTE expiries: ``T`` is so small that
+                    # the parity regression amplifies any bid-ask noise
+                    # into absurd annualised rates (e.g. r = −96 yields
+                    # ``r/T·100 % ≈ −9633 %`` on a 6-hour-to-expiry
+                    # chain). Forces auto to land on the first ≥ 2-DTE
+                    # weekly.
+                    from datetime import date as _date
+
+                    today = _date.today()
+
+                    def _dte(exp_str: str) -> int:
+                        try:
+                            return (_date.fromisoformat(exp_str) - today).days
+                        except (ValueError, TypeError):
+                            return 0
+
+                    candidate_pool = [c for c in expirations[:5] if _dte(c) >= 2]
+                    if not candidate_pool:
+                        candidate_pool = list(expirations[:5])
+
+                    best_exp = candidate_pool[0]
+                    best_count = 0
+                    for candidate in candidate_pool:
+                        try:
+                            ch = t.option_chain(candidate)
+                            valid = int(
+                                (ch.puts["bid"] > 0).sum()
+                                + (ch.calls["bid"] > 0).sum()
+                            )
+                            if valid > best_count:
+                                best_count = valid
+                                best_exp = candidate
+                        except (KeyError, AttributeError, ValueError):
+                            # Missing column or malformed chain — try the next expiry.
+                            continue
+
+                chain = t.option_chain(best_exp)
+
+                # Per-call drop counter for semantic-validation rejects.
+                drop_count = [0]
+
+                def _serialize(row, is_call: bool) -> dict | None:
+                    """Map one chain row to the JSON shape. Returns ``None``
+                    for rows that fail semantic validation; the caller
+                    drops them and increments ``drop_count``.
+
+                    Validation rules (CLAUDE.md §3):
+                      strike must be a finite positive float;
+                      bid / ask non-negative;
+                      bid ≤ ask when both are positive (no crossed quote).
+
+                    Off-hours fallback. When ``bid = ask = 0`` (yfinance
+                    returns a settled chain with no live two-sided
+                    quotes) and ``lastPrice > 0`` is available, we
+                    substitute the last-traded price for the mid and
+                    synthesise a small half-spread so the downstream GP
+                    heteroscedastic noise stays well-conditioned. Rows
+                    that fall back to last-price carry ``is_stale =
+                    True`` so the slice + service + UI can surface a
+                    degraded-data banner. Strikes with no live quote
+                    *and* no usable lastPrice are dropped.
+                    """
+                    strike = _safe_float_or_none(row.strike)
+                    if strike is None or strike <= 0:
+                        return None
+
+                    bid = _safe_float_or_none(row.bid) or 0.0
+                    ask = _safe_float_or_none(row.ask) or 0.0
+                    last = _safe_float_or_none(row.lastPrice)
+                    is_stale = False
+
+                    if bid <= 0.0 and ask <= 0.0:
+                        if last is None or last <= 0.0:
+                            return None  # no live quote AND no last-traded price
+                        is_stale = True
+                        mid = last
+                        # Half-spread floor at 1 ¢, scaled to last (2 %)
+                        # so the GP noise variance ~ (spread/2 / vega)²
+                        # remains finite and positive.
+                        half_spread = max(0.01, 0.02 * last)
+                        bid = max(0.0, last - half_spread)
+                        ask = last + half_spread
+                    elif bid < 0 or ask < 0:
+                        return None
+                    elif ask > 0 and bid > ask:
+                        return None  # crossed quote
+                    else:
+                        mid = 0.5 * (bid + ask)
+
+                    iv_raw = _safe_float_or_none(row.impliedVolatility)
+                    iv = iv_raw if iv_raw is not None and iv_raw > SENTINEL_IV else None
+
+                    return {
+                        "strike": strike,
+                        "bid": bid,
+                        "ask": ask,
+                        "mid": mid,
+                        "last": last,
+                        "volume": _safe_int(row.volume),
+                        "oi": _safe_int(row.openInterest),
+                        "iv_yahoo": iv,
+                        "is_call": is_call,
+                        "contract_symbol": str(row.contractSymbol),
+                        "is_stale": is_stale,
+                    }
+
+                def _serialize_filter(rows, is_call: bool) -> list[dict]:
+                    out: list[dict] = []
+                    for row in rows:
+                        rec = _serialize(row, is_call)
+                        if rec is None:
+                            drop_count[0] += 1
+                        else:
+                            out.append(rec)
+                    return out
+
+                calls = _serialize_filter(chain.calls.itertuples(index=False), True)
+                puts = _serialize_filter(chain.puts.itertuples(index=False), False)
+                n_dropped = drop_count[0]
+                if n_dropped:
+                    logger.info(
+                        "yfinance chain for %s expiry %s: dropped %d row(s) "
+                        "at parse (NaN strike / crossed quote / negative price)",
+                        ticker,
+                        best_exp,
+                        n_dropped,
+                    )
+
+                # Stale-quote diagnostic: fraction of surviving rows
+                # that fell back to lastPrice. UI uses this to render
+                # the degraded-data banner.
+                total = len(calls) + len(puts)
+                if total > 0:
+                    n_stale = sum(1 for r in (*calls, *puts) if r["is_stale"])
+                    stale_fraction = n_stale / total
+                else:
+                    stale_fraction = 0.0
+                if stale_fraction >= 0.5:
+                    logger.info(
+                        "yfinance chain for %s expiry %s: %d/%d rows stale "
+                        "(using lastPrice as mid — US market likely closed)",
+                        ticker,
+                        best_exp,
+                        n_stale if total > 0 else 0,
+                        total,
+                    )
+
+                # 4 pm ET expiry timestamp (yfinance uses settlement). Stored
+                # in unix-seconds form to keep the JSON payload small.
+                from datetime import datetime
+                expiry_dt = datetime.fromisoformat(best_exp).replace(
+                    hour=20, minute=0, second=0, tzinfo=UTC
+                )  # 16:00 ET ≈ 20:00 UTC (DST-imprecise; close enough for T)
+                expiry_ts = expiry_dt.timestamp()
+
+                return {
+                    "ticker": ticker,
+                    "spot": round(spot, 4),
+                    "expiry": best_exp,
+                    "expiry_ts": expiry_ts,
+                    "available_expiries": available,
+                    "calls": calls,
+                    "puts": puts,
+                    "n_dropped_at_parse": n_dropped,
+                    "stale_fraction": stale_fraction,
+                }
+            except (KeyError, AttributeError, ValueError, OSError) as e:
+                # yfinance can fail in many shapes (missing columns, JSON
+                # decode errors via the underlying ``requests`` stack,
+                # network glitches). Catch the expected boundary types and
+                # log; do *not* swallow programming errors (``TypeError`` /
+                # ``AssertionError``) silently.
+                logger.exception(
+                    "Failed to get raw option chain for %s: %s", ticker, e
+                )
+                return empty
+
+        cache_key = f"option_chain_raw:{ticker}:{expiry or 'auto'}"
+        cached = _get_cached(cache_key, OPTION_CHAIN_TTL)
+        if cached is not None:
+            return cached
+        # If the caller didn't pin an expiry but a previous *explicit*
+        # call for the auto-resolved date is already cached, prefer
+        # that snapshot rather than fetching a fresh (possibly drifted)
+        # one. We don't know the resolved expiry without running the
+        # auto-select heuristic, so we do a cheap probe: ask yfinance
+        # for the expiries list (yfinance memoises it internally) and
+        # consult the cache under each candidate. The first hit is
+        # the snapshot a previous explicit lookup populated, and
+        # serving it here keeps "auto" and "explicit-same-expiry" in
+        # sync.
+        if not expiry:
+            try:
+                candidates = list(yf.Ticker(ticker).options or [])[:5]
+                for cand in candidates:
+                    cached_cand = _get_cached(
+                        f"option_chain_raw:{ticker}:{cand}", OPTION_CHAIN_TTL
+                    )
+                    if cached_cand is not None:
+                        _set_cached(cache_key, cached_cand)
+                        return cached_cand
+            except (AttributeError, ValueError, OSError):
+                # yfinance hiccup — fall through to a normal fetch.
+                pass
+        result = await asyncio.to_thread(_get)
+        _set_cached(cache_key, result)
+        # When auto-selecting, also cache under the resolved expiry's
+        # key so a later explicit lookup for the same date hits the
+        # same snapshot rather than triggering a fresh yfinance
+        # fetch (which would return a slightly different live-bid
+        # snapshot and produce a different SSVI/GP/RND fit).
+        if not expiry and result.get("expiry"):
+            _set_cached(
+                f"option_chain_raw:{ticker}:{result['expiry']}", result
+            )
         return result
 
     async def get_g10_rates(self) -> list[dict]:

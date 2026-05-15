@@ -1,34 +1,33 @@
+import { useState, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { useApi } from '../hooks/useApi'
-import PutCallIVChart from '../components/PutCallIVChart'
+import OptionsSurfaceChart from '../components/OptionsSurfaceChart'
 import GreeksTable from '../components/GreeksTable'
-import PayoffDiagram from '../components/PayoffDiagram'
 
+/**
+ * Options tab — SSVI/SABR + GP-residual + RND surface chart plus a
+ * Greeks table. The risk-free rate is always the externally-resolved
+ * SOFR (plumbed through ``surface.r``); the chain-implied rate is
+ * preserved on ``surface.parity.r_implied_raw`` as a diagnostic.
+ */
 export default function OptionsTab() {
   const { ticker } = useOutletContext()
-  const { data: ivData, loading } = useApi(`/research/iv-spread?ticker=${ticker}`)
+  const [surface, setSurface] = useState(null)
+
+  // The callback ref pattern lets OptionsSurfaceChart push its latest
+  // SurfaceFitResponse up here without prop drilling.
+  const handleSurfaceLoaded = useCallback(s => setSurface(s), [])
 
   return (
     <div className="space-y-6">
-      {/* IV Smile / Skew Chart + Term Structure */}
-      <PutCallIVChart initialTicker={ticker} />
+      <OptionsSurfaceChart initialTicker={ticker} onSurfaceLoaded={handleSurfaceLoaded} />
 
-      {/* Greeks Table */}
-      {loading && (
-        <div className="bg-gray-800 rounded-lg p-8 border border-gray-700 text-center">
-          <p className="text-gray-500">Loading options data for {ticker}...</p>
-        </div>
-      )}
-
-      {!loading && ivData?.skew?.length > 0 && (
-        <>
-          <GreeksTable
-            skew={ivData.skew}
-            spot={ivData.spot}
-            expiry={ivData.skew_expiry}
-          />
-          <PayoffDiagram spot={ivData.spot} />
-        </>
+      {surface && (
+        <GreeksTable
+          ivCurve={surface.iv_curve}
+          spot={surface.spot}
+          expiry={surface.expiry}
+          riskFreeRate={surface.r}
+        />
       )}
     </div>
   )

@@ -82,6 +82,7 @@ def create_app(
         market_hours,
         monitor,
         news_feed,
+        options,
         orders,
         portfolio,
         positions,
@@ -124,6 +125,7 @@ def create_app(
     app.include_router(insiders.router, prefix="/api")
     app.include_router(market_hours.router, prefix="/api")
     app.include_router(llm_models.router, prefix="/api")
+    app.include_router(options.router, prefix="/api")
 
     # WebSocket endpoint
     from dashboard.ws import websocket_endpoint

@@ -45,6 +45,7 @@ dependencies = [
     # Statistical modelling
     "copulax>=2.0.0",
     "statsmodels>=0.14",
+    "scikit-learn>=1.5",  # GaussianProcessRegressor for IV-residual GP fit
 
     # News scraping
     "beautifulsoup4>=4.12",
@@ -88,7 +89,14 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
 
 [tool.ruff.lint.per-file-ignores]
 # Test-local mock classes (MockClient, MockDDGS, ...) correctly use PascalCase.
-"tests/**" = ["N806"]
+"tests/**" = ["N806", "N803", "N815", "N802"]
+# Options / vol-surface modules use canonical finance notation (K=strike,
+# F=forward, T=time-to-expiry, D=discount, theta_T=SSVI anchor, …). These
+# names match the Hagan 2002 / Gatheral-Jacquier 2014 papers and the unit
+# tests; lower-casing them would obscure the math.
+"stats/options/**" = ["N806", "N803", "N815", "N802"]
+"dashboard/routes/options.py" = ["N806", "N803", "N815", "N802"]
+"dashboard/services/option_surface.py" = ["N806", "N803", "N815", "N802"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

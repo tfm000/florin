@@ -4,7 +4,7 @@ import { useApi } from '../hooks/useApi'
 import SearchBar from '../components/SearchBar'
 import NewsCard from '../components/NewsCard'
 import YieldCurveChart from '../components/YieldCurveChart'
-import PutCallIVChart from '../components/PutCallIVChart'
+import OptionsSurfaceChart from '../components/OptionsSurfaceChart'
 import MetricsGrid from '../components/MetricsGrid'
 import SectorPerformanceChart from '../components/SectorPerformanceChart'
 import PresetCorrelationMatrix from '../components/PresetCorrelationMatrix'
@@ -139,8 +139,10 @@ export default function Research() {
         <CorrelationMatrix method={corrMethod} period={corrPeriod} hideControls />
       </div>
 
-      {/* Put-Call IV Spread */}
-      <PutCallIVChart />
+      {/* Options surface — SSVI/SABR + GP-residual + RND, pinned to
+          SPY. Falls back to lastPrice off-hours with a stale-data
+          banner; full pipeline runs during US market hours. */}
+      <OptionsSurfaceChart initialTicker="SPY" />
 
       {/* G10 Policy Rates */}
       {rates && (
