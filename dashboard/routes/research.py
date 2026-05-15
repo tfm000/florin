@@ -1009,6 +1009,13 @@ async def get_put_call_iv_spread(
     ),
     yf=Depends(get_yfinance_dep),
 ):
-    """Put-call implied volatility spread: skew across strikes and term structure."""
+    """Put-call implied volatility spread: skew across strikes and term structure.
+
+    .. deprecated::
+        This endpoint is superseded by ``/api/options/surface`` (SSVI/SABR
+        + GP-residual fit with closed-form RND, full bid/ask preservation,
+        parity-implied r). It is retained for one release cycle for
+        back-compat and will be removed once no client depends on it.
+    """
     data = await yf.get_put_call_iv_spread(ticker.upper(), expiry=expiry or None)
     return PutCallIVResponse(**data)

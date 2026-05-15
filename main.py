@@ -190,6 +190,15 @@ class Florin:
         )
         set_state("economic_calendar_service", econ_cal_service)
 
+        # Option surface service (SSVI / SABR + GP + RND pipeline)
+        from dashboard.services.option_surface import OptionSurfaceService
+
+        option_surface_service = OptionSurfaceService(
+            yf_provider=yfinance_provider,
+            rf_fetcher=rf_fetcher,
+        )
+        set_state("option_surface_service", option_surface_service)
+
         # Load persisted CUSIP→ticker mappings for 13F filings
         from data.sec_13f_provider import load_cusip_cache
 
