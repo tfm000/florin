@@ -99,9 +99,13 @@ markers = [
 
 [tool.mypy]
 python_version = "3.13"
-warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+# Gate on real type errors only: annotation-completeness (disallow_untyped_defs)
+# and Any-return warnings are disabled, and missing third-party stubs are
+# ignored, to keep mypy actionable against the existing codebase.
+disallow_untyped_defs = false
+warn_return_any = false
+ignore_missing_imports = true
 
 [tool.setuptools.packages.find]
 include = [

@@ -327,8 +327,11 @@ def parse_form4_transactions(
                     if _flag_is_set(rel, "isDirector"):
                         insider_title = "Director"
                     elif _flag_is_set(rel, "isOfficer"):
-                        t = rel.find("officerTitle")
-                        insider_title = t.text.strip() if t is not None and t.text else "Officer"
+                        officer_el = rel.find("officerTitle")
+                        if officer_el is not None and officer_el.text:
+                            insider_title = officer_el.text.strip()
+                        else:
+                            insider_title = "Officer"
                     elif _flag_is_set(rel, "isTenPercentOwner"):
                         insider_title = "10% Owner"
 

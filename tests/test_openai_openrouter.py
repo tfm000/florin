@@ -63,14 +63,14 @@ def _make_valid_json_response() -> str:
     )
 
 
-def _mock_completion_response(content: str) -> MagicMock:
+def _mock_completion_response(content: str) -> SimpleNamespace:
     """Build a mock OpenAI ChatCompletion response object."""
     message = SimpleNamespace(content=content)
     choice = SimpleNamespace(message=message)
     return SimpleNamespace(choices=[choice])
 
 
-def _mock_health_response() -> MagicMock:
+def _mock_health_response() -> SimpleNamespace:
     """Build a mock OpenAI ChatCompletion response for health check."""
     return _mock_completion_response("ok")
 
@@ -121,7 +121,7 @@ class TestOpenRouterAnalyser:
     async def test_analyse_sentiment_success(self, analyser: OpenRouterAnalyser) -> None:
         """Successful sentiment analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -140,7 +140,7 @@ class TestOpenRouterAnalyser:
     async def test_analyse_announcements_success(self, analyser: OpenRouterAnalyser) -> None:
         """Successful announcement analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -154,7 +154,7 @@ class TestOpenRouterAnalyser:
     @pytest.mark.asyncio
     async def test_analyse_api_error(self, analyser: OpenRouterAnalyser) -> None:
         """API errors should produce an AnalysisResult with the error field set."""
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(
             side_effect=Exception("Model not available")
@@ -170,7 +170,7 @@ class TestOpenRouterAnalyser:
     @pytest.mark.asyncio
     async def test_health_check_success(self, analyser: OpenRouterAnalyser) -> None:
         """Health check should return True when the API responds."""
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=_mock_health_response())
 
@@ -179,7 +179,7 @@ class TestOpenRouterAnalyser:
     @pytest.mark.asyncio
     async def test_health_check_failure(self, analyser: OpenRouterAnalyser) -> None:
         """Health check should return False when the API fails."""
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(side_effect=Exception("Unauthorized"))
 
@@ -189,7 +189,7 @@ class TestOpenRouterAnalyser:
     async def test_analyse_malformed_json(self, analyser: OpenRouterAnalyser) -> None:
         """Malformed JSON from the LLM should produce an error in the analysis."""
         mock_response = _mock_completion_response("This is not JSON at all")
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 

@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -40,7 +41,7 @@ from db.models import ReportORM
 
 
 def _make_alert(**kwargs) -> AlertSignal:
-    defaults = {
+    defaults: dict[str, Any] = {
         "ticker": "TEST",
         "price": 2.50,
         "change_pct": 7.5,
@@ -52,7 +53,7 @@ def _make_alert(**kwargs) -> AlertSignal:
 
 
 def _make_sentiment(**kwargs) -> SentimentData:
-    defaults = {"ticker": "TEST"}
+    defaults: dict[str, Any] = {"ticker": "TEST"}
     defaults.update(kwargs)
     return SentimentData(**defaults)
 

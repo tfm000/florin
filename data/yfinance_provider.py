@@ -347,7 +347,7 @@ class YFinanceProvider:
                     "to individual downloads",
                     len(tickers),
                 )
-                result: dict[str, list[dict]] = {}
+                result = {}
                 for t in tickers:
                     try:
                         single_kwargs = {**kwargs, "tickers": [t]}

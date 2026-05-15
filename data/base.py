@@ -51,11 +51,14 @@ class MarketDataProvider(ABC):
         ...
 
     @abstractmethod
-    async def stream_bars(self, tickers: list[str]) -> AsyncIterator[BarData]:
+    def stream_bars(self, tickers: list[str]) -> AsyncIterator[BarData]:
         """
         Stream real-time minute bars for given tickers.
         Yields BarData objects as they arrive.
         Pass ["*"] for all tickers (if supported by provider).
+
+        Implemented as an async generator, so call without ``await`` and
+        consume with ``async for``.
         """
         ...
 

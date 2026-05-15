@@ -60,7 +60,7 @@ class MockSource(SentimentSource):
 class TestSentimentAggregator:
     @pytest.mark.asyncio
     async def test_all_sources_succeed(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource(
                 "Reddit",
                 {
@@ -115,7 +115,7 @@ class TestSentimentAggregator:
 
     @pytest.mark.asyncio
     async def test_partial_failure(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource(
                 "Reddit",
                 {
@@ -150,7 +150,7 @@ class TestSentimentAggregator:
 
     @pytest.mark.asyncio
     async def test_all_sources_fail(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource("Reddit", should_fail=True),
             MockSource("ApeWisdom", should_fail=True),
         ]
@@ -172,7 +172,7 @@ class TestSentimentAggregator:
 
     @pytest.mark.asyncio
     async def test_health_check(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource("Reddit", should_fail=False),
             MockSource("ApeWisdom", should_fail=True),
         ]
@@ -184,7 +184,7 @@ class TestSentimentAggregator:
         assert health["ApeWisdom"] is False
 
     def test_source_names(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource("Reddit"),
             MockSource("ApeWisdom"),
         ]
@@ -193,7 +193,7 @@ class TestSentimentAggregator:
 
     @pytest.mark.asyncio
     async def test_single_source_gives_low_quality(self) -> None:
-        sources = [
+        sources: list[SentimentSource] = [
             MockSource("Reddit", {"posts": [], "mention_count": 0}),
             MockSource("ApeWisdom", should_fail=True),
             MockSource("SEC EDGAR", should_fail=True),

@@ -6,7 +6,7 @@ import pytest
 
 from broker.paper_broker import PaperBroker
 from broker.trading212 import RateLimiter, Trading212Broker
-from config.settings import Settings
+from config.settings import Settings, T212Environment
 from core.models import OrderRequest, OrderType, Side
 
 # =============================================================================
@@ -223,7 +223,7 @@ class TestTrading212Broker:
             Settings(
                 t212_api_key="k",
                 t212_api_secret="s",
-                t212_environment="live",
+                t212_environment=T212Environment.LIVE,
             ),
             db,
         )

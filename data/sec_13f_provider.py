@@ -274,7 +274,7 @@ def _parse_13f_xml(xml_text: str) -> list[dict]:
 
         for entry in root.iter():
             if "infoTable" in entry.tag:
-                holding = {}
+                holding: dict[str, str | int] = {}
                 for child in entry:
                     tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
                     if tag == "nameOfIssuer":

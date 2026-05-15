@@ -173,7 +173,7 @@ class ReportGenerator:
                 used_analyser = (
                     announcement_analyser if key == "announcement" else sentiment_analyser
                 )
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     logger.error("Analysis %s failed: %s", key, result)
                     error_result = AnalysisResult(
                         provider=used_analyser.provider_name if used_analyser else "unknown",

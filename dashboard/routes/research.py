@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from core.exceptions import NotFoundError, ServiceUnavailableError
-from core.models import WebSearchResult
+from core.models import Form8KFiling, WebSearchResult
 from dashboard.dependencies import get_data_provider_dep, get_settings_dep, get_yfinance_dep
 
 logger = logging.getLogger(__name__)
@@ -549,7 +549,7 @@ async def analyse_asset(
 
     # Fetch data sources concurrently based on requested type
     sentiment = SentimentData(ticker=ticker)
-    filings = []
+    filings: list[Form8KFiling] = []
     fetch_tasks = {}
 
     if run_sentiment:
@@ -572,7 +572,7 @@ async def analyse_asset(
     if fetch_tasks:
         results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
         for key, result in zip(fetch_tasks.keys(), results, strict=True):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.warning("Fetch %s failed for %s: %s", key, ticker, result)
             elif key == "sentiment":
                 sentiment = result
@@ -925,7 +925,7 @@ async def get_sectors_history(
     date_sets: list[set[str]] = []
     lookups: list[dict[str, float]] = []
     for hist_result in all_histories:
-        if isinstance(hist_result, Exception) or not hist_result:
+        if isinstance(hist_result, BaseException) or not hist_result:
             date_sets.append(set())
             lookups.append({})
             continue

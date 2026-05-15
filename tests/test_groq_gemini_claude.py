@@ -128,7 +128,7 @@ class TestGroqAnalyser:
     async def test_analyse_sentiment_success(self, analyser: GroqAnalyser) -> None:
         """Successful sentiment analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -150,7 +150,7 @@ class TestGroqAnalyser:
     async def test_analyse_announcements_success(self, analyser: GroqAnalyser) -> None:
         """Successful announcement analysis should produce a valid AnalysisResult."""
         mock_response = _mock_completion_response(_make_valid_json_response())
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -164,7 +164,7 @@ class TestGroqAnalyser:
     @pytest.mark.asyncio
     async def test_analyse_api_error(self, analyser: GroqAnalyser) -> None:
         """API errors should produce an AnalysisResult with the error field set."""
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(
             side_effect=Exception("Rate limit exceeded")
@@ -183,7 +183,7 @@ class TestGroqAnalyser:
         """Health check should return True when the model is in the list."""
         model_entry = SimpleNamespace(id="llama-4-scout-17b-16e-instruct")
         models_response = SimpleNamespace(data=[model_entry])
-        analyser._client.models = MagicMock()
+        analyser._client.models = MagicMock()  # type: ignore[misc]
         analyser._client.models.list = AsyncMock(return_value=models_response)
 
         assert await analyser.health_check() is True
@@ -191,7 +191,7 @@ class TestGroqAnalyser:
     @pytest.mark.asyncio
     async def test_health_check_failure(self, analyser: GroqAnalyser) -> None:
         """Health check should return False when the API fails."""
-        analyser._client.models = MagicMock()
+        analyser._client.models = MagicMock()  # type: ignore[misc]
         analyser._client.models.list = AsyncMock(side_effect=Exception("Connection refused"))
 
         assert await analyser.health_check() is False
@@ -201,7 +201,7 @@ class TestGroqAnalyser:
         """Health check should return False when the model is not in the list."""
         model_entry = SimpleNamespace(id="some-other-model")
         models_response = SimpleNamespace(data=[model_entry])
-        analyser._client.models = MagicMock()
+        analyser._client.models = MagicMock()  # type: ignore[misc]
         analyser._client.models.list = AsyncMock(return_value=models_response)
 
         assert await analyser.health_check() is False
@@ -210,7 +210,7 @@ class TestGroqAnalyser:
     async def test_analyse_empty_response(self, analyser: GroqAnalyser) -> None:
         """An empty content string should produce an error in the analysis."""
         mock_response = _mock_completion_response("")
-        analyser._client.chat = MagicMock()
+        analyser._client.chat = MagicMock()  # type: ignore[misc]
         analyser._client.chat.completions = MagicMock()
         analyser._client.chat.completions.create = AsyncMock(return_value=mock_response)
 
@@ -382,7 +382,7 @@ class TestGeminiAnalyser:
     async def test_analyse_sentiment_success(self, analyser: GeminiAnalyser) -> None:
         """Successful sentiment analysis should produce a valid AnalysisResult."""
         mock_response = _mock_gemini_response(_make_valid_json_response())
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
@@ -404,7 +404,7 @@ class TestGeminiAnalyser:
     async def test_analyse_announcements_success(self, analyser: GeminiAnalyser) -> None:
         """Successful announcement analysis should produce a valid AnalysisResult."""
         mock_response = _mock_gemini_response(_make_valid_json_response())
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
@@ -418,7 +418,7 @@ class TestGeminiAnalyser:
     @pytest.mark.asyncio
     async def test_analyse_api_error(self, analyser: GeminiAnalyser) -> None:
         """API errors should produce an AnalysisResult with the error field set."""
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(
             side_effect=Exception("Quota exceeded")
@@ -436,7 +436,7 @@ class TestGeminiAnalyser:
     async def test_health_check_success(self, analyser: GeminiAnalyser) -> None:
         """Health check should return True when the API responds with text."""
         mock_response = _mock_gemini_response("ok")
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
@@ -445,7 +445,7 @@ class TestGeminiAnalyser:
     @pytest.mark.asyncio
     async def test_health_check_failure(self, analyser: GeminiAnalyser) -> None:
         """Health check should return False when the API fails."""
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(
             side_effect=Exception("Service unavailable")
@@ -457,7 +457,7 @@ class TestGeminiAnalyser:
     async def test_health_check_null_text(self, analyser: GeminiAnalyser) -> None:
         """Health check should return False when response.text is None."""
         mock_response = SimpleNamespace(text=None)
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 
@@ -467,7 +467,7 @@ class TestGeminiAnalyser:
     async def test_analyse_empty_response(self, analyser: GeminiAnalyser) -> None:
         """An empty text response should produce an error in the analysis."""
         mock_response = _mock_gemini_response("")
-        analyser._client.aio = MagicMock()
+        analyser._client.aio = MagicMock()  # type: ignore[misc]
         analyser._client.aio.models = MagicMock()
         analyser._client.aio.models.generate_content = AsyncMock(return_value=mock_response)
 

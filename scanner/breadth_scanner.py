@@ -108,7 +108,7 @@ async def discover_tickers(exchange: str = DEFAULT_EXCHANGES) -> list[str]:
     """
     from dashboard.services.screener_engine import run_screen
 
-    all_tickers = []
+    all_tickers: list[str] = []
     offset = 0
     page_size = 250
     while True:

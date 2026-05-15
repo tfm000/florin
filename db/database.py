@@ -89,7 +89,7 @@ class Database:
         For **tests only** — production code should use :meth:`run_migrations`
         so that Alembic tracks schema history.
         """
-        async with self._engine.begin() as conn:
+        async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
     async def run_migrations(self) -> None:
@@ -110,7 +110,7 @@ class Database:
             cfg.attributes["connection"] = connection
             command.upgrade(cfg, "head")
 
-        async with self._engine.begin() as conn:
+        async with self.engine.begin() as conn:
             await conn.run_sync(_run)
 
         logger.info("Database migrations applied")

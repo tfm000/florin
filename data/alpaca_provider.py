@@ -102,7 +102,7 @@ class AlpacaProvider(MarketDataProvider):
 
                 if remaining_int <= 5:
                     # Nearly exhausted — wait for the window to reset
-                    delay = window_remaining
+                    delay: float = window_remaining
                     logger.warning(
                         "Alpaca rate limit nearly exhausted (%d remaining), waiting %ds",
                         remaining_int,

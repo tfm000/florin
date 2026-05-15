@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,7 +23,7 @@ from analysis._prompt_helper import (
 from analysis.base import LLMAnalyser
 from analysis.consensus_generator import ConsensusGenerator
 from analysis.report_generator import ReportGenerator
-from config.settings import Settings
+from config.settings import LLMProvider, Settings
 from core.models import (
     AlertSignal,
     AnalysisResult,
@@ -39,7 +40,7 @@ from core.models import (
 
 def make_alert(**kwargs) -> AlertSignal:
     """Create a minimal AlertSignal for testing."""
-    defaults = {
+    defaults: dict[str, Any] = {
         "ticker": "TEST",
         "price": 2.50,
         "change_pct": 7.5,
@@ -52,7 +53,7 @@ def make_alert(**kwargs) -> AlertSignal:
 
 def make_sentiment(**kwargs) -> SentimentData:
     """Create a minimal SentimentData for testing."""
-    defaults = {"ticker": "TEST"}
+    defaults: dict[str, Any] = {"ticker": "TEST"}
     defaults.update(kwargs)
     return SentimentData(**defaults)
 
@@ -298,7 +299,7 @@ class TestReportGenerator:
     async def test_sentiment_only(self) -> None:
         """Report with only sentiment analysis type."""
         analyser = make_mock_analyser("groq", Recommendation.BUY, 6.0)
-        settings = Settings(llm_default_provider="groq")
+        settings = Settings(llm_default_provider=LLMProvider.GROQ)
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
@@ -318,7 +319,7 @@ class TestReportGenerator:
     async def test_announcement_and_sentiment(self) -> None:
         """Report with both analysis types."""
         analyser = make_mock_analyser("groq", Recommendation.BUY, 7.0)
-        settings = Settings(llm_default_provider="groq")
+        settings = Settings(llm_default_provider=LLMProvider.GROQ)
         gen = ReportGenerator({"groq": analyser}, settings)
 
         report = await gen.generate(
@@ -336,7 +337,7 @@ class TestReportGenerator:
     async def test_fallback_to_other_provider(self) -> None:
         """Default provider unavailable should fall back to any available."""
         analyser = make_mock_analyser("gemini", Recommendation.HOLD, 4.0)
-        settings = Settings(llm_default_provider="groq")
+        settings = Settings(llm_default_provider=LLMProvider.GROQ)
         gen = ReportGenerator({"gemini": analyser}, settings)
 
         report = await gen.generate(
@@ -351,7 +352,7 @@ class TestReportGenerator:
     @pytest.mark.asyncio
     async def test_no_analysers_returns_empty_report(self) -> None:
         """No analysers available should return a report without analyses."""
-        settings = Settings(llm_default_provider="groq")
+        settings = Settings(llm_default_provider=LLMProvider.GROQ)
         gen = ReportGenerator({}, settings)
 
         report = await gen.generate(make_alert(), make_sentiment())
@@ -378,7 +379,7 @@ class TestConsensusGenerator:
             "claude-cli": make_mock_analyser("claude-cli", Recommendation.BUY, 5.0),
         }
 
-        settings = Settings(llm_consensus_meta_provider="claude-cli")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.CLAUDE_CLI)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
@@ -400,7 +401,7 @@ class TestConsensusGenerator:
             "gemini": make_mock_analyser("gemini", Recommendation.BUY, 6.0),
         }
 
-        settings = Settings(llm_consensus_meta_provider="groq")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.GROQ)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
@@ -457,7 +458,7 @@ class TestConsensusGenerator:
             "groq": make_mock_analyser("groq", Recommendation.BUY, 8.0),
         }
 
-        settings = Settings(llm_consensus_meta_provider="groq")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.GROQ)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(

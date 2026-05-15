@@ -141,14 +141,11 @@ def _parse_feed_xml(xml_text: str, source: str) -> list[RawArticle]:
         updated_el = entry.find("{http://www.w3.org/2005/Atom}updated")
         published_el = entry.find("{http://www.w3.org/2005/Atom}published")
 
-        title = title_el.text if title_el is not None else ""
+        title = title_el.text if (title_el is not None and title_el.text) else ""
         link = link_el.get("href", "") if link_el is not None else ""
-        summary = summary_el.text if summary_el is not None else ""
-        date_str = (
-            (published_el or updated_el).text
-            if (published_el is not None or updated_el is not None)
-            else ""
-        )
+        summary = summary_el.text if (summary_el is not None and summary_el.text) else ""
+        date_el = published_el if published_el is not None else updated_el
+        date_str = (date_el.text or "") if date_el is not None else ""
 
         pub_date = _parse_date(date_str)
         if pub_date and pub_date < cutoff:

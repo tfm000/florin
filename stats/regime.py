@@ -110,8 +110,8 @@ def fit_markov_regimes(
         regime_map = {s["regime"]: i for i, s in enumerate(stats)}
         for s in stats:
             s["regime"] = regime_map[s["regime"]]
-        for r in regimes:
-            r["regime"] = regime_map.get(r["regime"], r["regime"])
+        for reg in regimes:
+            reg["regime"] = regime_map.get(reg["regime"], reg["regime"])
 
         return {"regimes": regimes, "stats": stats}
 

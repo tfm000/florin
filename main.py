@@ -24,7 +24,7 @@ from typing import Any
 from config.settings import LLMProvider, get_settings
 from core.events import EventBus, EventType
 from core.logging import get_logger, setup_logging
-from core.models import AlertSignal, AnalysisReport
+from core.models import AlertSignal, AlertSource, AnalysisReport, Form8KFiling
 from db.database import Database
 from db.models import ReportORM
 
@@ -44,6 +44,12 @@ class Florin:
         self._analysers: dict[str, Any] = {}
         self._report_gen: Any = None
         self._consensus_gen: Any = None
+
+    def _require_db(self) -> Database:
+        """Return the initialised database, raising if startup has not run yet."""
+        if self.db is None:
+            raise RuntimeError("Database is not initialised")
+        return self.db
 
     async def start(self) -> None:
         """Initialise and start all services."""
@@ -73,7 +79,7 @@ class Florin:
         # Load settings overrides from DB (set via dashboard)
         from config.settings import load_db_overrides
 
-        await load_db_overrides(self.db)
+        await load_db_overrides(self._require_db())
 
         # --- Validate required config ---
         warnings = []
@@ -307,10 +313,12 @@ class Florin:
 
     async def _init_broker(self) -> Any:
         """Initialise the appropriate broker."""
+        from broker.base import Broker
+
         if self.settings.t212_configured and self.db:
             from broker.trading212 import Trading212Broker
 
-            broker = Trading212Broker(self.settings, self.db)
+            broker: Broker = Trading212Broker(self.settings, self.db)
             await broker.connect()
             logger.info("Trading 212 broker connected (live=%s)", broker.is_live)
             return broker
@@ -434,7 +442,7 @@ class Florin:
 
         analysers: dict[str, Any] = {}
 
-        async with self.db.session() as session:
+        async with self._require_db().session() as session:
             result = await session.execute(
                 select(LLMModelORM).where(LLMModelORM.enabled == True)  # noqa: E712
             )
@@ -560,7 +568,7 @@ class Florin:
 
         from db.models import LLMModelORM, generate_id
 
-        async with self.db.session() as session:
+        async with self._require_db().session() as session:
             count = await session.scalar(select(func.count()).select_from(LLMModelORM))
             if count and count > 0:
                 return  # Models already exist, skip migration
@@ -583,7 +591,7 @@ class Florin:
         migrated = []
         first_model_id = ""
 
-        async with self.db.session() as session:
+        async with self._require_db().session() as session:
             for host, model, api_key in legacy_providers:
                 if not api_key:
                     continue  # No key configured for this provider
@@ -623,7 +631,7 @@ class Florin:
                     # Persist all role assignments in a single session
                     from db.models import SettingORM
 
-                    async with self.db.session() as s2:
+                    async with self._require_db().session() as s2:
                         for key in (
                             "llm_announcement_model_id",
                             "llm_sentiment_model_id",
@@ -790,7 +798,7 @@ class Florin:
                     price=data.get("price", 0.0),
                     change_pct=data.get("change_pct", 0.0),
                     volume=data.get("volume", 0),
-                    source="MOMENTUM",
+                    source=AlertSource.MOMENTUM,
                     metadata={"screener_id": data.get("screener_id", "")},
                 )
 
@@ -798,7 +806,7 @@ class Florin:
                 from core.models import SentimentData
 
                 sentiment = SentimentData(ticker=ticker)
-                filings = []
+                filings: list[Form8KFiling] = []
 
                 fetch_tasks = {}
                 if "sentiment" in analysis_types:
@@ -812,7 +820,7 @@ class Florin:
                         return_exceptions=True,
                     )
                     for key, result in zip(fetch_tasks.keys(), results, strict=True):
-                        if isinstance(result, Exception):
+                        if isinstance(result, BaseException):
                             logger.error("Fetch %s failed for %s: %s", key, ticker, result)
                         elif key == "sentiment":
                             sentiment = result
@@ -908,7 +916,7 @@ class Florin:
             report_json=report.model_dump_json(),
         )
 
-        async with self.db.session() as session:
+        async with self._require_db().session() as session:
             session.add(orm)
             await session.commit()
 

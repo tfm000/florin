@@ -61,7 +61,7 @@ _HOSTS = [
 
 _VALID_THINKING_MODES = {"off", "low", "medium", "high", "max"}
 
-_VALID_HOSTS = {h["id"] for h in _HOSTS}
+_VALID_HOSTS: set[str] = {str(h["id"]) for h in _HOSTS}
 
 
 # ── Request / Response schemas ────────────────────────────────────────────────
@@ -578,7 +578,7 @@ def _apply_setting(settings, key: str, value: str) -> None:
         setattr(settings, key, int(value))
     elif isinstance(current, float):
         setattr(settings, key, float(value))
-    elif hasattr(current, "value"):
+    elif current is not None and hasattr(current, "value"):
         # Enum
         enum_cls = type(current)
         with contextlib.suppress(ValueError):

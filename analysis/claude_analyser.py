@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Literal
+from typing import Literal, cast
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -75,7 +75,7 @@ class ClaudeAnalyser(LLMAnalyser):
         self._model = settings.claude_model
         self._api_key = settings.anthropic_api_key
         self._thinking_mode: ThinkingMode = (
-            settings.claude_cli_thinking_mode
+            cast(ThinkingMode, settings.claude_cli_thinking_mode)
             if settings.claude_cli_thinking_mode in VALID_THINKING_MODES
             else "low"
         )
@@ -232,5 +232,5 @@ class ClaudeAnalyser(LLMAnalyser):
             Dict with either ``thinking`` (disabled) or ``effort`` key.
         """
         if self._thinking_mode == "off":
-            return {"thinking": ThinkingConfigDisabled()}
+            return {"thinking": ThinkingConfigDisabled(type="disabled")}
         return {"effort": self._thinking_mode}

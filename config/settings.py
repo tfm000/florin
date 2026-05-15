@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from db.database import Database
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +226,7 @@ def get_settings() -> Settings:
     return _settings_instance
 
 
-async def load_db_overrides(db: object) -> None:
+async def load_db_overrides(db: Database) -> None:
     """Load setting overrides from the database."""
     from sqlalchemy import select
 
@@ -230,7 +234,7 @@ async def load_db_overrides(db: object) -> None:
 
     settings = get_settings()
 
-    async with db.session() as session:  # type: ignore[union-attr]
+    async with db.session() as session:
         result = await session.execute(select(SettingORM))
         for row in result.scalars():
             key, value = row.key, row.value

@@ -50,7 +50,7 @@ def create_app(
     )
 
     # Exception handler for domain exceptions
-    app.add_exception_handler(FlorinError, florin_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)  # type: ignore[arg-type]
 
     # Middleware (applied bottom-to-top: RequestId runs first, then CORS)
     # In production the frontend is served from the same origin, so CORS
@@ -90,11 +90,13 @@ def create_app(
         research,
         risk,
         screener,
-        settings,
         short_interest,
         stats,
         trades,
         watchlist,
+    )
+    from dashboard.routes import (
+        settings as settings_routes,
     )
 
     app.include_router(health.router, prefix="/api")
@@ -107,7 +109,7 @@ def create_app(
     app.include_router(account.router, prefix="/api")
     app.include_router(orders.router, prefix="/api")
     app.include_router(stats.router, prefix="/api")
-    app.include_router(settings.router, prefix="/api")
+    app.include_router(settings_routes.router, prefix="/api")
     app.include_router(calendar.router, prefix="/api")
     app.include_router(screener.router, prefix="/api")
     app.include_router(correlation.router, prefix="/api")

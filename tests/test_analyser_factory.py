@@ -17,7 +17,7 @@ from analysis.consensus_generator import ConsensusGenerator
 from analysis.gemini_analyser import GeminiAnalyser
 from analysis.groq_analyser import GroqAnalyser
 from analysis.openrouter_analyser import OpenRouterAnalyser
-from config.settings import Settings
+from config.settings import LLMProvider, Settings
 from core.models import (
     Recommendation,
 )
@@ -96,7 +96,7 @@ class TestConsensusEdgeCases:
             "claude-cli": _make_failing_analyser("claude-cli"),
         }
 
-        settings = Settings(llm_consensus_meta_provider="groq")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.GROQ)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
@@ -126,7 +126,7 @@ class TestConsensusEdgeCases:
             "claude-cli": _make_failing_analyser("claude-cli"),
         }
 
-        settings = Settings(llm_consensus_meta_provider="groq")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.GROQ)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(
@@ -154,7 +154,7 @@ class TestConsensusEdgeCases:
             "claude-cli": make_mock_analyser("claude-cli", Recommendation.STRONG_BUY, 9.0),
         }
 
-        settings = Settings(llm_consensus_meta_provider="groq")
+        settings = Settings(llm_consensus_meta_provider=LLMProvider.GROQ)
         gen = ConsensusGenerator(analysers, settings)
 
         report = await gen.generate(

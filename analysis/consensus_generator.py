@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import cast
 from uuid import uuid4
 
 from analysis._prompt_helper import build_consensus_prompt, parse_llm_response
@@ -253,7 +254,7 @@ class ConsensusGenerator:
 
         results: list[AnalysisResult] = []
         for name, raw in zip(tasks.keys(), raw_results, strict=True):
-            if isinstance(raw, Exception):
+            if isinstance(raw, BaseException):
                 logger.warning("LLM %s failed in consensus: %s", name, raw)
                 results.append(
                     AnalysisResult(
@@ -346,7 +347,11 @@ class ConsensusGenerator:
         """
         # Try Claude CLI (claude-agent-sdk)
         if getattr(leader, "_is_claude_agent_sdk", False):
-            return await leader._query_claude(CONSENSUS_LEADER_SYSTEM_PROMPT, prompt)
+            from analysis.claude_analyser import ClaudeAnalyser
+
+            return await cast(ClaudeAnalyser, leader)._query_claude(
+                CONSENSUS_LEADER_SYSTEM_PROMPT, prompt
+            )
 
         # Try OpenAI-compatible (Groq, OpenRouter)
         if hasattr(leader, "_client") and hasattr(leader._client, "chat"):

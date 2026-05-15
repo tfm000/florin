@@ -321,8 +321,8 @@ class SentimentData(BaseModel):
 
         lines.append(f"News: {len(self.news_articles)} articles")
         if self.news_articles:
-            for a in self.news_articles[:3]:
-                lines.append(f"  - [{a.source}] {a.title[:100]}")
+            for article in self.news_articles[:3]:
+                lines.append(f"  - [{article.source}] {article.title[:100]}")
 
         # Web Search results
         if self.web_search_results:

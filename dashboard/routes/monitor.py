@@ -106,7 +106,8 @@ async def list_monitored(
                 prev = info.get("previous_close")
                 change_pct = None
                 if price and prev and prev > 0:
-                    change_pct = round(simple_pct_change(price, prev), 2)
+                    pct = simple_pct_change(price, prev)
+                    change_pct = round(pct, 2) if pct is not None else None
                 yf_prices[ticker] = {
                     "price": price,
                     "change_pct": change_pct,

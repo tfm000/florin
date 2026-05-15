@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -66,7 +67,7 @@ def _make_filing_ref(**overrides) -> FilingRef:
 
 
 def _make_form4_txn(**overrides) -> Form4Transaction:
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         insider_name="Jane Doe",
         insider_title="CEO",
         transaction_type="Purchase",

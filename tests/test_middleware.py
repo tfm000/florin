@@ -49,7 +49,7 @@ async def client(app):
 def _make_error_app() -> FastAPI:
     """Minimal FastAPI app with exception handler and test error routes."""
     app = FastAPI()
-    app.add_exception_handler(FlorinError, florin_exception_handler)
+    app.add_exception_handler(FlorinError, florin_exception_handler)  # type: ignore[arg-type]
     app.add_middleware(RequestIdMiddleware)
 
     router = APIRouter()
