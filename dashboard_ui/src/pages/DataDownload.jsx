@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import SearchBar from '../components/SearchBar'
 import PeriodSelector, { INTRADAY_TO_HISTORY } from '../components/PeriodSelector'
+import { buildHistoryQuery } from '../utils/historyQuery'
 import { exportCSV, exportJSON } from '../utils/export'
 
 const FREQUENCIES = [
@@ -77,16 +78,29 @@ export default function DataDownload() {
       try {
         const intradayMap = INTRADAY_TO_HISTORY[period]
         const effectivePeriod = intradayMap ? intradayMap.period : period
-        const params = customStart && customEnd
-          ? `start=${customStart}&end=${customEnd}&interval=${frequency}`
-          : `period=${effectivePeriod}&interval=${frequency}`
-
-        // Use quotes endpoint when bid/ask fields are selected
+        // Use quotes endpoint when bid/ask fields are selected; history goes
+        // through buildHistoryQuery (REQ FND-02). The quotes endpoint stays
+        // inline for Phase 1 — different URL shape, out of scope here.
         const needsBidAsk = fields.has('bid') || fields.has('ask')
-        const adjustedParam = adjusted ? '' : '&adjusted=false'
-        const endpoint = needsBidAsk
-          ? `/api/research/asset/${sym}/quotes?${params}${adjustedParam}`
-          : `/api/research/asset/${sym}/history?${params}${adjustedParam}`
+        let endpoint
+        if (needsBidAsk) {
+          const params = customStart && customEnd
+            ? `start=${customStart}&end=${customEnd}&interval=${frequency}`
+            : `period=${effectivePeriod}&interval=${frequency}`
+          const adjustedParam = adjusted ? '' : '&adjusted=false'
+          endpoint = `/api/research/asset/${sym}/quotes?${params}${adjustedParam}`
+        } else {
+          // useApi prepends /api; DataDownload uses raw fetch so prepend manually.
+          const { url } = buildHistoryQuery({
+            ticker: sym,
+            period: effectivePeriod,
+            customStart,
+            customEnd,
+            interval: frequency,
+            adjusted,
+          })
+          endpoint = `/api${url}`
+        }
         const resp = await fetch(endpoint)
         if (!resp.ok) {
           errors.push(`${sym}: HTTP ${resp.status}`)

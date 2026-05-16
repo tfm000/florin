@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
+import { buildRegimeQuery } from '../utils/regimeQuery'
 import MetricsGrid from '../components/MetricsGrid'
 import PeriodSelector, { INTRADAY_TO_HISTORY, INTRADAY_KEYS } from '../components/PeriodSelector'
 import CumulativeReturnChart from '../components/CumulativeReturnChart'
@@ -30,15 +31,18 @@ export default function QuantitativeTab() {
   const isIntraday = INTRADAY_KEYS.has(period)
   const effectivePeriod = intradayMap?.period || period
 
-  // Regime data fetch — uses same interval as chart
-  const regimeSourceParam = regimeSource ? `&source=${regimeSource}` : ''
+  // Regime data fetch — URL flows through shared builder (REQ FND-03).
   const regimeInterval = intradayMap ? intradayMap.interval : '1d'
-  const regimeRangeParam = customStart && customEnd
-    ? `&start=${customStart}&end=${customEnd}`
-    : `&period=${effectivePeriod}`
-  const { data: regimeData, loading: regimeLoading } = useApi(
-    `/regime/${ticker}?n_regimes=${regimeNRegimes}&interval=${regimeInterval}${regimeSourceParam}${regimeRangeParam}`
-  )
+  const { url: regimeUrl } = buildRegimeQuery({
+    ticker,
+    period: effectivePeriod,
+    customStart,
+    customEnd,
+    nRegimes: regimeNRegimes,
+    interval: regimeInterval,
+    source: regimeSource || undefined,
+  })
+  const { data: regimeData, loading: regimeLoading } = useApi(regimeUrl)
 
   const handlePeriodChange = (p) => {
     setPeriod(p)
@@ -62,13 +66,6 @@ export default function QuantitativeTab() {
   const handleRemoveCompare = (sym) => {
     setCompareTickers(prev => prev.filter(t => t !== sym))
   }
-
-  // History query string shared by charts
-  const historyQuery = customStart && customEnd
-    ? `start=${customStart}&end=${customEnd}&interval=1d`
-    : intradayMap
-      ? `period=${intradayMap.period}&interval=${intradayMap.interval}`
-      : `period=${period}&interval=1d`
 
   // Fetch stats from canonical server-side computation
   const statsQuery = customStart && customEnd

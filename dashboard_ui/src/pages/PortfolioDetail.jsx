@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useApi, apiPut, apiDelete, apiFetch } from '../hooks/useApi'
 import { useSSE } from '../hooks/useSSE'
+import { buildRegimeQuery } from '../utils/regimeQuery'
 import PeriodSelector, { INTRADAY_KEYS } from '../components/PeriodSelector'
 import RegimeOverlay from '../components/RegimeOverlay'
 import {
@@ -209,12 +210,17 @@ export default function PortfolioDetail() {
     ? (intradayReturns?.returns || []).map(p => ({ date: p.timestamp, portfolio: p.portfolio }))
     : (returnsData?.returns || [])
 
-  // Regime data: interday only
-  const regimeRangeParam = customStart && customEnd
-    ? `&start=${customStart}&end=${customEnd}` : `&period=${period}`
-  const regimePath = isIntraday ? null : (regimeSource
-    ? `/regime/${regimeSource}?n_regimes=${regimeNRegimes}${regimeRangeParam}`
-    : portfolioId ? `/portfolios/${portfolioId}/regime?n_regimes=${regimeNRegimes}${regimeRangeParam}` : null)
+  // Regime data: interday only. URL flows through shared builder (REQ FND-03).
+  const regimePath = (() => {
+    if (isIntraday) return null
+    if (regimeSource) {
+      return buildRegimeQuery({ ticker: regimeSource, period, customStart, customEnd, nRegimes: regimeNRegimes }).url
+    }
+    if (portfolioId) {
+      return buildRegimeQuery({ portfolioId, period, customStart, customEnd, nRegimes: regimeNRegimes }).url
+    }
+    return null
+  })()
   const { data: regimeData, loading: regimeLoading } = useApi(regimePath, { autoFetch: !!regimePath })
 
   // ---------------------------------------------------------------------------
