@@ -1,6 +1,11 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(__dirname, '..')
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -20,6 +25,12 @@ export default defineConfig({
         target: 'ws://localhost:8000',
         ws: true,
       },
+    },
+    fs: {
+      // Allow Vite to read the repo-root config/periods.json — the shared
+      // period vocabulary lives outside dashboard_ui/. Default fs.strict=true
+      // 403s the cross-boundary import.
+      allow: [__dirname, repoRoot],
     },
   },
   build: {

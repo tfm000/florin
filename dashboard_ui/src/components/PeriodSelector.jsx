@@ -1,41 +1,28 @@
 import { useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { HISTORICAL_PERIODS, INTRADAY_PERIODS } from '../utils/periods'
 
-const INTRADAY_PRESETS = [
-  { key: '1Min', label: '1m' },
-  { key: '5Min', label: '5m' },
-  { key: '15Min', label: '15m' },
-  { key: '30Min', label: '30m' },
-  { key: '1Hour', label: '1H' },
-]
+// Re-export for back-compat with current consumers that import from this file.
+// Phase 3 LINT-* will redirect those consumers to '../utils/periods' directly.
+export { INTRADAY_TO_HISTORY, INTRADAY_KEYS } from '../utils/periods'
 
+// Display labels for each period token. Selector renders every canonical
+// historical period (per CONTEXT D-04 / RESEARCH Open Question #3 RESOLVED:
+// surface all canonical periods, no curation). 1d is intraday-only by
+// convention and is filtered out of the interday preset row.
+const INTRADAY_LABELS = { '1Min': '1m', '5Min': '5m', '15Min': '15m', '30Min': '30m', '1Hour': '1H' }
+const INTERDAY_LABELS = {
+  '5d': '1W',
+  '1mo': '1M', '3mo': '3M', '6mo': '6M',
+  '1y': '1Y', '2y': '2Y', '3y': '3Y', '5y': '5Y', '10y': '10Y',
+  'ytd': 'YTD', 'max': 'MAX',
+}
+
+const INTRADAY_PRESETS = INTRADAY_PERIODS.map(k => ({ key: k, label: INTRADAY_LABELS[k] ?? k }))
 const INTERDAY_PRESETS = [
-  { key: '5d', label: '1W' },
-  { key: '1mo', label: '1M' },
-  { key: '3mo', label: '3M' },
-  { key: '6mo', label: '6M' },
-  { key: '1y', label: '1Y' },
-  { key: '3y', label: '3Y' },
-  { key: 'max', label: 'MAX' },
+  ...HISTORICAL_PERIODS.filter(k => k !== '1d').map(k => ({ key: k, label: INTERDAY_LABELS[k] ?? k })),
   { key: 'custom', label: 'Custom' },
 ]
-
-export const INTRADAY_KEYS = new Set(INTRADAY_PRESETS.map(p => p.key))
-
-/**
- * Map an intraday key to yfinance-compatible period + interval for the /history endpoint.
- * Periods are sized to avoid fetching excessive data:
- *   1m/5m  → last 24h of trading (1d)
- *   15m/30m → last week (5d)
- *   1h     → last week (5d)
- */
-export const INTRADAY_TO_HISTORY = {
-  '1Min':  { period: '1d', interval: '1m' },
-  '5Min':  { period: '1d', interval: '5m' },
-  '15Min': { period: '5d', interval: '15m' },
-  '30Min': { period: '5d', interval: '30m' },
-  '1Hour': { period: '5d', interval: '60m' },
-}
 
 export default function PeriodSelector({ period, onPeriodChange, startDate, endDate, onCustomRange }) {
   const [showCustom, setShowCustom] = useState(period === 'custom')
