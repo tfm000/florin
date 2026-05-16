@@ -6,10 +6,11 @@ export function useApi(path, options = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [stale, setStale] = useState(false)
   const { autoFetch = true, interval = null } = options
 
   const fetchData = useCallback(async () => {
-    if (!path) { setLoading(false); setData(null); return }
+    if (!path) { setLoading(false); setData(null); setStale(false); return }
     try {
       setLoading(true)
       const res = await fetch(`${API_BASE}${path}`)
@@ -19,8 +20,14 @@ export function useApi(path, options = {}) {
       const json = await res.json()
       setData(json)
       setError(null)
+      setStale(false)
     } catch (err) {
+      // Intentionally do NOT setData(null) — last successful response is preserved
+      // so callers can choose between "show stale + banner" and "show error only" via
+      // the new `stale` flag. See CONTEXT.md D-08, D-09. ChartFrame (Phase 2 PRIM-04)
+      // will wire stale-aware rendering uniformly.
       setError(err.message)
+      setStale(true)
     } finally {
       setLoading(false)
     }
@@ -36,7 +43,7 @@ export function useApi(path, options = {}) {
     return () => clearInterval(id)
   }, [interval, autoFetch, fetchData])
 
-  return { data, loading, error, refetch: fetchData }
+  return { data, loading, error, stale, refetch: fetchData }
 }
 
 export async function apiPost(path, body) {
