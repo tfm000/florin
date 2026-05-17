@@ -10,6 +10,7 @@ mypy to narrow `period` arguments inside route handlers. The
 implement PEP 646 variadic-Literal unpacking; Pydantic and FastAPI both
 accept it at runtime.
 """
+
 from __future__ import annotations
 
 import json
