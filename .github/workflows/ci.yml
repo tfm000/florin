@@ -30,3 +30,18 @@ jobs:
 
       - name: Tests
         run: uv run pytest -m "not integration"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard_ui/package-lock.json
+
+      - name: Install frontend dependencies (locked)
+        working-directory: dashboard_ui
+        run: npm ci
+
+      - name: Frontend tests (vitest)
+        working-directory: dashboard_ui
+        run: npm test

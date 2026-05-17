@@ -67,3 +67,6 @@ Florin.bat
 
 # Local tooling / editor config
 .claude/
+
+# GSD planning artifacts (kept local-only)
+.planning/

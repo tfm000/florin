@@ -1,0 +1,12 @@
+{
+  "_doc": "Single source of truth for chart period vocabulary. Consumed by config/periods.py and dashboard_ui/src/utils/periods.js. See .planning/phases/01-foundation-3y-fix/01-RESEARCH.md §1, §2 for rationale.",
+  "historical": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "3y", "5y", "10y", "ytd", "max"],
+  "intraday": ["1Min", "5Min", "15Min", "30Min", "1Hour"],
+  "intraday_to_history": {
+    "1Min":  {"period": "1d", "interval": "1m"},
+    "5Min":  {"period": "1d", "interval": "5m"},
+    "15Min": {"period": "5d", "interval": "15m"},
+    "30Min": {"period": "5d", "interval": "30m"},
+    "1Hour": {"period": "5d", "interval": "60m"}
+  }
+}

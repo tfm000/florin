@@ -13,6 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from config.periods import HistoricalPeriod, SectorPeriod, YieldCurvePeriod
 from core.exceptions import NotFoundError, ServiceUnavailableError
 from core.models import Form8KFiling, WebSearchResult
 from dashboard.dependencies import get_data_provider_dep, get_settings_dep, get_yfinance_dep
@@ -301,7 +302,7 @@ async def get_asset_info(
 )
 async def get_asset_history(
     ticker: str,
-    period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
+    period: HistoricalPeriod = "1y",
     interval: str = Query(
         default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"
     ),
@@ -379,7 +380,7 @@ def _fill_bid_ask(points: list[dict]) -> list[dict]:
 )
 async def get_asset_quotes(
     ticker: str,
-    period: str = Query(default="1y", pattern="^(1d|5d|1mo|3mo|6mo|1y|2y|5y|10y|ytd|max)$"),
+    period: HistoricalPeriod = "1y",
     interval: str = Query(
         default="1d", pattern="^(1m|2m|5m|15m|30m|60m|90m|1h|1d|5d|1wk|1mo|3mo)$"
     ),
@@ -753,7 +754,7 @@ async def get_yield_curve(
 
 @router.get("/research/yield-curve/history", response_model=YieldCurveHistoryResponse)
 async def get_yield_curve_history(
-    period: str = Query(default="1y", pattern="^(1mo|3mo|6mo|1y|2y|5y)$"),
+    period: YieldCurvePeriod = "1y",
     yf=Depends(get_yfinance_dep),
 ):
     """Historical US Treasury yield curves over time."""
@@ -907,7 +908,7 @@ async def get_sectors(
 
 @router.get("/research/sectors/history", response_model=SectorHistoryResponse)
 async def get_sectors_history(
-    period: str = Query(default="1m", pattern="^(1mo|3mo|6mo|1y|1m|3m|6m)$"),
+    period: SectorPeriod = "1m",
     yf=Depends(get_yfinance_dep),
 ):
     """Aligned daily close prices for all sector ETFs (cumulative returns chart)."""

@@ -3,6 +3,7 @@ import { ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, Respons
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
+import { buildHistoryQuery } from '../utils/historyQuery'
 import { INTRADAY_TO_HISTORY } from './PeriodSelector'
 
 const NUM_BINS = 40
@@ -86,23 +87,18 @@ export default function ReturnsHistogram({
   const [showRegimes, setShowRegimes] = useState(false)
 
   const intraday = INTRADAY_TO_HISTORY[period]
-  const queryStr = customStart && customEnd
-    ? `start=${customStart}&end=${customEnd}&interval=1d`
-    : intraday
-      ? `period=${intraday.period}&interval=${intraday.interval}`
-      : `period=${period}&interval=1d`
-
   const statsQueryStr = customStart && customEnd
     ? `start=${customStart}&end=${customEnd}`
     : intraday
       ? `period=${intraday.period}`
       : `period=${period}`
 
-  const { data: history, loading } = useApi(`/research/asset/${ticker}/history?${queryStr}`)
-  const { data: cmp0 } = useApi(compareTickers[0] ? `/research/asset/${compareTickers[0]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[0] })
-  const { data: cmp1 } = useApi(compareTickers[1] ? `/research/asset/${compareTickers[1]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[1] })
-  const { data: cmp2 } = useApi(compareTickers[2] ? `/research/asset/${compareTickers[2]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[2] })
-  const { data: cmp3 } = useApi(compareTickers[3] ? `/research/asset/${compareTickers[3]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[3] })
+  // History URLs flow through buildHistoryQuery (REQ FND-02).
+  const { data: history, loading } = useApi(buildHistoryQuery({ ticker, period, customStart, customEnd }).url)
+  const { data: cmp0 } = useApi(compareTickers[0] ? buildHistoryQuery({ ticker: compareTickers[0], period, customStart, customEnd }).url : null, { autoFetch: !!compareTickers[0] })
+  const { data: cmp1 } = useApi(compareTickers[1] ? buildHistoryQuery({ ticker: compareTickers[1], period, customStart, customEnd }).url : null, { autoFetch: !!compareTickers[1] })
+  const { data: cmp2 } = useApi(compareTickers[2] ? buildHistoryQuery({ ticker: compareTickers[2], period, customStart, customEnd }).url : null, { autoFetch: !!compareTickers[2] })
+  const { data: cmp3 } = useApi(compareTickers[3] ? buildHistoryQuery({ ticker: compareTickers[3], period, customStart, customEnd }).url : null, { autoFetch: !!compareTickers[3] })
   const cmpData = [cmp0, cmp1, cmp2, cmp3]
 
   // Fetch canonical stats from API for each ticker

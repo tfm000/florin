@@ -3,11 +3,11 @@ import {
   ComposedChart, Line, Bar, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
-import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
+import { usePriceHistory } from '../hooks/charts/usePriceHistory'
 import { INDICATOR_DEFS } from '../utils/indicators'
-import { INTRADAY_TO_HISTORY } from './PeriodSelector'
+import { INTRADAY_KEYS } from '../utils/periods'
 
 const OVERLAY_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'overlay').map(([k]) => k)
 const SUBCHART_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'subchart').map(([k]) => k)
@@ -20,19 +20,18 @@ export default function CumulativeReturnChart({
   const [activeIndicators, setActiveIndicators] = useState(new Set())
   const [chartType, setChartType] = useState('line') // 'line' | 'candle'
   const [showRegimes, setShowRegimes] = useState(false)
-  const intraday = INTRADAY_TO_HISTORY[period]
-  const queryStr = customStart && customEnd
-    ? `start=${customStart}&end=${customEnd}&interval=1d`
-    : intraday
-      ? `period=${intraday.period}&interval=${intraday.interval}`
-      : `period=${period}&interval=1d`
 
-  const { data: history, loading } = useApi(`/research/asset/${ticker}/history?${queryStr}`)
+  // Truthy when `period` is an intraday key (1Min..1Hour) — drives the
+  // date-vs-timestamp formatting downstream in useMemos and axis ticks.
+  const intraday = INTRADAY_KEYS.has(period)
 
-  const { data: cmp0 } = useApi(compareTickers[0] ? `/research/asset/${compareTickers[0]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[0] })
-  const { data: cmp1 } = useApi(compareTickers[1] ? `/research/asset/${compareTickers[1]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[1] })
-  const { data: cmp2 } = useApi(compareTickers[2] ? `/research/asset/${compareTickers[2]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[2] })
-  const { data: cmp3 } = useApi(compareTickers[3] ? `/research/asset/${compareTickers[3]}/history?${queryStr}` : null, { autoFetch: !!compareTickers[3] })
+  // Layer-1 data hook owns URL construction via buildHistoryQuery — chart
+  // never builds the URL itself (REQ FND-02 / FND-04).
+  const { data: history, loading } = usePriceHistory({ ticker, period, customStart, customEnd })
+  const { data: cmp0 } = usePriceHistory({ ticker: compareTickers[0], period, customStart, customEnd, enabled: !!compareTickers[0] })
+  const { data: cmp1 } = usePriceHistory({ ticker: compareTickers[1], period, customStart, customEnd, enabled: !!compareTickers[1] })
+  const { data: cmp2 } = usePriceHistory({ ticker: compareTickers[2], period, customStart, customEnd, enabled: !!compareTickers[2] })
+  const { data: cmp3 } = usePriceHistory({ ticker: compareTickers[3], period, customStart, customEnd, enabled: !!compareTickers[3] })
   const cmpData = [cmp0, cmp1, cmp2, cmp3]
 
   // Build date → regime lookup from parent-provided data
