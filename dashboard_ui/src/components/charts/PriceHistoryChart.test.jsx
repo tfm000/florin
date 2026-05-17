@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, fireEvent, act, cleanup } from '@testing-library/react'
 import PriceHistoryChart from './PriceHistoryChart'
 import { ChartColorProvider } from '../../hooks/useChartColors'
+
+// RTL auto-cleanup relies on a global `afterEach`, but this project uses
+// `globals: false` in vitest.config.js. Wire cleanup manually so each test
+// starts with a fresh DOM (prevents duplicate-element errors from prior renders).
+afterEach(() => {
+  cleanup()
+})
 
 /**
  * Test suite for PriceHistoryChart — CHART-01..03 + D-13 recommended battery.
@@ -118,7 +125,7 @@ describe('PriceHistoryChart — CHART-01..03 + D-13', () => {
       expect(container.firstChild).not.toBeNull()
     })
 
-    it('shows regime legend strip when features.regime has stats', () => {
+    it('shows Regimes toggle button when features.regime.data is present', () => {
       const { container } = render(
         <PriceHistoryChart
           data={fixture}
@@ -128,7 +135,27 @@ describe('PriceHistoryChart — CHART-01..03 + D-13', () => {
         />,
         { wrapper: Wrapper },
       )
-      // The legend strip renders vol% labels like "R0 12.3%vol"
+      // The Regimes button should be visible (regime data available)
+      expect(container.textContent).toContain('Regimes')
+    })
+
+    it('shows regime legend strip only after clicking the Regimes toggle button', () => {
+      const { container, getAllByText } = render(
+        <PriceHistoryChart
+          data={fixture}
+          series={series}
+          intraday={false}
+          features={{ regime: regimeFeature }}
+        />,
+        { wrapper: Wrapper },
+      )
+      // Regime legend (R0, R1) should be hidden by default (showRegimes defaults to false)
+      expect(container.textContent).not.toContain('R0')
+      // Click the first Regimes toggle button and flush state updates
+      act(() => {
+        fireEvent.click(getAllByText('Regimes')[0])
+      })
+      // Legend strip renders vol% labels like "R0 12.3%vol" after toggling on
       expect(container.textContent).toContain('R0')
       expect(container.textContent).toContain('R1')
     })
