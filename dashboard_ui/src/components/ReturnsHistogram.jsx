@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
+import { ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
+import { ChartTooltip } from './charts/_primitives'
 import { useApi } from '../hooks/useApi'
 import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
@@ -250,9 +251,7 @@ export default function ReturnsHistogram({
             tick={{ fill: '#9CA3AF', fontSize: 10 }}
             label={{ value: 'Frequency', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 10, dx: -5 }}
           />
-          <Tooltip
-            contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8 }}
-            labelStyle={{ color: '#fff' }}
+          <ChartTooltip
             labelFormatter={v => `Return: ${Number(v).toFixed(2)}%`}
             formatter={(v, name) => {
               const label = name.startsWith('regime_')
