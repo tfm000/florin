@@ -27,3 +27,19 @@ INTRADAY_TO_HISTORY: dict[str, dict[str, str]] = dict(_P["intraday_to_history"])
 # FastAPI route handlers use these as query-param annotations.
 HistoricalPeriod = Literal[*HISTORICAL_PERIODS]  # type: ignore[valid-type]
 IntradayPeriod = Literal[*INTRADAY_PERIODS]  # type: ignore[valid-type]
+
+# Per-endpoint subsets — each is a strict subset of the canonical vocabulary
+# that some backend routes legitimately need to accept (e.g. yfinance does
+# not serve yield-curve data beyond 5y; sectors keeps shorthand support
+# for the current SectorPerformanceChart consumer). New code should reach
+# for HistoricalPeriod unless a narrower contract is explicitly required.
+
+YIELD_CURVE_PERIODS: tuple[str, ...] = ("1mo", "3mo", "6mo", "1y", "2y", "5y")
+YieldCurvePeriod = Literal[*YIELD_CURVE_PERIODS]  # type: ignore[valid-type]
+
+# Sectors accept both canonical (1mo/3mo/6mo) and legacy shorthand
+# (1m/3m/6m) — the route normalises shorthand to yfinance form in-handler.
+# Shorthand support is kept for now; AUDIT-01 confirms whether
+# SectorPerformanceChart still sends it before any cleanup.
+SECTOR_PERIODS: tuple[str, ...] = ("1mo", "3mo", "6mo", "1y", "1m", "3m", "6m")
+SectorPeriod = Literal[*SECTOR_PERIODS]  # type: ignore[valid-type]
