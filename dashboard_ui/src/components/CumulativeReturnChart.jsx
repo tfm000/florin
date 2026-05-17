@@ -7,6 +7,7 @@ import { useLegendToggle } from '../hooks/useLegendToggle'
 import { useChartColors } from '../hooks/useChartColors'
 import { usePriceHistory } from '../hooks/charts/usePriceHistory'
 import { INDICATOR_DEFS } from '../utils/indicators'
+import { INTRADAY_KEYS } from '../utils/periods'
 
 const OVERLAY_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'overlay').map(([k]) => k)
 const SUBCHART_KEYS = Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'subchart').map(([k]) => k)
@@ -19,6 +20,10 @@ export default function CumulativeReturnChart({
   const [activeIndicators, setActiveIndicators] = useState(new Set())
   const [chartType, setChartType] = useState('line') // 'line' | 'candle'
   const [showRegimes, setShowRegimes] = useState(false)
+
+  // Truthy when `period` is an intraday key (1Min..1Hour) — drives the
+  // date-vs-timestamp formatting downstream in useMemos and axis ticks.
+  const intraday = INTRADAY_KEYS.has(period)
 
   // Layer-1 data hook owns URL construction via buildHistoryQuery — chart
   // never builds the URL itself (REQ FND-02 / FND-04).
