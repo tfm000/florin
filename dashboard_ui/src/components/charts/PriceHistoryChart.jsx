@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   ComposedChart, Line, Bar, Area, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, Legend, ReferenceLine,
+  Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
 import { useLegendToggle } from '../../hooks/useLegendToggle'
 import { useChartColors } from '../../hooks/useChartColors'
@@ -13,6 +13,7 @@ import {
   PriceAxis,
   PercentAxis,
   formatChartDateLong,
+  formatPrice,
   safeDomain,
 } from './_primitives'
 
@@ -55,8 +56,8 @@ import {
  *     useApi 4-tuple stale flag so callers never silently serve stale data (D-04).
  *   - error {string|null} default null — forwarded to ChartFrame (D-04).
  *   - emptyMessage {string} default 'No data' — forwarded to ChartFrame.
- *   - currency {string} default 'USD' — passed to PriceAxis for currency-aware
- *     formatting (CHART-03 / B-08 — eliminates the hard-coded "$" from CRC:175-179).
+ *   - currency {string} default 'USD' — passed to PriceAxis and formatPrice for
+ *     currency-aware formatting (CHART-03 / B-08 — eliminates the hard-coded "$").
  *
  * CHART-02 / D-07 note: This component does NOT perform any data fetching internally
  * (CHART-01 / research/ARCHITECTURE.md anti-pattern #2). The caller (QuantitativeTab in
@@ -86,9 +87,15 @@ export default function PriceHistoryChart({
   // QuantitativeTab does not need to control which indicators are on/off.
   const [activeIndicators, setActiveIndicators] = useState(new Set())
 
+  // showRegimes: default false (UX-conservative). Toggled by the Regimes button in the header.
+  // Gated on features.regime?.data being truthy so the button only appears when regime data exists.
+  const [showRegimes, setShowRegimes] = useState(false)
+
   const { handleLegendClick, isHidden, legendFormatter } = useLegendToggle()
 
-  // Pre-compute OVERLAY_KEYS / SUBCHART_KEYS once (stable across renders)
+  // Pre-compute OVERLAY_KEYS / SUBCHART_KEYS once (stable across renders).
+  // bbands is type:'overlay' — it must NOT appear in SUBCHART_KEYS. The filter
+  // on INDICATOR_DEFS guarantees this since INDICATOR_DEFS.bbands.type === 'overlay'.
   const OVERLAY_KEYS = useMemo(
     () => Object.entries(INDICATOR_DEFS).filter(([, v]) => v.type === 'overlay').map(([k]) => k),
     [],
@@ -114,15 +121,16 @@ export default function PriceHistoryChart({
   const compareKeys = compareSeries.map(s => s.key)
 
   // Build date → regime lookup from the regime feature payload.
-  // Ported from CumulativeReturnChart.jsx:38-45, gated on features.regime?.data?.regimes.
+  // Gated on showRegimes so the map is empty (and per-row regime keys are skipped)
+  // when regimes are toggled off — avoids unnecessary computation.
   const regimeMap = useMemo(() => {
-    if (!features.regime?.data?.regimes) return {}
+    if (!showRegimes || !features.regime?.data?.regimes) return {}
     const map = {}
     for (const r of features.regime.data.regimes) {
       map[r.date] = r.regime
     }
     return map
-  }, [features.regime])
+  }, [showRegimes, features.regime])
 
   // Compute indicator values from raw OHLCV.
   // Ported from CumulativeReturnChart.jsx:60-69, gated on features.indicators truthy + data.
@@ -150,7 +158,7 @@ export default function PriceHistoryChart({
       const dateKey = intraday ? h.date : h.date.slice(0, 10)
       const row = { date: dateKey }
 
-      // Attach regime info when available
+      // Attach regime info when showRegimes is active
       const regimeKey = intraday ? dateKey : h.date.slice(0, 10)
       if (regimeMap[regimeKey] != null) {
         row.regime = regimeMap[regimeKey]
@@ -163,7 +171,6 @@ export default function PriceHistoryChart({
         compareKeys.forEach((sym) => {
           // In comparison mode the pre-merged data prop already contains keys for
           // each comparison ticker with pre-computed percent returns (merged by caller).
-          // If the key is present, use it directly; otherwise leave undefined.
           if (h[sym] != null) {
             row[sym] = h[sym]
           }
@@ -201,6 +208,8 @@ export default function PriceHistoryChart({
 
   // Build subchart data (one entry per active subchart indicator).
   // Ported from CumulativeReturnChart.jsx:126-151, rename: history → data.
+  // NOTE: bbands is type:'overlay' and therefore never appears in activeSubcharts,
+  // so it is never double-rendered. The INDICATOR_DEFS filter above enforces this.
   const subchartData = useMemo(() => {
     if (!features.indicators || !data || data.length === 0) return {}
     const result = {}
@@ -253,31 +262,65 @@ export default function PriceHistoryChart({
   // Tooltip label formatter — uses formatChartDateLong to avoid the TZ bug (PRIM-03).
   const tooltipLabelFormatter = (v) => {
     if (!v) return ''
-    if (intraday) return v.length > 10 ? v.slice(0, 16).replace('T', ' ') : v
-    return formatChartDateLong(v, false)
+    return formatChartDateLong(v, intraday)
   }
 
-  // Tooltip value formatter — comparison mode shows %, price mode shows currency via PriceAxis formatter pattern.
+  // Tooltip value formatter for line mode — comparison shows %, price mode uses
+  // formatPrice for currency-aware formatting (fixes BUG 1: raw float precision).
   const tooltipFormatter = (v, name) => {
     if (name === 'regimeBar') return null
     if (hasCompare) {
       return [`${v >= 0 ? '+' : ''}${v.toFixed(2)}%`, name === primaryKey ? 'Return' : name]
     }
-    return [v, name === 'close' ? 'Price' : name]
+    return [formatPrice(v, currency), name === 'close' ? 'Price' : name]
+  }
+
+  // Custom tooltip content for candle mode — shows O/H/L/C with currency formatting.
+  // Ported from CRC:299-321 with formatPrice substituted for the old formatY.
+  // Rendered as raw <Tooltip content={...}> rather than <ChartTooltip> to bypass
+  // ChartTooltip's .filter() logic which would drop the synthetic candleBody entries.
+  const candleTooltipContent = ({ active, payload, label }) => {
+    if (!active || !payload?.[0]) return null
+    const d = payload[0].payload
+    return (
+      <div style={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+        <p style={{ color: '#fff', marginBottom: 4 }}>{formatChartDateLong(label, intraday)}</p>
+        <p style={{ color: '#9CA3AF', margin: 0 }}>O: {formatPrice(d.open, currency)}</p>
+        <p style={{ color: '#9CA3AF', margin: 0 }}>H: {formatPrice(d.high, currency)}</p>
+        <p style={{ color: '#9CA3AF', margin: 0 }}>L: {formatPrice(d.low, currency)}</p>
+        <p style={{ color: d.candleUp ? colors.positive : colors.negative, margin: 0 }}>C: {formatPrice(d.close, currency)}</p>
+      </div>
+    )
   }
 
   const regimeData = features.regime?.data ?? null
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-      {/* Header row: regime legend + period info */}
+      {/* Header row: title + regime toggle + period info */}
       <div className="flex justify-between items-center mb-2">
         <div className="flex items-center gap-2">
           <h3 className="text-white font-semibold">
             {hasCompare ? 'Cumulative Returns' : 'Price History'}
           </h3>
-          {/* Regime legend strip — gated on features.regime?.data?.stats (CRC:202-213) */}
-          {features.regime && regimeData?.stats && (
+
+          {/* Regimes toggle button — gated on feature data being available (BUG 4 fix).
+              Default off (showRegimes=false) so shading doesn't appear unexpectedly. */}
+          {features.regime?.data && (
+            <button
+              onClick={() => setShowRegimes(s => !s)}
+              className={`text-xs px-2 py-1 rounded ${
+                showRegimes
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-gray-700 text-gray-400 hover:text-white'
+              }`}
+            >
+              Regimes
+            </button>
+          )}
+
+          {/* Regime legend strip — only visible when showRegimes is active (CRC:202-213) */}
+          {showRegimes && features.regime && regimeData?.stats && (
             <div className="flex items-center gap-1.5">
               {regimeData.source_ticker && regimeData.source_ticker !== primaryKey && (
                 <span className="text-[10px] text-gray-500">via {regimeData.source_ticker}</span>
@@ -333,8 +376,8 @@ export default function PriceHistoryChart({
           <ComposedChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
 
-            {/* Regime background shading — gated on features.regime (CRC:259-272) */}
-            {features.regime && (
+            {/* Regime background shading — gated on showRegimes AND feature data (BUG 4 fix) */}
+            {showRegimes && features.regime?.data && (
               <Bar
                 yAxisId="regime"
                 dataKey="regimeBar"
@@ -357,8 +400,8 @@ export default function PriceHistoryChart({
                 }}
               />
             )}
-            {/* Hidden regime yAxis required when regime shading is active */}
-            <YAxis yAxisId="regime" domain={[0, 1]} hide />
+            {/* Hidden regime yAxis always present when regime feature is enabled to keep axis IDs consistent */}
+            {features.regime?.data && <YAxis yAxisId="regime" domain={[0, 1]} hide />}
 
             {/* X axis via DateAxis primitive (closes PRIM-02 / PRIM-03 UTC bug) */}
             <DateAxis intraday={intraday} interval={xInterval} />
@@ -370,11 +413,16 @@ export default function PriceHistoryChart({
               <PriceAxis domain={yDomain} currency={currency} />
             )}
 
-            {/* Single ChartTooltip site replacing CRC's 3 inline Tooltip sites (SC1) */}
-            <ChartTooltip
-              labelFormatter={tooltipLabelFormatter}
-              formatter={tooltipFormatter}
-            />
+            {/* Tooltip: candle mode uses a custom OHLC content function (BUG 2 fix);
+                line/compare modes use the shared ChartTooltip primitive (SC1). */}
+            {features.candle && !hasCompare ? (
+              <Tooltip content={candleTooltipContent} />
+            ) : (
+              <ChartTooltip
+                labelFormatter={tooltipLabelFormatter}
+                formatter={tooltipFormatter}
+              />
+            )}
 
             {/* Multi-series legend in comparison mode */}
             {allKeys.length > 1 && (
@@ -416,8 +464,6 @@ export default function PriceHistoryChart({
                     // Manual coordinate conversion — recharts Bar shape receives y/height
                     // for the body range but NOT for the wick (high/low are outside the
                     // Bar dataKey range). Re-derive from yDomain captured in enclosing scope.
-                    // useYAxisScale() is NOT usable here (React hook rules prohibit hook calls
-                    // inside a non-hook callback). RESEARCH.md Finding 2 confirms this pattern.
                     const domain0 = yDomain[0]
                     const domain1 = yDomain[1]
                     const chartHeight = props.background?.height || 240
@@ -471,7 +517,10 @@ export default function PriceHistoryChart({
               ))
             )}
 
-            {/* Overlay indicators (SMA, EMA, Bollinger, VWAP) */}
+            {/* Overlay indicators (SMA, EMA, Bollinger, VWAP).
+                bbands is type:'overlay' and rendered here only — never in the subchart
+                loop below. This prevents duplicate dataKey="bb_upper" entries in the
+                recharts payload that caused React key collisions (BUG 5 fix). */}
             {!hasCompare && activeOverlays.map(key => {
               const def = INDICATOR_DEFS[key]
               if (key === 'bbands') {
@@ -545,11 +594,7 @@ export default function PriceHistoryChart({
               label={{ value: 'Volume', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 9, dx: -5 }}
             />
             <ChartTooltip
-              labelFormatter={v => {
-                if (!v) return ''
-                if (intraday) return v.length > 10 ? v.slice(0, 16).replace('T', ' ') : v
-                return formatChartDateLong(v, false)
-              }}
+              labelFormatter={v => formatChartDateLong(v, intraday)}
               formatter={v => [v != null ? v.toLocaleString() : '', 'Volume']}
             />
             <Bar
@@ -572,7 +617,10 @@ export default function PriceHistoryChart({
         </ResponsiveContainer>
       )}
 
-      {/* Indicator subcharts — gated on features.indicators && !hasCompare (CRC:429-473) */}
+      {/* Indicator subcharts — gated on features.indicators && !hasCompare (CRC:429-473).
+          bbands is type:'overlay' so it never appears in activeSubcharts and is never
+          rendered here — the INDICATOR_DEFS filter guarantees zero overlap with the
+          overlay Area/Lines rendered in the main chart above (BUG 5 fix). */}
       {features.indicators && !hasCompare && activeSubcharts.map(key => {
         const def = INDICATOR_DEFS[key]
         const subData = subchartData[key]
