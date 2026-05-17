@@ -14,6 +14,7 @@
  */
 
 export { formatChartDate, formatChartDateLong } from './formatChartDate'
+export { formatPrice, CURRENCY_PREFIX } from './formatPrice'
 export { safeDomain } from './safeDomain'
 export { ChartFrame } from './ChartFrame'
 export { ChartTooltip } from './ChartTooltip'

@@ -12,41 +12,14 @@
  * PriceAxis also does NOT import formatChartDate (timezone-agnostic; only DateAxis
  * imports it per CONTEXT D-05).
  *
+ * Tick formatting is delegated to formatPrice() from the shared formatPrice.js utility
+ * so the CURRENCY_PREFIX map is not duplicated here.
+ *
  * @module PriceAxis
  */
 
 import { YAxis } from 'recharts'
-
-/**
- * Map of ISO 4217 currency codes to their display prefix symbols.
- * Codes not in this map fall back to `"<CODE> "` (with a trailing space) as the prefix.
- *
- * @type {Object.<string, string>}
- */
-const CURRENCY_PREFIX = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  JPY: '¥',
-}
-
-/**
- * Format a numeric price value with the appropriate currency prefix.
- *
- * Tiers (ported from CumulativeReturnChart.jsx:175-179 with currency substitution):
- *   v >= 1000 → "<prefix><v/1000 toFixed 1>k"  (e.g., "$1.2k", "£850.0k")
- *   v >= 1    → "<prefix><v toFixed 2>"          (e.g., "$185.50", "€42.00")
- *   else      → "<prefix><v toFixed 4>"          (e.g., "$0.0012" for sub-penny assets)
- *
- * @param {number} v - Numeric price value from a recharts tick.
- * @param {string} prefix - The currency prefix string (e.g., '$', '€', 'CHF ').
- * @returns {string} Formatted price string.
- */
-function formatPrice(v, prefix) {
-  if (v >= 1000) return `${prefix}${(v / 1000).toFixed(1)}k`
-  if (v >= 1) return `${prefix}${v.toFixed(2)}`
-  return `${prefix}${v.toFixed(4)}`
-}
+import { formatPrice } from './formatPrice'
 
 /**
  * Recharts YAxis wrapper that renders currency-aware price tick labels.
@@ -63,14 +36,11 @@ function formatPrice(v, prefix) {
  * @returns {React.ReactElement} Recharts YAxis element with currency-aware formatter.
  */
 export function PriceAxis({ domain, currency = 'USD', label = 'Price' }) {
-  // Resolve prefix: known codes use their symbol; unknown codes use the code + space
-  const prefix = CURRENCY_PREFIX[currency] ?? `${currency} `
-
   return (
     <YAxis
       tick={{ fill: '#9CA3AF', fontSize: 11 }}
       domain={domain}
-      tickFormatter={(v) => formatPrice(v, prefix)}
+      tickFormatter={(v) => formatPrice(v, currency)}
       label={{
         value: label,
         angle: -90,
