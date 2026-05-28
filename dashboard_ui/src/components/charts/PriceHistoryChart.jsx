@@ -196,6 +196,14 @@ export default function PriceHistoryChart({
               row.bb_upper = vals.upper?.[i]
               row.bb_middle = vals.middle?.[i]
               row.bb_lower = vals.lower?.[i]
+              // Range tuple for the band fill Area. recharts fills a band between
+              // [lower, upper] when a dataKey resolves to a 2-tuple. Only set when
+              // both bounds are finite so the warmup period (insufficient lookback)
+              // leaves a gap rather than collapsing the fill to the axis.
+              row.bb_range =
+                vals.lower?.[i] != null && vals.upper?.[i] != null
+                  ? [vals.lower[i], vals.upper[i]]
+                  : null
             } else {
               row[key] = Array.isArray(vals) ? vals[i] : null
             }
@@ -433,11 +441,13 @@ export default function PriceHistoryChart({
               />
             )}
 
-            {/* Bollinger bands fill area (behind lines) */}
+            {/* Bollinger bands fill area — fills BETWEEN lower and upper via the
+                bb_range [lower, upper] tuple. Using a distinct dataKey (not bb_upper)
+                also prevents a duplicate bb_upper entry in the tooltip payload. */}
             {!hasCompare && activeIndicators.has('bbands') && (
               <Area
                 type="monotone"
-                dataKey="bb_upper"
+                dataKey="bb_range"
                 stroke="none"
                 fill="#6366F1"
                 fillOpacity={0.1}
@@ -576,45 +586,49 @@ export default function PriceHistoryChart({
         </ResponsiveContainer>
       </ChartFrame>
 
-      {/* Volume subchart — gated on features.volume && !hasCompare (CRC:392-427) */}
+      {/* Volume subchart — gated on features.volume && !hasCompare (CRC:392-427).
+          Heading sits above the chart (clearer than a rotated axis label that the
+          price chart above used to clip); taller container for readability; bar
+          fill routes through useChartColors so it tracks the colorblind toggle. */}
       {features.volume && !hasCompare && chartData.length > 0 && (
-        <ResponsiveContainer width="100%" height={80}>
-          <ComposedChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis dataKey="date" tick={false} />
-            <YAxis
-              tick={{ fill: '#9CA3AF', fontSize: 9 }}
-              width={45}
-              tickFormatter={v => {
-                if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
-                if (v >= 1e6) return `${(v / 1e6).toFixed(0)}M`
-                if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`
-                return v
-              }}
-              label={{ value: 'Volume', angle: -90, position: 'insideLeft', fill: '#6B7280', fontSize: 9, dx: -5 }}
-            />
-            <ChartTooltip
-              labelFormatter={v => formatChartDateLong(v, intraday)}
-              formatter={v => [v != null ? v.toLocaleString() : '', 'Volume']}
-            />
-            <Bar
-              dataKey="volume"
-              fill="#6366F1"
-              opacity={0.6}
-              isAnimationActive={false}
-              shape={({ x, y, width, height: barH, payload }) => (
-                <rect
-                  x={x}
-                  y={y}
-                  width={width}
-                  height={barH}
-                  fill={payload?.candleUp ? '#22C55E' : '#EF4444'}
-                  fillOpacity={0.5}
-                />
-              )}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+        <div className="mt-3">
+          <h4 className="text-xs font-medium text-gray-400 mb-1">Volume</h4>
+          <ResponsiveContainer width="100%" height={120}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="date" tick={false} />
+              <YAxis
+                tick={{ fill: '#9CA3AF', fontSize: 9 }}
+                width={45}
+                tickFormatter={v => {
+                  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`
+                  if (v >= 1e6) return `${(v / 1e6).toFixed(0)}M`
+                  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`
+                  return v
+                }}
+              />
+              <ChartTooltip
+                labelFormatter={v => formatChartDateLong(v, intraday)}
+                formatter={v => [v != null ? v.toLocaleString() : '', 'Volume']}
+              />
+              <Bar
+                dataKey="volume"
+                opacity={0.6}
+                isAnimationActive={false}
+                shape={({ x, y, width, height: barH, payload }) => (
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={barH}
+                    fill={payload?.candleUp ? colors.positive : colors.negative}
+                    fillOpacity={0.5}
+                  />
+                )}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       )}
 
       {/* Indicator subcharts — gated on features.indicators && !hasCompare (CRC:429-473).
