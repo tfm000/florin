@@ -213,6 +213,42 @@ describe('ChartTooltip — D-13 mandatory cases', () => {
       expect(container.textContent).toContain('+5.3%')
       expect(container.textContent).toContain('+4.1%')
     })
+
+    it('splits a recharts [value, name] tuple instead of concatenating it', () => {
+      // Regression: PriceHistoryChart's tooltipFormatter returns the recharts
+      // [formattedValue, formattedName] tuple (e.g. ['$185.50', 'Price']). The
+      // body must render "Price: $185.50", NOT the flattened "AAPL: $185.50Price".
+      const { container } = renderBody({
+        active: true,
+        payload: [{ name: 'close', value: 185.5, color: '#22C55E', dataKey: 'close' }],
+        label: '2024-01-15',
+        formatter: (v) => [`$${v.toFixed(2)}`, 'Price'],
+      })
+      expect(container.textContent).toContain('Price: $185.50')
+      expect(container.textContent).not.toContain('$185.50Price')
+      expect(container.textContent).not.toContain('close:')
+    })
+
+    it('keeps entry.name when the formatter returns a scalar', () => {
+      const { container } = renderBody({
+        active: true,
+        payload: [{ name: 'AAPL', value: 5.3, color: '#22C55E', dataKey: 'AAPL' }],
+        label: '2024-01-15',
+        formatter: (v) => `${v.toFixed(1)}%`,
+      })
+      expect(container.textContent).toContain('AAPL: 5.3%')
+    })
+
+    it('suppresses an entry when the formatter returns null', () => {
+      const { container } = renderBody({
+        active: true,
+        payload: TWO_SERIES_PAYLOAD,
+        label: '2024-01-15',
+        formatter: (v, name) => (name === 'AAPL' ? null : [`+${v.toFixed(1)}%`, name]),
+      })
+      expect(container.textContent).not.toContain('AAPL')
+      expect(container.textContent).toContain('MSFT: +4.1%')
+    })
   })
 
   describe('6. null value filter', () => {
@@ -225,6 +261,22 @@ describe('ChartTooltip — D-13 mandatory cases', () => {
       // MSFT has value so it should appear; AAPL has null so it should be absent
       expect(container.textContent).toContain('MSFT')
       expect(container.textContent).not.toContain('AAPL')
+    })
+
+    it('omits the synthetic bb_range band-fill tuple', () => {
+      // The Bollinger band fill Area uses dataKey="bb_range" → [lower, upper].
+      // It must never surface in the tooltip as a "bb_range: 224.5,228.3" line.
+      const { container } = renderBody({
+        active: true,
+        payload: [
+          { name: 'close', value: 226.1, color: '#22C55E', dataKey: 'close' },
+          { name: 'bb_range', value: [224.5, 228.3], color: '#6366F1', dataKey: 'bb_range' },
+        ],
+        label: '2024-03-01',
+      })
+      expect(container.textContent).toContain('close')
+      expect(container.textContent).not.toContain('bb_range')
+      expect(container.textContent).not.toContain('224.5,228.3')
     })
   })
 })

@@ -88,17 +88,32 @@ function ChartTooltipBody({ active, payload, label, labelFormatter, formatter })
     >
       <p style={{ color: '#fff', marginBottom: 4 }}>{formattedLabel}</p>
       {payload
-        .filter(entry => entry.name !== 'regimeBar' && entry.value != null)
+        .filter(
+          entry =>
+            // Drop synthetic decorative keys that carry no human-readable value:
+            // regimeBar (shading) and bb_range (the [lower, upper] band-fill tuple).
+            entry.name !== 'regimeBar' && entry.name !== 'bb_range' && entry.value != null
+        )
         .map((entry, i) => {
-          const displayValue = formatter
+          const formatted = formatter
             ? formatter(entry.value, entry.name, entry, i, payload)
             : entry.value
+          // recharts formatter contract: a returned [value, name] tuple replaces
+          // BOTH the displayed value and the series name. A scalar return replaces
+          // only the value and keeps entry.name. Without this split the tuple would
+          // render as concatenated children (e.g. "$185.50Price").
+          const displayValue = Array.isArray(formatted) ? formatted[0] : formatted
+          const displayName = Array.isArray(formatted) ? (formatted[1] ?? entry.name) : entry.name
+          // A formatter may return null (or a tuple with a null value) to suppress an entry.
+          if (displayValue == null) return null
           return (
+            // Suffix the index so duplicate dataKeys across overlay+line series
+            // (e.g. two `bb_upper` payload entries) can never collide on the key.
             <p
-              key={entry.dataKey ?? entry.name ?? i}
+              key={`${entry.dataKey ?? entry.name ?? 'entry'}-${i}`}
               style={{ color: entry.color ?? '#9CA3AF', margin: 0 }}
             >
-              {entry.name}: {displayValue}
+              {displayName}: {displayValue}
             </p>
           )
         })}
