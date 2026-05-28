@@ -48,20 +48,26 @@ export default function QuantitativeTab() {
   })
   const { data: regimeData, loading: regimeLoading } = useApi(regimeUrl)
 
+  // Intraday → Alpaca quotes/intraday (interval = the intraday key, e.g. '5Min');
+  // daily/historical → yfinance. Shared across the primary + comparison fetches so
+  // every series for a given period comes from the same source.
+  const seriesSource = { intraday: isIntraday, interval: isIntraday ? period : '1d' }
+
   // Primary price history fetch (D-11 — comparison hooks moved inline per D-11).
   const { data: primary, loading, error, stale } = usePriceHistory({
     ticker,
     period: effectivePeriod,
     customStart,
     customEnd,
+    ...seriesSource,
   })
 
   // Comparison ticker fetches — 4 slots, each gated by an enabled flag (mirrors CRC:31-34).
   // usePriceHistory returns null data when enabled=false, so destructuring is safe.
-  const { data: cmp0 } = usePriceHistory({ ticker: compareTickers[0], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[0] })
-  const { data: cmp1 } = usePriceHistory({ ticker: compareTickers[1], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[1] })
-  const { data: cmp2 } = usePriceHistory({ ticker: compareTickers[2], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[2] })
-  const { data: cmp3 } = usePriceHistory({ ticker: compareTickers[3], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[3] })
+  const { data: cmp0 } = usePriceHistory({ ticker: compareTickers[0], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[0], ...seriesSource })
+  const { data: cmp1 } = usePriceHistory({ ticker: compareTickers[1], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[1], ...seriesSource })
+  const { data: cmp2 } = usePriceHistory({ ticker: compareTickers[2], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[2], ...seriesSource })
+  const { data: cmp3 } = usePriceHistory({ ticker: compareTickers[3], period: effectivePeriod, customStart, customEnd, enabled: !!compareTickers[3], ...seriesSource })
 
   // Stable reference for cmpData (D-07 — prevents unnecessary chartData re-renders
   // caused by a new array literal being created each render).
