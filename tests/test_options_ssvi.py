@@ -71,9 +71,9 @@ def test_derivative_finite_diff() -> None:
     def sig(k):
         return ssvi_iv(k, theta, rho, eta, gamma, T)
 
-    fd_w_prime = (
-        8 * (w(k_grid + h) - w(k_grid - h)) - (w(k_grid + 2 * h) - w(k_grid - 2 * h))
-    ) / (12 * h)
+    fd_w_prime = (8 * (w(k_grid + h) - w(k_grid - h)) - (w(k_grid + 2 * h) - w(k_grid - 2 * h))) / (
+        12 * h
+    )
     fd_w_pp = (
         -w(k_grid + 2 * h)
         + 16 * w(k_grid + h)
@@ -92,12 +92,8 @@ def test_derivative_finite_diff() -> None:
         - sig(k_grid - 2 * h)
     ) / (12 * h * h)
 
-    np.testing.assert_allclose(
-        ssvi_dw_dk(k_grid, theta, rho, eta, gamma), fd_w_prime, atol=1e-8
-    )
-    np.testing.assert_allclose(
-        ssvi_d2w_dk2(k_grid, theta, rho, eta, gamma), fd_w_pp, atol=1e-6
-    )
+    np.testing.assert_allclose(ssvi_dw_dk(k_grid, theta, rho, eta, gamma), fd_w_prime, atol=1e-8)
+    np.testing.assert_allclose(ssvi_d2w_dk2(k_grid, theta, rho, eta, gamma), fd_w_pp, atol=1e-6)
     np.testing.assert_allclose(
         ssvi_dsigma_dk(k_grid, theta, rho, eta, gamma, T), fd_sig_prime, atol=1e-7
     )
@@ -131,9 +127,7 @@ def test_recovery_synthetic() -> None:
     # Identifiable: θ_T (anchored at ATM), ρ (skew), φ = η·θ^{-γ}.
     assert math.isclose(fit.theta_T, TRUE_PARAMS["theta_T"], rel_tol=1e-3)
     assert math.isclose(fit.rho, TRUE_PARAMS["rho"], abs_tol=1e-2)
-    phi_true = ssvi_phi(
-        TRUE_PARAMS["theta_T"], TRUE_PARAMS["eta"], TRUE_PARAMS["gamma"]
-    )
+    phi_true = ssvi_phi(TRUE_PARAMS["theta_T"], TRUE_PARAMS["eta"], TRUE_PARAMS["gamma"])
     phi_fit = ssvi_phi(fit.theta_T, fit.eta, fit.gamma)
     assert math.isclose(phi_fit, phi_true, rel_tol=2e-2)
 

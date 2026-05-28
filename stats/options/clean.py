@@ -21,9 +21,7 @@ import numpy as np
 from stats.options.types import ExpiryChain, FilterConfig
 
 
-def quality_filter(
-    chain: ExpiryChain, cfg: FilterConfig | None = None
-) -> ExpiryChain:
+def quality_filter(chain: ExpiryChain, cfg: FilterConfig | None = None) -> ExpiryChain:
     """Drop quotes failing basic liquidity / spread checks.
 
     Rules:

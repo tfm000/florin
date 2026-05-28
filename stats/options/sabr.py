@@ -106,30 +106,30 @@ def hagan_lognormal_iv(
         xi = (
             1.0
             + ((1.0 - beta) ** 2 / 24.0) * log_FK * log_FK
-            + ((1.0 - beta) ** 4 / 1920.0) * log_FK ** 4
+            + ((1.0 - beta) ** 4 / 1920.0) * log_FK**4
         )
         prefactor = alpha / (FK_pow * xi)
 
         zx = np.where(np.abs(z) < 1e-12, 1.0, z / x_z)
 
-        correction = 1.0 + (
-            ((1.0 - beta) ** 2 / 24.0) * (alpha * alpha) / (FK ** (1.0 - beta))
-            + 0.25 * rho * beta * nu * alpha / FK_pow
-            + ((2.0 - 3.0 * rho * rho) / 24.0) * nu * nu
-        ) * T
+        correction = (
+            1.0
+            + (
+                ((1.0 - beta) ** 2 / 24.0) * (alpha * alpha) / (FK ** (1.0 - beta))
+                + 0.25 * rho * beta * nu * alpha / FK_pow
+                + ((2.0 - 3.0 * rho * rho) / 24.0) * nu * nu
+            )
+            * T
+        )
 
         out[nm] = prefactor * zx * correction
 
     return out
 
 
-def sabr_iv_curve(
-    K_grid: np.ndarray, F: float, T: float, params: SABRParams
-) -> np.ndarray:
+def sabr_iv_curve(K_grid: np.ndarray, F: float, T: float, params: SABRParams) -> np.ndarray:
     """Evaluate the calibrated SABR σ(K) on an arbitrary strike grid."""
-    return hagan_lognormal_iv(
-        F, K_grid, T, params.alpha, params.beta, params.rho, params.nu
-    )
+    return hagan_lognormal_iv(F, K_grid, T, params.alpha, params.beta, params.rho, params.nu)
 
 
 def _initial_guesses(
@@ -229,8 +229,7 @@ def calibrate_sabr(
 
     if len(K) < _MIN_OBS_FOR_FIT:
         raise ValueError(
-            f"SABR calibration needs ≥ {_MIN_OBS_FOR_FIT} valid IV observations "
-            f"(got {len(K)})"
+            f"SABR calibration needs ≥ {_MIN_OBS_FOR_FIT} valid IV observations (got {len(K)})"
         )
 
     k = np.log(K / F)

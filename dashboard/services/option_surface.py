@@ -183,9 +183,7 @@ class OptionSurfaceService:
 
         raw = await self._yf.get_option_chain_raw(ticker.upper(), expiry=expiry)
         if not raw.get("calls") or not raw.get("puts"):
-            raise ValueError(
-                f"No option chain data for {ticker} (expiry={expiry})"
-            )
+            raise ValueError(f"No option chain data for {ticker} (expiry={expiry})")
 
         # After resolution, also probe the explicit-expiry cache —
         # an earlier explicit lookup may already have computed this
@@ -200,9 +198,7 @@ class OptionSurfaceService:
         quotes_df = _raw_chain_to_dataframe(raw)
         T = _seconds_to_years(raw["expiry_ts"] - time.time())
         if T <= 0:
-            raise ValueError(
-                f"Expiry {raw['expiry']} is in the past — T={T:.4f} years"
-            )
+            raise ValueError(f"Expiry {raw['expiry']} is in the past — T={T:.4f} years")
 
         fit = await asyncio.to_thread(
             fit_expiry,
@@ -280,9 +276,7 @@ class OptionSurfaceService:
                     ticker, expiry=exp, model=model, n_grid=n_grid, gp_samples=gp_samples
                 )
             except (ValidationError, ValueError, RuntimeError, np.linalg.LinAlgError) as e:
-                logger.warning(
-                    "Skipping expiry %s for %s: %s", exp, ticker, e
-                )
+                logger.warning("Skipping expiry %s for %s: %s", exp, ticker, e)
                 return None
 
         fits_raw = await asyncio.gather(*(_safe_single(e) for e in expiries))
@@ -310,9 +304,7 @@ class OptionSurfaceService:
 
             K_local = fit.F * moneyness  # absolute strikes for this expiry
             # Interpolate IV mean / 68-band onto K_local from the slice's K_grid.
-            iv_surface.append(
-                np.interp(K_local, fit.gp_band.K_grid, fit.gp_band.iv_mean).tolist()
-            )
+            iv_surface.append(np.interp(K_local, fit.gp_band.K_grid, fit.gp_band.iv_mean).tolist())
             iv_lo = fit.gp_band.iv_mean - fit.gp_band.iv_std
             iv_hi = fit.gp_band.iv_mean + fit.gp_band.iv_std
             iv_lo68.append(np.interp(K_local, fit.gp_band.K_grid, iv_lo).tolist())
@@ -375,9 +367,7 @@ class OptionSurfaceService:
 
         async def _safe_spread(exp: str):
             try:
-                raw = await self._yf.get_option_chain_raw(
-                    ticker.upper(), expiry=exp
-                )
+                raw = await self._yf.get_option_chain_raw(ticker.upper(), expiry=exp)
                 T = _seconds_to_years(raw["expiry_ts"] - time.time())
                 if T <= 0:
                     return None
@@ -409,9 +399,7 @@ class OptionSurfaceService:
                 # (entire chain stale → quality_filter empties); demote
                 # to debug and emit a single summary WARNING below if
                 # any expiry was skipped.
-                logger.debug(
-                    "Spread curve: skipping %s expiry %s: %s", ticker, exp, e
-                )
+                logger.debug("Spread curve: skipping %s expiry %s: %s", ticker, exp, e)
                 return None
 
         rows_raw = await asyncio.gather(*(_safe_spread(e) for e in expiries))
@@ -419,8 +407,7 @@ class OptionSurfaceService:
         n_skipped = len(expiries) - len(rows)
         if n_skipped:
             logger.warning(
-                "Spread curve: %d / %d %s expiries skipped (likely off-hours "
-                "or no published IV).",
+                "Spread curve: %d / %d %s expiries skipped (likely off-hours or no published IV).",
                 n_skipped,
                 len(expiries),
                 ticker,

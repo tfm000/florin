@@ -58,6 +58,7 @@ async def _pick_liquid_expiry(provider: YFinanceProvider) -> str | None:
             return exp
     return None
 
+
 _LIQUIDITY_SKIP_PATTERNS = (
     "filtered out",
     "Need >=",
@@ -87,9 +88,7 @@ async def test_spy_end_to_end_ssvi_live() -> None:
     if expiry is None:
         pytest.skip("No SPY expiry ≥ 7 DTE in the available list.")
     try:
-        fit = await svc.get_single_expiry_fit(
-            "SPY", expiry=expiry, model=VolModel.SSVI
-        )
+        fit = await svc.get_single_expiry_fit("SPY", expiry=expiry, model=VolModel.SSVI)
     except ValueError as e:
         _skip_if_offhours(e)
         return  # unreachable — _skip_if_offhours raises
@@ -133,9 +132,7 @@ async def test_spy_end_to_end_sabr_live() -> None:
     if expiry is None:
         pytest.skip("No SPY expiry ≥ 7 DTE in the available list.")
     try:
-        fit = await svc.get_single_expiry_fit(
-            "SPY", expiry=expiry, model=VolModel.SABR
-        )
+        fit = await svc.get_single_expiry_fit("SPY", expiry=expiry, model=VolModel.SABR)
     except ValueError as e:
         _skip_if_offhours(e)
         return
@@ -146,5 +143,3 @@ async def test_spy_end_to_end_sabr_live() -> None:
     assert np.isfinite(fit.arbitrage.integral_q)
     assert np.isfinite(fit.arbitrage.mean_recovery_pct)
     assert np.all(fit.rnd_band.density_median >= -1e-12)
-
-

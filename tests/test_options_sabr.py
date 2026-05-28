@@ -72,7 +72,7 @@ def test_recovery_beta_half() -> None:
     pinning β=1)."""
     F = 100.0
     T = 0.5
-    true = dict(alpha=0.20 * F ** 0.5, beta=0.5, rho=-0.4, nu=0.5)
+    true = dict(alpha=0.20 * F**0.5, beta=0.5, rho=-0.4, nu=0.5)
     K = np.linspace(70.0, 130.0, 31)
     iv = _generate_smile(F, T, true, K)
     fit = calibrate_sabr(K, iv, F, T, beta=true["beta"], n_starts=5)

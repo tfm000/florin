@@ -86,9 +86,7 @@ def implied_vol_one(
         return float("nan")
 
 
-def invert_chain(
-    quotes: pd.DataFrame, F: float, D: float, T: float
-) -> pd.DataFrame:
+def invert_chain(quotes: pd.DataFrame, F: float, D: float, T: float) -> pd.DataFrame:
     """Add an ``iv`` column to ``quotes`` by inverting each mid price.
 
     Rows where IV inversion fails are dropped. The returned DataFrame is

@@ -140,6 +140,14 @@ _13F_MODULE = "data.sec_13f_provider"
 
 
 class TestCusipCachePersistence:
+    @pytest.fixture(autouse=True)
+    def _stub_sec_name_map(self):
+        """load_cusip_cache() unconditionally fetches SEC company_tickers.json via
+        _load_sec_name_map(). These tests exercise the DB-backed CUSIP cache, not the
+        name map, so stub the network fetch to keep them hermetic (and CI-safe)."""
+        with patch(f"{_13F_MODULE}._load_sec_name_map", new_callable=AsyncMock):
+            yield
+
     @pytest.mark.asyncio
     async def test_load_and_persist_cusip_cache(self, app):
         """CUSIP mappings can be persisted to DB and reloaded."""
@@ -316,6 +324,13 @@ class TestOpenFIGICachePreFilter:
 
 class TestBulkCusipPersistence:
     """Test that bulk upsert persists multiple CUSIP mappings in one operation."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_sec_name_map(self):
+        """Stub the SEC company_tickers.json fetch that load_cusip_cache() triggers —
+        these tests cover DB-backed bulk upsert, not the name map. Keeps them hermetic."""
+        with patch(f"{_13F_MODULE}._load_sec_name_map", new_callable=AsyncMock):
+            yield
 
     @pytest.mark.asyncio
     async def test_bulk_persist_multiple_mappings(self, app):
