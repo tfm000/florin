@@ -111,6 +111,7 @@ def test_end_to_end_synthetic_ssvi() -> None:
     # Parametric fit RMSE tiny.
     assert fit.iv_fit.rmse_iv < 5e-4
     # SSVI butterfly margin positive.
+    assert fit.iv_fit.ssvi is not None
     assert fit.iv_fit.ssvi.butterfly_margin > 0
     # Durrleman g ≥ 0 by construction.
     assert fit.arbitrage.durrleman_min > -1e-6
@@ -151,6 +152,7 @@ def test_end_to_end_synthetic_sabr() -> None:
     assert fit.r == pytest.approx(r_true)
     assert abs(fit.r_implied_raw - r_true) < 5e-4
     assert fit.iv_fit.rmse_iv < 5e-4
+    assert fit.iv_fit.sabr is not None
     assert math.isclose(fit.iv_fit.sabr.beta, 1.0, abs_tol=1e-12)
     assert abs(fit.arbitrage.integral_q - 1.0) < 1e-2
 
@@ -214,13 +216,21 @@ def test_validation_error_for_bad_inputs() -> None:
     )
     with pytest.raises(ValidationError):
         fit_expiry(
-            quotes, ticker="X", expiry="2027-01-15", T=-0.1, spot=100.0,
+            quotes,
+            ticker="X",
+            expiry="2027-01-15",
+            T=-0.1,
+            spot=100.0,
             r_external=0.04,
         )
     # Non-positive spot.
     with pytest.raises(ValidationError):
         fit_expiry(
-            quotes, ticker="X", expiry="2027-01-15", T=0.5, spot=0,
+            quotes,
+            ticker="X",
+            expiry="2027-01-15",
+            T=0.5,
+            spot=0,
             r_external=0.04,
         )
 

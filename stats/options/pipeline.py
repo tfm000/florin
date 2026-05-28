@@ -139,9 +139,7 @@ def _sabr_derivs_k_space(
     sig_pp = sigma_k(k + 2 * h)
     sig_mm = sigma_k(k - 2 * h)
     sig_prime = (8.0 * (sig_p - sig_m) - (sig_pp - sig_mm)) / (12.0 * h)
-    sig_double = (
-        -sig_pp + 16.0 * sig_p - 30.0 * sig + 16.0 * sig_m - sig_mm
-    ) / (12.0 * h * h)
+    sig_double = (-sig_pp + 16.0 * sig_p - 30.0 * sig + 16.0 * sig_m - sig_mm) / (12.0 * h * h)
     return sig, sig_prime, sig_double
 
 
@@ -178,26 +176,18 @@ def fit_expiry(
             was there but didn't pass cleaning.
     """
     if T <= 0:
-        raise ValidationError(
-            f"fit_expiry needs T > 0 (got {T:.6f} years). Expired chain?"
-        )
+        raise ValidationError(f"fit_expiry needs T > 0 (got {T:.6f} years). Expired chain?")
     if spot <= 0:
         raise ValidationError(f"fit_expiry needs spot > 0 (got {spot}).")
     if len(quotes) == 0:
-        raise ValidationError(
-            f"fit_expiry got an empty quote frame for {ticker} {expiry}."
-        )
+        raise ValidationError(f"fit_expiry got an empty quote frame for {ticker} {expiry}.")
     quotes = _ensure_mid_spread(quotes)
-    chain = ExpiryChain(
-        ticker=ticker, spot=spot, expiry=expiry, T=T, quotes=quotes
-    )
+    chain = ExpiryChain(ticker=ticker, spot=spot, expiry=expiry, T=T, quotes=quotes)
 
     # Stage 1 — quality filter.
     chain = quality_filter(chain, filter_config)
     if len(chain.quotes) == 0:
-        raise ValueError(
-            f"All quotes filtered out for {ticker} expiry {expiry} at quality stage"
-        )
+        raise ValueError(f"All quotes filtered out for {ticker} expiry {expiry} at quality stage")
 
     # Stage 2 — parity. We use ``r_external`` (SOFR) for pricing and
     # extract only ``F`` from the chain via the fixed-rate one-parameter
@@ -221,16 +211,13 @@ def fit_expiry(
     chain = otm_filter(chain, F)
     chain = restrict_log_moneyness(chain, F, filter_config)
     if len(chain.quotes) == 0:
-        raise ValueError(
-            f"No OTM quotes survived for {ticker} expiry {expiry}"
-        )
+        raise ValueError(f"No OTM quotes survived for {ticker} expiry {expiry}")
 
     # Stage 4 — IV inversion at each OTM mid.
     iv_df = invert_chain(chain.quotes, F, D, T)
     if len(iv_df) < 6:
         raise ValueError(
-            f"Insufficient OTM IVs after inversion for {ticker} expiry {expiry} "
-            f"(got {len(iv_df)})"
+            f"Insufficient OTM IVs after inversion for {ticker} expiry {expiry} (got {len(iv_df)})"
         )
     K_obs = iv_df["strike"].to_numpy(dtype=float)
     iv_obs = iv_df["iv"].to_numpy(dtype=float)
@@ -239,9 +226,7 @@ def fit_expiry(
 
     # Stage 5 — parametric fit (SSVI default, SABR optional).
     if model == VolModel.SSVI:
-        ssvi_params = calibrate_ssvi(
-            K_obs, iv_obs, F, T, vega=vega_obs, n_starts=5, seed=seed
-        )
+        ssvi_params = calibrate_ssvi(K_obs, iv_obs, F, T, vega=vega_obs, n_starts=5, seed=seed)
         iv_fit = IVFit(
             model=model,
             K_grid=np.array([]),  # populated below
@@ -278,29 +263,31 @@ def fit_expiry(
     # Parametric IV and its k-derivatives on the output grid.
     if model == VolModel.SSVI:
         p = iv_fit.ssvi
-        param_iv_grid = ssvi_iv(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
-        param_sp_k = ssvi_dsigma_dk(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
-        param_spp_k = ssvi_d2sigma_dk2(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
+        assert p is not None  # SSVI branch always populates iv_fit.ssvi
+        theta_T, rho, eta, gamma = p.theta_T, p.rho, p.eta, p.gamma
+        param_iv_grid = ssvi_iv(k_grid, theta_T, rho, eta, gamma, T)
+        param_sp_k = ssvi_dsigma_dk(k_grid, theta_T, rho, eta, gamma, T)
+        param_spp_k = ssvi_d2sigma_dk2(k_grid, theta_T, rho, eta, gamma, T)
 
         def parametric_iv_fn(K_arr: np.ndarray) -> np.ndarray:
             kk = np.log(np.asarray(K_arr, dtype=float) / F)
-            return ssvi_iv(kk, p.theta_T, p.rho, p.eta, p.gamma, T)
+            return ssvi_iv(kk, theta_T, rho, eta, gamma, T)
 
     else:
-        param_iv_grid, param_sp_k, param_spp_k = _sabr_derivs_k_space(
-            K_grid, F, T, iv_fit.sabr
-        )
+        param_iv_grid, param_sp_k, param_spp_k = _sabr_derivs_k_space(K_grid, F, T, iv_fit.sabr)
+        p_sabr = iv_fit.sabr
+        assert p_sabr is not None  # SABR branch always populates iv_fit.sabr
+        alpha, beta_s, rho_s, nu = p_sabr.alpha, p_sabr.beta, p_sabr.rho, p_sabr.nu
 
         def parametric_iv_fn(K_arr: np.ndarray) -> np.ndarray:
-            p_local = iv_fit.sabr
             return hagan_lognormal_iv(
                 F,
                 np.asarray(K_arr, dtype=float),
                 T,
-                p_local.alpha,
-                p_local.beta,
-                p_local.rho,
-                p_local.nu,
+                alpha,
+                beta_s,
+                rho_s,
+                nu,
             )
 
     iv_fit.K_grid = K_grid
@@ -356,9 +343,7 @@ def fit_expiry(
         lee_right=b_right,
         n_neg_clipped=int(rnd_band.diagnostics.get("n_neg_clipped", 0)),
         integral_q=float(rnd_band.diagnostics.get("median_integral", float("nan"))),
-        mean_recovery_pct=float(
-            rnd_band.diagnostics.get("mean_recovery_pct", float("nan"))
-        ),
+        mean_recovery_pct=float(rnd_band.diagnostics.get("mean_recovery_pct", float("nan"))),
     )
 
     # Slice-level staleness diagnostic — share of underlying quotes

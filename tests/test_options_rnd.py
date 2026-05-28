@@ -74,14 +74,26 @@ def test_two_paths_agree_on_smile() -> None:
 
     # SSVI path: derivatives wrt k.
     rnd_g = rnd_from_curve(
-        K_grid, sigma_k, sig_prime_k, sig_double_k, F, T, VolModel.SSVI,
+        K_grid,
+        sigma_k,
+        sig_prime_k,
+        sig_double_k,
+        F,
+        T,
+        VolModel.SSVI,
         derivative_space="k",
     )
     # SABR path: convert k-derivatives to K-derivatives via chain rule.
     sig_prime_K = sig_prime_k / K_grid
     sig_double_K = (sig_double_k - sig_prime_k) / (K_grid * K_grid)
     rnd_s = rnd_from_curve(
-        K_grid, sigma_k, sig_prime_K, sig_double_K, F, T, VolModel.SABR,
+        K_grid,
+        sigma_k,
+        sig_prime_K,
+        sig_double_K,
+        F,
+        T,
+        VolModel.SABR,
         derivative_space="K",
     )
     # Compare on the inner part of the grid (avoid wing renormalisation
@@ -114,9 +126,7 @@ def test_uncertainty_band_collapses_to_zero_at_zero_variance() -> None:
     sig_samples = np.tile(sig, (n_samples, 1))
     sp_samples = np.tile(sp, (n_samples, 1))
     spp_samples = np.tile(spp, (n_samples, 1))
-    band = rnd_with_uncertainty(
-        K_grid, sig_samples, sp_samples, spp_samples, F, T, VolModel.SSVI
-    )
+    band = rnd_with_uncertainty(K_grid, sig_samples, sp_samples, spp_samples, F, T, VolModel.SSVI)
     np.testing.assert_allclose(band.density_lo90, band.density_median, atol=1e-12)
     np.testing.assert_allclose(band.density_hi90, band.density_median, atol=1e-12)
 
@@ -127,7 +137,7 @@ def test_durrleman_clean_on_flat() -> None:
     sigma = 0.20
     T = 0.5
     k = np.linspace(-0.5, 0.5, 201)
-    w = np.full_like(k, sigma ** 2 * T)
+    w = np.full_like(k, sigma**2 * T)
     g = durrleman_g(k, w, np.zeros_like(k), np.zeros_like(k))
     # For w' = w'' = 0 and constant w, g(k) reduces to (1 − 0)² − 0 + 0 = 1.
     np.testing.assert_allclose(g, 1.0, atol=1e-12)

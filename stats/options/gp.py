@@ -104,9 +104,9 @@ def _matern52_kernel_derivs(
     return (
         sigma_f_sq * g0,
         sigma_f_sq * g1 * s5_over_l,
-        sigma_f_sq * g2 * s5_over_l ** 2,
-        sigma_f_sq * g3 * s5_over_l ** 3,
-        sigma_f_sq * g4 * s5_over_l ** 4,
+        sigma_f_sq * g2 * s5_over_l**2,
+        sigma_f_sq * g3 * s5_over_l**3,
+        sigma_f_sq * g4 * s5_over_l**4,
     )
 
 
@@ -135,9 +135,7 @@ def _cross_cov_block(
     return out
 
 
-def _prior_cov_block(
-    x_test: np.ndarray, length_scale: float, sigma_f_sq: float
-) -> np.ndarray:
+def _prior_cov_block(x_test: np.ndarray, length_scale: float, sigma_f_sq: float) -> np.ndarray:
     """Joint prior cov K_** shape ``(3·N_test, 3·N_test)`` over [f, f', f''].
 
     Uses the sign-rule table at the head of the module. The diagonal of
@@ -146,9 +144,7 @@ def _prior_cov_block(
     tau = x_test[:, None] - x_test[None, :]
     r = np.abs(tau)
     sign = np.sign(tau)
-    k_r, k_r1, k_r2, k_r3, k_r4 = _matern52_kernel_derivs(
-        r, length_scale, sigma_f_sq
-    )
+    k_r, k_r1, k_r2, k_r3, k_r4 = _matern52_kernel_derivs(r, length_scale, sigma_f_sq)
 
     n = x_test.shape[0]
     block = np.zeros((3 * n, 3 * n), dtype=float)
@@ -247,9 +243,7 @@ def fit_gp_residual(
             stacklevel=2,
         )
         resid_std = (
-            float(np.std(iv - np.asarray(parametric_iv_fn(K)), ddof=1))
-            if n_obs >= 2
-            else 0.02
+            float(np.std(iv - np.asarray(parametric_iv_fn(K)), ddof=1)) if n_obs >= 2 else 0.02
         )
         rng = np.random.default_rng(seed)
         samples = parametric_grid[None, :] + rng.normal(
@@ -360,9 +354,7 @@ def draw_derivative_samples(
     # K_** prior over joint outputs at the test grid.
     K_pp = _prior_cov_block(x_test.ravel(), length_scale, sigma_f_sq)
     # K_xx* cross-cov between joint test and train.
-    K_xp = _cross_cov_block(
-        x_test.ravel(), x_train.ravel(), length_scale, sigma_f_sq
-    )
+    K_xp = _cross_cov_block(x_test.ravel(), x_train.ravel(), length_scale, sigma_f_sq)
 
     # Posterior mean = K_xp · α  where α = (K_train + diag(σ_n²))⁻¹ · y.
     # sklearn stores the Cholesky factor L_ of (K + Σ_n); reuse it.

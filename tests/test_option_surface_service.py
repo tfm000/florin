@@ -196,9 +196,7 @@ async def test_auto_and_explicit_same_expiry_share_fit(
     """
     svc = OptionSurfaceService(yf_provider=mock_provider)
     fit_auto = await svc.get_single_expiry_fit("SYN")
-    fit_explicit = await svc.get_single_expiry_fit(
-        "SYN", expiry=fit_auto.expiry
-    )
+    fit_explicit = await svc.get_single_expiry_fit("SYN", expiry=fit_auto.expiry)
     # Same Python object: cross-cache hit, not a recomputed fit.
     assert fit_auto is fit_explicit
     # And the chain provider was hit exactly once across both calls
@@ -210,9 +208,7 @@ async def test_auto_and_explicit_same_expiry_share_fit(
     # also reuse the explicit fit rather than recompute.
     svc2 = OptionSurfaceService(yf_provider=mock_provider)
     mock_provider.reset_mock()
-    fit_explicit_first = await svc2.get_single_expiry_fit(
-        "SYN", expiry="2027-01-15"
-    )
+    fit_explicit_first = await svc2.get_single_expiry_fit("SYN", expiry="2027-01-15")
     fit_auto_second = await svc2.get_single_expiry_fit("SYN")
     assert fit_auto_second is fit_explicit_first
 
@@ -232,9 +228,7 @@ async def test_single_cache_ttl_expiry(
 ) -> None:
     """After cache_ttl elapses, the next call re-fetches."""
     fake_now = [1_000.0]
-    monkeypatch.setattr(
-        "dashboard.services.option_surface.time.time", lambda: fake_now[0]
-    )
+    monkeypatch.setattr("dashboard.services.option_surface.time.time", lambda: fake_now[0])
     svc = OptionSurfaceService(yf_provider=mock_provider, cache_ttl=60)
     await svc.get_single_expiry_fit("SYN")
     assert mock_provider.get_option_chain_raw.call_count == 1

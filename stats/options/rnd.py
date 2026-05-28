@@ -105,9 +105,7 @@ def rnd_shimko_one(
     return phi_d2 * (term_1 + term_2 + term_3 + term_4)
 
 
-def _clip_and_renormalise(
-    densities: np.ndarray, K_grid: np.ndarray
-) -> tuple[np.ndarray, int]:
+def _clip_and_renormalise(densities: np.ndarray, K_grid: np.ndarray) -> tuple[np.ndarray, int]:
     """Clip negatives to zero and rescale each row to integrate to 1.
 
     Returns the new density matrix and the count of samples that

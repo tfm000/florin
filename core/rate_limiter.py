@@ -34,7 +34,11 @@ class AsyncRateLimiter:
     ) -> None:
         self._min_interval = window_seconds / max_requests
         self._lock = asyncio.Lock()
-        self._last_request_time: float = 0.0
+        # -inf (not 0.0): time.monotonic()'s epoch is arbitrary (~boot time), so a
+        # 0.0 seed makes the first acquire() compute elapsed == uptime. On a freshly
+        # booted host (uptime < _min_interval) that triggers a spurious multi-minute
+        # sleep. -inf means "no prior request" so the first call never waits.
+        self._last_request_time: float = float("-inf")
         self._name = name
 
     async def acquire(self) -> None:
