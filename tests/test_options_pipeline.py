@@ -214,13 +214,21 @@ def test_validation_error_for_bad_inputs() -> None:
     )
     with pytest.raises(ValidationError):
         fit_expiry(
-            quotes, ticker="X", expiry="2027-01-15", T=-0.1, spot=100.0,
+            quotes,
+            ticker="X",
+            expiry="2027-01-15",
+            T=-0.1,
+            spot=100.0,
             r_external=0.04,
         )
     # Non-positive spot.
     with pytest.raises(ValidationError):
         fit_expiry(
-            quotes, ticker="X", expiry="2027-01-15", T=0.5, spot=0,
+            quotes,
+            ticker="X",
+            expiry="2027-01-15",
+            T=0.5,
+            spot=0,
             r_external=0.04,
         )
 

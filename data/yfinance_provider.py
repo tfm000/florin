@@ -1275,9 +1275,7 @@ class YFinanceProvider:
             try:
                 t = yf.Ticker(ticker)
                 info = t.info or {}
-                spot = float(
-                    info.get("regularMarketPrice") or info.get("previousClose") or 0
-                )
+                spot = float(info.get("regularMarketPrice") or info.get("previousClose") or 0)
                 expirations = list(t.options or [])
                 if not expirations or spot <= 0:
                     return empty
@@ -1325,10 +1323,7 @@ class YFinanceProvider:
                     for candidate in candidate_pool:
                         try:
                             ch = t.option_chain(candidate)
-                            valid = int(
-                                (ch.puts["bid"] > 0).sum()
-                                + (ch.calls["bid"] > 0).sum()
-                            )
+                            valid = int((ch.puts["bid"] > 0).sum() + (ch.calls["bid"] > 0).sum())
                             if valid > best_count:
                                 best_count = valid
                                 best_exp = candidate
@@ -1450,6 +1445,7 @@ class YFinanceProvider:
                 # 4 pm ET expiry timestamp (yfinance uses settlement). Stored
                 # in unix-seconds form to keep the JSON payload small.
                 from datetime import datetime
+
                 expiry_dt = datetime.fromisoformat(best_exp).replace(
                     hour=20, minute=0, second=0, tzinfo=UTC
                 )  # 16:00 ET ≈ 20:00 UTC (DST-imprecise; close enough for T)
@@ -1472,9 +1468,7 @@ class YFinanceProvider:
                 # network glitches). Catch the expected boundary types and
                 # log; do *not* swallow programming errors (``TypeError`` /
                 # ``AssertionError``) silently.
-                logger.exception(
-                    "Failed to get raw option chain for %s: %s", ticker, e
-                )
+                logger.exception("Failed to get raw option chain for %s: %s", ticker, e)
                 return empty
 
         cache_key = f"option_chain_raw:{ticker}:{expiry or 'auto'}"
@@ -1495,9 +1489,7 @@ class YFinanceProvider:
             try:
                 candidates = list(yf.Ticker(ticker).options or [])[:5]
                 for cand in candidates:
-                    cached_cand = _get_cached(
-                        f"option_chain_raw:{ticker}:{cand}", OPTION_CHAIN_TTL
-                    )
+                    cached_cand = _get_cached(f"option_chain_raw:{ticker}:{cand}", OPTION_CHAIN_TTL)
                     if cached_cand is not None:
                         _set_cached(cache_key, cached_cand)
                         return cached_cand
@@ -1512,9 +1504,7 @@ class YFinanceProvider:
         # fetch (which would return a slightly different live-bid
         # snapshot and produce a different SSVI/GP/RND fit).
         if not expiry and result.get("expiry"):
-            _set_cached(
-                f"option_chain_raw:{ticker}:{result['expiry']}", result
-            )
+            _set_cached(f"option_chain_raw:{ticker}:{result['expiry']}", result)
         return result
 
     async def get_g10_rates(self) -> list[dict]:

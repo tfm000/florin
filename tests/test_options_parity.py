@@ -42,12 +42,8 @@ def _synthetic_chain(
     call_mid = bs76_call(F, strikes, T, sigma, D) + noise_std * rng.standard_normal(n)
     put_mid = bs76_put(F, strikes, T, sigma, D) + noise_std * rng.standard_normal(n)
     spread = np.full(n, 0.02)
-    calls = pd.DataFrame(
-        {"strike": strikes, "mid": call_mid, "spread": spread, "is_call": True}
-    )
-    puts = pd.DataFrame(
-        {"strike": strikes, "mid": put_mid, "spread": spread, "is_call": False}
-    )
+    calls = pd.DataFrame({"strike": strikes, "mid": call_mid, "spread": spread, "is_call": True})
+    puts = pd.DataFrame({"strike": strikes, "mid": put_mid, "spread": spread, "is_call": False})
     return pd.concat([calls, puts], ignore_index=True)
 
 

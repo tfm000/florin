@@ -43,13 +43,9 @@ def test_matern52_derivatives_against_fd() -> None:
         return _matern52_kernel_derivs(r, L, sf2)[0]
 
     fd_k1 = (8 * (kr(rs + h) - kr(rs - h)) - (kr(rs + 2 * h) - kr(rs - 2 * h))) / (12 * h)
-    fd_k2 = (
-        -kr(rs + 2 * h)
-        + 16 * kr(rs + h)
-        - 30 * kr(rs)
-        + 16 * kr(rs - h)
-        - kr(rs - 2 * h)
-    ) / (12 * h * h)
+    fd_k2 = (-kr(rs + 2 * h) + 16 * kr(rs + h) - 30 * kr(rs) + 16 * kr(rs - h) - kr(rs - 2 * h)) / (
+        12 * h * h
+    )
 
     np.testing.assert_allclose(k1, fd_k1, atol=1e-7)
     np.testing.assert_allclose(k2, fd_k2, atol=1e-5)
@@ -100,7 +96,7 @@ def test_smooth_recovery() -> None:
     k = np.log(K / F)
     # Truth: parametric = constant 0.20; residual = small bump.
     parametric_mean = 0.20
-    true_residual = 0.02 * np.exp(-((k - 0.05) ** 2) / (2 * 0.08 ** 2))
+    true_residual = 0.02 * np.exp(-((k - 0.05) ** 2) / (2 * 0.08**2))
     iv_market = parametric_mean + true_residual + 0.001 * rng.standard_normal(K.size)
 
     def parametric_fn(k_arr):
@@ -117,7 +113,7 @@ def test_smooth_recovery() -> None:
 
     # Posterior mean should track parametric + true residual everywhere.
     truth_on_grid = parametric_mean + 0.02 * np.exp(
-        -((np.log(K_grid / F) - 0.05) ** 2) / (2 * 0.08 ** 2)
+        -((np.log(K_grid / F) - 0.05) ** 2) / (2 * 0.08**2)
     )
     rmse = float(np.sqrt(np.mean((band.iv_mean - truth_on_grid) ** 2)))
     assert rmse < 5e-3
@@ -137,7 +133,7 @@ def test_derivative_samples_match_finite_diff_on_mean() -> None:
     K = np.linspace(80.0, 120.0, 30)
     k = np.log(K / F)
     parametric_mean = 0.20
-    true_resid = 0.03 * np.exp(-((k - 0.0) ** 2) / (2 * 0.10 ** 2))
+    true_resid = 0.03 * np.exp(-((k - 0.0) ** 2) / (2 * 0.10**2))
     iv_market = parametric_mean + true_resid + 0.0005 * rng.standard_normal(K.size)
 
     def parametric_fn(k_arr):

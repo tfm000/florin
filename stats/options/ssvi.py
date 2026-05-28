@@ -68,9 +68,7 @@ def ssvi_phi(theta_T: float, eta: float, gamma: float) -> float:
     return float(eta * theta_T ** (-gamma))
 
 
-def _ssvi_uh(
-    k: np.ndarray, rho: float, phi: float
-) -> tuple[np.ndarray, np.ndarray]:
+def _ssvi_uh(k: np.ndarray, rho: float, phi: float) -> tuple[np.ndarray, np.ndarray]:
     """Helpers ``u(k) = φ·k + ρ`` and ``h(k) = √(u² + 1 − ρ²)``."""
     u = phi * k + rho
     h = np.sqrt(u * u + 1.0 - rho * rho)
@@ -129,7 +127,7 @@ def ssvi_d2w_dk2(
     k_arr = np.asarray(k, dtype=float)
     phi = ssvi_phi(theta_T, eta, gamma)
     _, h = _ssvi_uh(k_arr, rho, phi)
-    return 0.5 * theta_T * phi * phi * (1.0 - rho * rho) / (h ** 3)
+    return 0.5 * theta_T * phi * phi * (1.0 - rho * rho) / (h**3)
 
 
 def ssvi_dsigma_dk(
@@ -142,9 +140,7 @@ def ssvi_dsigma_dk(
 ) -> np.ndarray:
     """σ'(k) = w'(k) / (2·T·σ(k))."""
     sigma = ssvi_iv(k, theta_T, rho, eta, gamma, T)
-    return ssvi_dw_dk(k, theta_T, rho, eta, gamma) / (
-        2.0 * T * np.maximum(sigma, _SIGMA_FLOOR)
-    )
+    return ssvi_dw_dk(k, theta_T, rho, eta, gamma) / (2.0 * T * np.maximum(sigma, _SIGMA_FLOOR))
 
 
 def ssvi_d2sigma_dk2(
@@ -189,9 +185,7 @@ def durrleman_g_ssvi(
     return term_1 - term_2 + wpp / 2.0
 
 
-def butterfly_margin(
-    theta_T: float, rho: float, eta: float, gamma: float
-) -> float:
+def butterfly_margin(theta_T: float, rho: float, eta: float, gamma: float) -> float:
     """Slack to the Gatheral-Jacquier Thm 4.2 butterfly bound.
 
     Positive ⇒ inside the arbitrage-free interior. Negative ⇒
@@ -280,8 +274,7 @@ def calibrate_ssvi(
 
     if len(K) < _MIN_OBS_FOR_FIT:
         raise ValueError(
-            f"SSVI calibration needs ≥ {_MIN_OBS_FOR_FIT} valid IV observations "
-            f"(got {len(K)})"
+            f"SSVI calibration needs ≥ {_MIN_OBS_FOR_FIT} valid IV observations (got {len(K)})"
         )
 
     k = np.log(K / F)
@@ -290,9 +283,7 @@ def calibrate_ssvi(
     sqrt_w = np.sqrt(weights)
     sqrt_lambda = np.sqrt(_PENALTY_LAMBDA)
 
-    theta_T = (
-        float(theta_T_hint) if theta_T_hint is not None else _atm_theta_T(k, iv, T)
-    )
+    theta_T = float(theta_T_hint) if theta_T_hint is not None else _atm_theta_T(k, iv, T)
 
     bounds_lo = (_RHO_BOUNDS[0], _ETA_BOUNDS[0], _GAMMA_BOUNDS[0])
     bounds_hi = (_RHO_BOUNDS[1], _ETA_BOUNDS[1], _GAMMA_BOUNDS[1])
@@ -378,9 +369,7 @@ def calibrate_ssvi(
     )
 
 
-def ssvi_iv_curve(
-    K_grid: np.ndarray, F: float, T: float, params: SSVIParams
-) -> np.ndarray:
+def ssvi_iv_curve(K_grid: np.ndarray, F: float, T: float, params: SSVIParams) -> np.ndarray:
     """Evaluate σ(K) on an arbitrary strike grid using fitted parameters."""
     k = np.log(np.asarray(K_grid, dtype=float) / F)
     return ssvi_iv(k, params.theta_T, params.rho, params.eta, params.gamma, T)

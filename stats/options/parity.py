@@ -79,9 +79,8 @@ def fit_parity(
         )
 
     K = np.asarray(common_K, dtype=float)
-    diff = (
-        calls.loc[common_K, "mid"].to_numpy(dtype=float)
-        - puts.loc[common_K, "mid"].to_numpy(dtype=float)
+    diff = calls.loc[common_K, "mid"].to_numpy(dtype=float) - puts.loc[common_K, "mid"].to_numpy(
+        dtype=float
     )
     spread_c = calls.loc[common_K, "spread"].to_numpy(dtype=float)
     spread_p = puts.loc[common_K, "spread"].to_numpy(dtype=float)
@@ -179,9 +178,7 @@ def fit_forward_at_rate(
         doesn't compromise ``F``).
     """
     if T <= 0:
-        raise ValidationError(
-            f"Parity needs T > 0 (got T = {T:.6f} years)."
-        )
+        raise ValidationError(f"Parity needs T > 0 (got T = {T:.6f} years).")
     calls = quotes[quotes["is_call"]].set_index("strike")
     puts = quotes[~quotes["is_call"]].set_index("strike")
     common_K = calls.index.intersection(puts.index)
@@ -195,9 +192,8 @@ def fit_forward_at_rate(
     e_rT = math.exp(r * T)
 
     K = np.asarray(common_K, dtype=float)
-    diff = (
-        calls.loc[common_K, "mid"].to_numpy(dtype=float)
-        - puts.loc[common_K, "mid"].to_numpy(dtype=float)
+    diff = calls.loc[common_K, "mid"].to_numpy(dtype=float) - puts.loc[common_K, "mid"].to_numpy(
+        dtype=float
     )
     F_i = K + e_rT * diff
     spread_c = calls.loc[common_K, "spread"].to_numpy(dtype=float)
@@ -233,9 +229,7 @@ def fit_forward_at_rate(
         # central F estimate remains unbiased.
         ss_res = float(np.sum(w_m * (F_m - F) ** 2))
         # Diagnostic: residual std of F_i.
-        resid_std = (
-            float(np.sqrt(ss_res / w_total)) if w_total > 0 else 0.0
-        )
+        resid_std = float(np.sqrt(ss_res / w_total)) if w_total > 0 else 0.0
         # R² formulation informative for the fixed-rate path:
         # 1 − var(F_i)/var(K_i). Close to 1 when F_i is concentrated;
         # values near 0 flag a dispersive chain (but ``F`` is still
