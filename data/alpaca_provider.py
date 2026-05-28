@@ -22,6 +22,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -41,6 +42,34 @@ WS_TICKER_BATCH_SIZE = 500
 
 # REST snapshot batch size
 REST_SNAPSHOT_BATCH_SIZE = 200  # Keep URL under Alpaca's length limit
+
+# Batch size for multi-symbol intraday bars requests.
+# Kept smaller than snapshots to limit URL length and ensure a single bad
+# ticker in one chunk does not silently discard another chunk's data.
+INTRADAY_BATCH_SIZE = 100
+
+# Alpaca equity symbol format: one or more uppercase letters, with an optional
+# single dot followed by one or more uppercase letters (e.g. BRK.A, BRK.B).
+# Symbols containing digits (e.g. MLB1), slashes, dashes, or other characters
+# are rejected by the /v2/stocks/bars endpoint with HTTP 400.
+_ALPACA_TICKER_RE = re.compile(r"^[A-Z]+(\.[A-Z]+)?$")
+
+
+def _is_valid_alpaca_ticker(ticker: str) -> bool:
+    """Return True if *ticker* matches Alpaca's accepted equity symbol format.
+
+    Alpaca rejects any symbol that contains digits, slashes, dashes, or other
+    non-alpha characters (except the single-dot class-share notation such as
+    BRK.A / BRK.B).  One invalid symbol in a batch causes Alpaca to 400 the
+    entire request, so callers must filter before submitting.
+
+    Args:
+        ticker: Raw ticker string to validate.
+
+    Returns:
+        True if the ticker will be accepted by Alpaca; False otherwise.
+    """
+    return bool(_ALPACA_TICKER_RE.match(ticker))
 
 
 class AlpacaProvider(MarketDataProvider):
@@ -274,14 +303,27 @@ class AlpacaProvider(MarketDataProvider):
     ) -> dict[str, list[dict]]:
         """Fetch intraday bars for multiple tickers.
 
+        Tickers are validated against Alpaca's accepted symbol format before
+        the request is issued.  Any symbol that does not match
+        ``^[A-Z]+(\\.[A-Z]+)?$`` (e.g. mangled 13F tickers such as ``MLB1``)
+        is dropped with a WARNING log rather than silently poisoning the entire
+        batch — a single invalid symbol causes Alpaca to return HTTP 400 for
+        every symbol in the request.
+
+        The validated list is split into chunks of at most
+        :data:`INTRADAY_BATCH_SIZE` symbols so that a transient per-chunk
+        failure never silently discards another chunk's bars.
+
         Args:
-            tickers: List of ticker symbols.
+            tickers: List of ticker symbols to fetch.
             timeframe: Alpaca timeframe string (1Min, 5Min, 15Min, 30Min, 1Hour).
             start: ISO datetime string for range start (defaults to today's open).
             end: ISO datetime string for range end (defaults to now).
 
         Returns:
-            Dict of ticker -> list of {timestamp, open, high, low, close, volume} dicts.
+            Dict of ticker -> list of {timestamp, open, high, low, close, volume}
+            dicts.  Tickers that were filtered out or returned no bars are absent
+            from the dict — callers must handle missing keys gracefully.
         """
         if not self._http:
             raise RuntimeError("Alpaca provider not connected")
@@ -295,39 +337,90 @@ class AlpacaProvider(MarketDataProvider):
             today_open = dt.combine(date.today(), MARKET_OPEN, tzinfo=US_EASTERN)
             start = today_open.isoformat()
 
-        result: dict[str, list[dict]] = {}
-        try:
-            # Alpaca multi-bar endpoint
-            resp = await self._http.get(
-                "/v2/stocks/bars",
-                params={
-                    "symbols": ",".join(tickers),
-                    "timeframe": timeframe,
-                    "start": start,
-                    **({"end": end} if end else {}),
-                    "feed": self._settings.alpaca_feed.value,
-                    "limit": 10000,
-                    "sort": "asc",
-                },
+        # --- Symbol validation ---------------------------------------------------
+        # Alpaca 400s the entire batch when any symbol is invalid.  Filter first
+        # and surface rejected symbols as warnings so failures are never silent.
+        valid_tickers: list[str] = []
+        rejected: list[str] = []
+        for t in tickers:
+            if _is_valid_alpaca_ticker(t):
+                valid_tickers.append(t)
+            else:
+                rejected.append(t)
+
+        if rejected:
+            logger.warning(
+                "Alpaca intraday bars: dropping %d invalid symbol(s) — %s "
+                "(Alpaca only accepts uppercase letters with optional dot-class "
+                "notation such as BRK.A; digits, slashes, and dashes are not "
+                "permitted)",
+                len(rejected),
+                ", ".join(rejected),
             )
-            resp.raise_for_status()
-            data = resp.json()
 
-            for ticker, bars in data.get("bars", {}).items():
-                result[ticker] = [
-                    {
-                        "timestamp": bar["t"],
-                        "open": bar["o"],
-                        "high": bar["h"],
-                        "low": bar["l"],
-                        "close": bar["c"],
-                        "volume": bar["v"],
-                    }
-                    for bar in bars
-                ]
+        if not valid_tickers:
+            logger.warning("Alpaca intraday bars: no valid symbols in request; returning empty")
+            return {}
 
-        except Exception:
-            logger.exception("Failed to fetch intraday bars")
+        # --- Batched fetch -------------------------------------------------------
+        # Split into chunks so a single chunk failure does not discard other
+        # chunks, and to stay well within Alpaca's URL-length limits.
+        result: dict[str, list[dict]] = {}
+        total_chunks = (len(valid_tickers) + INTRADAY_BATCH_SIZE - 1) // INTRADAY_BATCH_SIZE
+
+        for chunk_num, i in enumerate(range(0, len(valid_tickers), INTRADAY_BATCH_SIZE)):
+            chunk = valid_tickers[i : i + INTRADAY_BATCH_SIZE]
+
+            try:
+                resp = await self._http.get(
+                    "/v2/stocks/bars",
+                    params={
+                        "symbols": ",".join(chunk),
+                        "timeframe": timeframe,
+                        "start": start,
+                        **({"end": end} if end else {}),
+                        "feed": self._settings.alpaca_feed.value,
+                        "limit": 10000,
+                        "sort": "asc",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                for ticker, bars in data.get("bars", {}).items():
+                    result[ticker] = [
+                        {
+                            "timestamp": bar["t"],
+                            "open": bar["o"],
+                            "high": bar["h"],
+                            "low": bar["l"],
+                            "close": bar["c"],
+                            "volume": bar["v"],
+                        }
+                        for bar in bars
+                    ]
+
+                # Adaptive rate-limit delay between chunks (not after the last one)
+                if chunk_num < total_chunks - 1:
+                    await self._rate_limit_delay(resp)
+
+            except httpx.HTTPStatusError as e:
+                body = e.response.text
+                logger.error(
+                    "Alpaca intraday bars: HTTP %d for chunk %d/%d (symbols: %s) — response: %s",
+                    e.response.status_code,
+                    chunk_num + 1,
+                    total_chunks,
+                    ",".join(chunk),
+                    body[:200],
+                )
+            except Exception:
+                logger.exception(
+                    "Alpaca intraday bars: unexpected error for chunk %d/%d (symbols: %s)",
+                    chunk_num + 1,
+                    total_chunks,
+                    ",".join(chunk),
+                )
 
         return result
 
