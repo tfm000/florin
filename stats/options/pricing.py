@@ -69,7 +69,7 @@ def bs76_put(F, K, T: float, sigma, D: float) -> np.ndarray:
     return D * (K_a * norm.cdf(-d2) - F_a * norm.cdf(-d1))
 
 
-def bs_vega(F, K, T: float, sigma, D: float) -> np.ndarray:
+def bs_vega(F, K, T, sigma, D) -> np.ndarray:
     """Vega = ∂C/∂σ.
 
     Two equivalent analytic forms (kept as one expression because

@@ -263,27 +263,31 @@ def fit_expiry(
     # Parametric IV and its k-derivatives on the output grid.
     if model == VolModel.SSVI:
         p = iv_fit.ssvi
-        param_iv_grid = ssvi_iv(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
-        param_sp_k = ssvi_dsigma_dk(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
-        param_spp_k = ssvi_d2sigma_dk2(k_grid, p.theta_T, p.rho, p.eta, p.gamma, T)
+        assert p is not None  # SSVI branch always populates iv_fit.ssvi
+        theta_T, rho, eta, gamma = p.theta_T, p.rho, p.eta, p.gamma
+        param_iv_grid = ssvi_iv(k_grid, theta_T, rho, eta, gamma, T)
+        param_sp_k = ssvi_dsigma_dk(k_grid, theta_T, rho, eta, gamma, T)
+        param_spp_k = ssvi_d2sigma_dk2(k_grid, theta_T, rho, eta, gamma, T)
 
         def parametric_iv_fn(K_arr: np.ndarray) -> np.ndarray:
             kk = np.log(np.asarray(K_arr, dtype=float) / F)
-            return ssvi_iv(kk, p.theta_T, p.rho, p.eta, p.gamma, T)
+            return ssvi_iv(kk, theta_T, rho, eta, gamma, T)
 
     else:
         param_iv_grid, param_sp_k, param_spp_k = _sabr_derivs_k_space(K_grid, F, T, iv_fit.sabr)
+        p_sabr = iv_fit.sabr
+        assert p_sabr is not None  # SABR branch always populates iv_fit.sabr
+        alpha, beta_s, rho_s, nu = p_sabr.alpha, p_sabr.beta, p_sabr.rho, p_sabr.nu
 
         def parametric_iv_fn(K_arr: np.ndarray) -> np.ndarray:
-            p_local = iv_fit.sabr
             return hagan_lognormal_iv(
                 F,
                 np.asarray(K_arr, dtype=float),
                 T,
-                p_local.alpha,
-                p_local.beta,
-                p_local.rho,
-                p_local.nu,
+                alpha,
+                beta_s,
+                rho_s,
+                nu,
             )
 
     iv_fit.K_grid = K_grid
