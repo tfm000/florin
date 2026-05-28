@@ -13,6 +13,7 @@
 
 import { useApi } from '../useApi'
 import { buildHistoryQuery } from '../../utils/historyQuery'
+import { buildIntradayQuery } from '../../utils/intradayQuery'
 
 export function usePriceHistory({
   ticker,
@@ -22,10 +23,18 @@ export function usePriceHistory({
   enabled = true,
   interval = '1d',
   adjusted = true,
+  intraday = false,
 }) {
   const shouldFetch = enabled && !!ticker
+  // Intraday → Alpaca (/quotes/intraday); daily/historical → yfinance (/history).
+  // Design intent: intraday data comes from Alpaca for assets and portfolios
+  // alike. In intraday mode `interval` is the intraday key itself (e.g. '5Min')
+  // and period/customStart/customEnd are not part of the URL (the endpoint
+  // defaults the range to the current session).
   const built = shouldFetch
-    ? buildHistoryQuery({ ticker, period, customStart, customEnd, interval, adjusted })
+    ? (intraday
+        ? buildIntradayQuery({ ticker, interval })
+        : buildHistoryQuery({ ticker, period, customStart, customEnd, interval, adjusted }))
     : { url: null, meta: { interval, effectivePeriod: period ?? null } }
   const { data, loading, error, stale, refetch } = useApi(built.url, { autoFetch: shouldFetch })
   return { data, loading, error, stale, refetch, meta: built.meta }
