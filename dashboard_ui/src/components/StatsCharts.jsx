@@ -1,4 +1,5 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { ChartTooltip } from './charts/_primitives'
 import { useChartColors } from '../hooks/useChartColors'
 
 export default function StatsCharts({ stats }) {
@@ -42,7 +43,7 @@ export default function StatsCharts({ stats }) {
                 <Cell key={i} fill={winLossColors[i]} />
               ))}
             </Pie>
-            <Tooltip />
+            <ChartTooltip />
           </PieChart>
         </ResponsiveContainer>
         <p className="text-center text-white font-mono mt-2">{stats.win_rate}% Win Rate</p>
@@ -55,7 +56,7 @@ export default function StatsCharts({ stats }) {
           <BarChart data={pnlData}>
             <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
             <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
-            <Tooltip />
+            <ChartTooltip />
             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
               {pnlData.map((entry, i) => (
                 <Cell key={i} fill={entry.value >= 0 ? colors.positive : colors.negative} />
